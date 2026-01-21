@@ -3,6 +3,9 @@ ARG USERNAME=dorten
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
+# Install SSH client for Git operations
+RUN apt-get update && apt-get install -y openssh-client && rm -rf /var/lib/apt/lists/*
+
 # Delete user if it exists in container (e.g Ubuntu Noble: ubuntu)
 RUN if id -u $USER_UID ; then userdel `id -un $USER_UID` ; fi
 

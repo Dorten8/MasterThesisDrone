@@ -41,6 +41,7 @@
         "-e", "DISPLAY=${env:DISPLAY}"
     ],
     "mounts": [
+       "source=${localEnv:HOME}/.ssh,target=/home/${localEnv:USER}/.ssh,type=bind,readonly",
        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
        "source=/dev/dri,target=/dev/dri,type=bind,consistency=cached"
     ],
