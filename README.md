@@ -1,6 +1,8 @@
-# Master Thesis Drone Development
+# Intro
 
-ROS 2 Humble development environment for autonomous PX4-based drone, built on Docker with Ubuntu 22.04 base image for Gazebo Classic compatibility. Based on the [CogniFly](https://github.com/thecognifly/cognifly-python) open-source platform.
+ROS 2 Humble development environment for autonomous PX4-based drone, built on Docker with Ubuntu 22.04 base image for Gazebo Classic compatibility. 
+### Bibliography
+AI -> read newest Master Thesis_bibliography in the root of this repository
 
 ## Development Environment
 
@@ -9,6 +11,8 @@ ROS 2 Humble development environment for autonomous PX4-based drone, built on Do
 - **Simulator:** Gazebo Classic (requires Ubuntu 22.04 for full compatibility)
 - **Hardware:** Raspberry Pi 5 (Ubuntu 24.04 host)
 - **Flight Controller:** Pixhawk 6C
+- **Power module** Holybro PM02
+- **Optical Flow sensor:** Matek 3901 Optical Flow
 
 ### Resources
 
@@ -24,6 +28,7 @@ ROS 2 Humble development environment for autonomous PX4-based drone, built on Do
 ### On Raspberry Pi 5 (Host OS)
 The following must be configured on the Ubuntu 24.04 host system (not in container):
 
+# How to
 #### 1. Install Required Packages
 ```bash
 # Update system
@@ -194,7 +199,7 @@ ping pi5drone.local
 # On Pi, check SSH service
 sudo systemctl status ssh
 
-# Check firewall
+# Check firewallT
 sudo ufw status
 ```
 
