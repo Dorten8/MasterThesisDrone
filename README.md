@@ -29,6 +29,7 @@ AI -> read newest Master Thesis_bibliography in the root of this repository
 The following must be configured on the Ubuntu 24.04 host system (not in container):
 
 # How to
+## Directly on Pi5 (and its host linux based OS - UBUNTU 24.04 used in this case)
 #### 1. Install Required Packages
 ```bash
 # Update system
@@ -83,8 +84,24 @@ ssh-copy-id dorten@pi5drone.local
 ssh dorten@pi5drone.local
 ```
 
-## Setup Instructions
+#### UART pinout assignment 
+```bash
+### frees pins from login console to be used as UART
+sudo nano /boot/firmware/config.txt
+### scroll to end and add:
+enable_uart=1
+# reboot and check if it worked
+cat /boot/firmware/cmdline.txt
+    # if:
+    console=tty1 # then it worked
+```
 
+## Setup Instructions in Docker container
+```bash
+sudo nano /boot/firmware/config.txt
+### add this line at the end (if not present)
+enable_uart=1
+```
 ### 1. Clone Repository
 
 **On Raspberry Pi 5:**
@@ -149,25 +166,7 @@ git status
 ## Development Workflow
 
 ### Making Changes
-```bash
-# Check status
-git status
 
-# Stage changes
-git add .
-
-# Commit with message
-git commit -m "Description of changes"
-
-# Push to GitHub
-git push
-```
-
-### Rebuilding Container
-After modifying `.devcontainer/Dockerfile` or `devcontainer.json`:
-- Press `F1` or `Ctrl+Shift+P`
-- Type: "Dev Containers: Rebuild Container"
-- Wait for rebuild to complete
 
 ## Architecture Notes
 
