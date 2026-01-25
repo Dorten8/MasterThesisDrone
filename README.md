@@ -96,12 +96,35 @@ cat /boot/firmware/cmdline.txt
     console=tty1 # then it worked
 ```
 
+#### Finding the UART Device File
+
+##### 
+
+```bash
+# Check for the convenient symlink first
+ls -l /dev/serial0
+# if exists use </dev/serial0> in the code (older Pies)
+# else: 
+ls -l /dev/ttyAMA* #(the actual hardware UART on Pi5)
+# look for </dev/ttyAMA0>, if found all good
+```
+
+***
+
+##### Why two names?
+
+- **`/dev/ttyAMA0`** = the actual hardware device (always exists if UART is enabled)
+- **`/dev/serial0`** = a convenient alias/symlink (created on some systems, not others)
+
+
 ## Setup Instructions in Docker container
 ```bash
 sudo nano /boot/firmware/config.txt
 ### add this line at the end (if not present)
 enable_uart=1
 ```
+
+
 ### 1. Clone Repository
 
 **On Raspberry Pi 5:**
