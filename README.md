@@ -29,7 +29,21 @@ AI -> read newest Master Thesis_bibliography in the root of this repository
 The following must be configured on the Ubuntu 24.04 host system (not in container):
 
 # How to
-## Directly on Pi5 (and its host linux based OS - UBUNTU 24.04 used in this case)
+## PX4 based flight conntroller (Pixhawk 6C in my case)
+apart from well documented settup of the flight controller (FC) a correct middleware settup is crucial. This middlaware is used for communication of the FC and either a companion computer (mounted on the drone) or ground control station (GCS). [PX4 is developed with asynchronous publish/subscribe uORB messaging in mind, which well translates to topics on ROS2 with uXRCE-DDS protocol. For control via Mavlink (for example to issue lower level commands such as throttle, pitch, yaw and roll) the FC has to have these parameters settup:](https://docs.px4.io/main/en/companion_computer/pixhawk_rpi)
+```bash
+# Mavlink setup
+MAV_1_CONFIG = TELEM2
+UXRCE_DDS_CFG = 0 (Disabled)
+SER_TEL2_BAUD = 57600
+
+# ROS2 uXRCE-DDS setup
+MAV_1_CONFIG = 0 (Disabled)
+UXRCE_DDS_CFG = 102 (TELEM2)
+SER_TEL2_BAUD = 921600
+```
+
+## Pi5 host OS(UBUNTU 24.04 used in this case)
 #### 1. Install Required Packages
 ```bash
 # Update system

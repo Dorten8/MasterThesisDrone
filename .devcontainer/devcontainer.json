@@ -41,10 +41,18 @@
         "-e", "DISPLAY=${env:DISPLAY}"
     ],
     "mounts": [
+        //SSH keys (passing on host OS)
        "source=${localEnv:HOME}/.ssh,target=/home/${localEnv:USER}/.ssh,type=bind,readonly",
+       //X11 display socket
        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
-       "source=/dev/dri,target=/dev/dri,type=bind,consistency=cached"
+       //GPU device
+       "source=/dev/dri,target=/dev/dri,type=bind,consistency=cached",
+       //UART device for Flight controller
+       //passes UART pins /dev/ttyAMA0 (CHANGE IF NOT THE CASE!)
+       "source=/dev/ttyAMA0,target=/dev/ttyAMA0,type=bind",
+       //Input devices for joystick (game controller)
+       "source=/dev/input,target=/dev/input,type=bind"
     ],
 "postCreateCommand": "sudo rosdep update && sudo rosdep install --from-paths src --ignore-src -y && sudo chown -R $(whoami) /home/ws/",
-"postStartCommand": "echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc && source ~/.bashrc"
+"postStartCommand": "echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc"
 }
