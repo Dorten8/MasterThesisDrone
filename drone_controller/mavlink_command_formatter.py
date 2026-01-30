@@ -1,6 +1,7 @@
 """
 MAVLink Command Formatter - Builds and sends MAVLink messages
 """
+import threading
 from pymavlink import mavutil
 
 class FlightState:
