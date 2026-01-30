@@ -3,14 +3,14 @@ import threading
 import sys
 from pymavlink import mavutil
 from xbox_controller_reader import JoystickState, read_joystick_events
-from mavlink_command_formatter import FlightState, arm_disarm, send_manual_control, FlightState
+from mavlink_command_formatter import FlightState, arm_disarm, send_manual_control
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
 JS_DEVICE = "/dev/input/js0"  # Xbox controller input device
-SERIAL_PORT = "/dev/serial0"  # Pi to FC connection
+SERIAL_PORT = "/dev/ttyAMA0"  # Pi to FC connection
 BAUD_RATE = 921600            # PX4 default baud rate for ROS2, used here also for Mavlink for simplicity
 
 # Axis mappings (check with 'jstest /dev/input/js0' if unsure)
@@ -149,7 +149,7 @@ def main():
     """
     
     print("=" * 70)
-    print("SpinFly Drone Joystick Controller")
+    print("Drone Joystick Controller")
     print("=" * 70)
     print(f"Joystick device:  {JS_DEVICE}")
     print(f"Serial port:      {SERIAL_PORT} @ {BAUD_RATE} baud")
@@ -178,7 +178,7 @@ def main():
     
     # --- Start joystick reader thread (daemon) ---
     print("[INIT] Starting joystick reader thread...")
-    js_thread = threading.Thread(target=read_joystick_events, daemon=True)
+    js_thread = threading.Thread(target=read_joystick_events, args=(joystick_state,), daemon=True)
     js_thread.start()
     
     time.sleep(1)  # Give thread time to open joystick

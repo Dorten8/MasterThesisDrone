@@ -4,6 +4,9 @@ import time
 import threading
 import fcntl
 import sys
+# ============================================================================
+JS_DEVICE = "/dev/input/js0"  # Default joystick device path
+# ============================================================================
 
 class JoystickState:
     """Holds current joystick axis and button states."""
@@ -34,12 +37,15 @@ class JoystickState:
         """Return a copy of current button states (thread-safe)."""
         with self.lock:
             return self.buttons.copy()
+
+# Global joystick state instance
+joystick_state = JoystickState()
         
 # ============================================================================
 # JOYSTICK READER THREAD - Non-blocking input polling
 # ============================================================================
 
-def read_joystick_events():
+def read_joystick_events(joystick_state):
     """
     Thread function: reads joystick events in non-blocking mode.
     
@@ -67,7 +73,7 @@ def read_joystick_events():
                     # - Byte 7: number (uint8) - which axis/button (0-15)
                     ev = f.read(8)
                     
-                    if len(ev) < 8:
+                    if ev is None or len(ev) < 8:
                         # No data available right now (non-blocking mode returns 0 bytes)
                         time.sleep(0.001)  # Short sleep to avoid busy-loop
                         continue
