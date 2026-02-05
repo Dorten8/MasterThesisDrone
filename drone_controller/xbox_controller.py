@@ -120,7 +120,6 @@ def control_loop(mav, target_system):
         roll = apply_expo(roll)
         pitch = apply_expo(pitch)
         yaw = apply_expo(yaw)
-        throttle = apply_expo(throttle)
         
         # --- 7. Send MANUAL_CONTROL to PX4 ---
         send_manual_control(mav, target_system, roll, pitch, throttle, yaw)
