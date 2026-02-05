@@ -13,6 +13,9 @@ JS_DEVICE = "/dev/input/js0"  # Xbox controller input device
 SERIAL_PORT = "/dev/ttyAMA0"  # Pi to FC connection
 BAUD_RATE = 921600            # PX4 default baud rate for ROS2, used here also for Mavlink for simplicity
 
+THROTTLE_RATE = 400  # Max throttle change per second (to prevent sudden spikes)
+EXPO_CURVE = 0.3    # Exponential curve factor for stick sensitivity (0 = linear, 1 = full expo)
+
 # Axis mappings (check with 'jstest /dev/input/js0' if unsure)
 AX_ROLL = 2    # right stick horizontal (left = -1000, right = +1000)
 AX_PITCH = 3   # right stick vertical (forward = -1000, back = +1000)
@@ -21,7 +24,6 @@ AX_THROTTLE = 1  # left stick vertical (forward = -1000, back = +1000)
 
 # Button mappings (check with jstest if unsure)
 BTN_ARM_DISARM = 3   # Y button (square on PS4)
-BTN_THROTTLE_ENABLE = 5  # RB - Right Bumper (must be held to allow throttle increase)
 BTN_EMERGENCY_DISARM = 2  # X button (hard emergency disarm)
 
 # Message rate
@@ -63,9 +65,11 @@ def control_loop(mav, target_system):
     
     last_arm_state = False  # Track previous arm button state to detect edge (press)
     last_send_time = time.time()
+    current_throttle = 0  # Starting with throttle at 0 for safety
     
     while True:
         loop_start = time.time()
+        
         
         # --- 1. Read joystick state (thread-safe) ---
         axes = joystick_state.get_axes()
@@ -91,35 +95,34 @@ def control_loop(mav, target_system):
         roll = axes[AX_ROLL]
         pitch = axes[AX_PITCH]
         yaw = axes[AX_YAW]
-        throttle_raw = axes[AX_THROTTLE]
+        throttle_input = axes[AX_THROTTLE]
         
-        # --- 5. Apply throttle safety ---
-        # Throttle safety: ONLY increase throttle if RB (right bumper) is held
-        # If RB is NOT held, force throttle to 0 (idle)
-        # This prevents accidental throttle spikes if you bump the stick
-        throttle_enable = buttons[BTN_THROTTLE_ENABLE]
-        
-        if not throttle_enable:
-            # RB not held: force throttle to 0 (idle/safe)
-            throttle = 0
-        else:
-            # RB held: map throttle from [-1000..1000] to [0..1000]
-            # The trigger on Xbox goes from -1000 (unpressed) to +1000 (fully pressed)
-            # We want: -1000 or 0 (unpressed) -> 0 (idle)
-            #          +1000 (pressed) -> 1000 (full power)
-            throttle = max(0, int((throttle_raw + 1000) / 2000 * 1000))
-        
+        #Throttle smoothing (PX4 spring loaded throttle will return to hold alltitude at 0)
+        #stick centered = no throttle change
+        throttle_change_per_sec = (throttle_input / 1000.0) * THROTTLE_RATE
+        throttle_change_this_loop = throttle_change_per_sec * SEND_INTERVAL_S
+        current_throttle += throttle_change_this_loop
+        current_throttle = max(0, min(1000, current_throttle))
+        throttle = int(current_throttle)
+  
         # --- 6. Clamp all values to valid range [-1000..1000] for safety ---
-        def clamp(v):
+        def apply_expo(v, expo=EXPO_CURVE):
             return max(-1000, min(1000, int(v)))
+            #QCG-style exponential curve
+            abs_v = abs(v)
+            sign = 1 if v > 0 else -1
+            expo_v = sign * (abs_v ** (1 + expo*3)) / (1000 ** expo) 
+            return max(-1000, min(1000, int(expo_v)))       
+        roll = apply_expo(roll)
+        pitch = apply_expo(pitch)
+        yaw = apply_expo(yaw)
+        throttle = apply_expo(throttle)
         
-        roll = clamp(roll)
-        pitch = clamp(pitch)
-        yaw = clamp(yaw)
-        throttle = clamp(throttle)
+      
         
         # --- 7. Send MANUAL_CONTROL to PX4 ---
         send_manual_control(mav, target_system, roll, pitch, throttle, yaw)
+        
         
         # --- 8. Print status (optional, every 10 cycles = 0.5 sec) ---
         if int(time.time() * 10) % 10 == 0:
