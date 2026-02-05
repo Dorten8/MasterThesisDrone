@@ -48,7 +48,6 @@ def control_loop(mav, target_system):
     1. Read current joystick state (thread-safe)
     2. Check button states to determine arming and throttle safety
     3. Convert axis values to MAVLink MANUAL_CONTROL command
-    4. Apply throttle safety: only allow positive throttle if RB is held
     5. Send the command to PX4
     6. Sleep exactly 50ms, then repeat
     
@@ -69,7 +68,6 @@ def control_loop(mav, target_system):
     
     while True:
         loop_start = time.time()
-        
         
         # --- 1. Read joystick state (thread-safe) ---
         axes = joystick_state.get_axes()
@@ -105,20 +103,18 @@ def control_loop(mav, target_system):
         current_throttle = max(0, min(1000, current_throttle))
         throttle = int(current_throttle)
   
-        # --- 6. Clamp all values to valid range [-1000..1000] for safety ---
+        # Expo curve (standard QCG-style_)
         def apply_expo(v, expo=EXPO_CURVE):
-            return max(-1000, min(1000, int(v)))
             #QCG-style exponential curve
             abs_v = abs(v)
             sign = 1 if v > 0 else -1
             expo_v = sign * (abs_v ** (1 + expo*3)) / (1000 ** expo) 
             return max(-1000, min(1000, int(expo_v)))       
+    
         roll = apply_expo(roll)
         pitch = apply_expo(pitch)
         yaw = apply_expo(yaw)
         throttle = apply_expo(throttle)
-        
-      
         
         # --- 7. Send MANUAL_CONTROL to PX4 ---
         send_manual_control(mav, target_system, roll, pitch, throttle, yaw)
@@ -127,9 +123,8 @@ def control_loop(mav, target_system):
         # --- 8. Print status (optional, every 10 cycles = 0.5 sec) ---
         if int(time.time() * 10) % 10 == 0:
             armed_str = "ARMED" if flight_state.get_armed() else "DISARMED"
-            thr_enable_str = "ON" if throttle_enable else "OFF"
-            print(f"[{armed_str}] R={roll:5d} P={pitch:5d} Y={yaw:5d} THR={throttle:4d} (enable={thr_enable_str})")
-        
+            print(f"[{armed_str}] R={roll:5d} P={pitch:5d} Y={yaw:5d} THR={throttle:4d}")
+
         # --- 9. Maintain 20 Hz rate ---
         # Sleep until the next 50ms boundary
         elapsed = time.time() - loop_start
@@ -137,11 +132,9 @@ def control_loop(mav, target_system):
         if sleep_time > 0:
             time.sleep(sleep_time)
 
-
 # ============================================================================
 # MAIN ENTRY POINT
 # ============================================================================
-
 def main():
     """
     Main entry point:
@@ -171,8 +164,8 @@ def main():
     # --- Wait for heartbeat ---
     print("[INIT] Waiting for heartbeat from flight controller...")
     if not mav.wait_heartbeat(timeout=10):
-        print("[ERROR] No heartbeat received! Is the FC powered and connected?")
-        sys.exit(1)
+        armed_str = "ARMED" if flight_state.get_armed() else "DISARMED"
+        print(f"[{armed_str}] R={roll:5d} P={pitch:5d} Y={yaw:5d} THR={throttle:4d}")
     
     print(f"[OK]   Heartbeat received!")
     print(f"       System ID: {mav.target_system}, Component ID: {mav.target_component}")
@@ -196,7 +189,6 @@ def main():
         time.sleep(0.5)
         mav.close()
         print("[OK] Closed.")
-
 
 if __name__ == "__main__":
     main()
