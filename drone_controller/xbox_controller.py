@@ -14,10 +14,10 @@ SERIAL_PORT = "/dev/ttyAMA0"  # Pi to FC connection
 BAUD_RATE = 921600            # PX4 default baud rate for ROS2, used here also for Mavlink for simplicity
 
 # Axis mappings (check with 'jstest /dev/input/js0' if unsure)
-AX_ROLL = 0    # Left stick horizontal (left = -1000, right = +1000)
-AX_PITCH = 1   # Left stick vertical (forward = -1000, back = +1000)
-AX_YAW = 3     # Right stick horizontal (left = -1000, right = +1000)
-AX_THROTTLE = 4  # Right trigger (not pressed = -1000, fully pressed = +1000)
+AX_ROLL = 2    # right stick horizontal (left = -1000, right = +1000)
+AX_PITCH = 3   # right stick vertical (forward = -1000, back = +1000)
+AX_YAW = 0     # left stick horizontal (left = -1000, right = +1000)
+AX_THROTTLE = 1  # left stick vertical (forward = -1000, back = +1000)
 
 # Button mappings (check with jstest if unsure)
 BTN_ARM_DISARM = 3   # Y button (square on PS4)
