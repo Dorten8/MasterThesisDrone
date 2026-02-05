@@ -23,7 +23,7 @@ AX_YAW = 0     # left stick horizontal (left = -1000, right = +1000)
 AX_THROTTLE = 1  # left stick vertical (forward = -1000, back = +1000)
 
 # Button mappings (check with jstest if unsure)
-BTN_ARM_DISARM = 3   # Y button (square on PS4)
+BTN_ARM_DISARM = 0   # A button
 BTN_EMERGENCY_DISARM = 2  # X button (hard emergency disarm)
 
 # Message rate
@@ -63,31 +63,37 @@ def control_loop(mav, target_system):
     print()
     
     last_arm_state = False  # Track previous arm button state to detect edge (press)
-    last_send_time = time.time()
+    arm_button_press_time = None
     current_throttle = 0  # Starting with throttle at 0 for safety
     
     while True:
         loop_start = time.time()
         
-        # --- 1. Read joystick state (thread-safe) ---
+# --- 1. Read joystick state (thread-safe) ---
         axes = joystick_state.get_axes()
         buttons = joystick_state.get_buttons()
         
-        # --- 2. Check arm/disarm button (Y) ---
-        # Only trigger on press edge (button transitions from 0 to 1)
-        arm_btn = buttons[BTN_ARM_DISARM]
-        if arm_btn and not last_arm_state:
-            # Button just pressed
-            new_armed = not flight_state.get_armed()
-            flight_state.set_armed(new_armed)
-            arm_disarm(mav, target_system, new_armed)
-        last_arm_state = arm_btn
+        # --- 2. Arm/disarm logic ---
+        arm_btn = buttons[0]  # A button
         
-        # --- 3. Check emergency disarm button (X) ---
-        if buttons[BTN_EMERGENCY_DISARM]:
-            flight_state.set_armed(False)
-            print("[EMERGENCY] DISARM pressed!")
-            arm_disarm(mav, target_system, False)
+        if arm_btn:
+            if arm_button_press_time is None:
+                arm_button_press_time = time.time()  # Start counting
+            elif time.time() - arm_button_press_time >= 3.0:
+                if not flight_state.get_armed():
+                    arm_disarm(mav, target_system, True)
+                    flight_state.set_armed(True)
+                    print("[ARMED] (held A 3 seconds)")
+                arm_button_press_time = None  # Reset after arm
+        else:
+            arm_button_press_time = None  # Reset when A released
+        
+        # --- 3. Disarm any button (A/B/X/Y = buttons 0,1,2,3) ---
+        if any(buttons[i] for i in [1, 2, 3]):
+            if flight_state.get_armed():
+                arm_disarm(mav, target_system, False)
+                flight_state.set_armed(False)
+                print("[DISARMED]")
         
         # --- 4. Extract raw axis values ---
         roll = axes[AX_ROLL]
@@ -108,7 +114,7 @@ def control_loop(mav, target_system):
             #QCG-style exponential curve
             abs_v = abs(v)
             sign = 1 if v > 0 else -1
-            expo_v = sign * (abs_v ** (1 + expo*3)) / (1000 ** expo) 
+            expo_v = sign * (abs_v ** (1 + expo*3)) / (1000 ** (expo*3)) 
             return max(-1000, min(1000, int(expo_v)))       
     
         roll = apply_expo(roll)
