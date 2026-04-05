@@ -1,0 +1,6 @@
+{
+  "laptop_ip": "192.168.x.x",
+  "drone_ip": "192.168.x.x",
+  "mavlink_port": 14550,
+  "baud_rate": 921600
+}

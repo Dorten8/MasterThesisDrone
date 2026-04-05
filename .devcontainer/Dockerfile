@@ -9,27 +9,43 @@ RUN apt-get update && apt-get install -y openssh-client && rm -rf /var/lib/apt/l
 # Delete user if it exists in container (e.g Ubuntu Noble: ubuntu)
 RUN if id -u $USER_UID ; then userdel `id -un $USER_UID` ; fi
 
-# 
-
 # Create the user
 RUN groupadd --gid $USER_GID $USERNAME \
     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
     # Add the user to the dialout group to access serial devices
     && usermod -a -G dialout $USERNAME \
-    #
-    # [Optional] Add sudo support. Omit if you don't need to install software after connecting.
-    && apt-get update \
     && apt-get install -y sudo \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
-# update/upgrade user packages
-RUN apt-get update && apt-get upgrade -y
-# install pip for python3
-RUN apt-get install -y python3-pip
-# install joystick debugging tools
-RUN apt-get install -y joystick
-# set bash as default shell
-ENV SHELL /bin/bash
+
+RUN apt-get update && apt-get install -y \
+    sudo \
+    python3-pip \
+    joystick \
+    ninja-build \
+    pkg-config \
+    gcc \
+    g++ \
+    libsystemd-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install meson
+# 3. Build MAVLink Router (The Fix)
+# We must COPY the code from your Pi into the build environment
+# 1. Copy the folder from your Pi into a TEMPORARY spot inside the build
+COPY mavlink-router ./mavlink-router_tmp
+
+# 2. Build it, install the tool to /usr/bin, then wipe the temp folder
+RUN cd ./mavlink-router_tmp && \
+    ln -sf /usr/local/bin/meson /usr/bin/meson && \
+    rm -rf build && \
+    meson setup build . -Dsystemdsystemunitdir=no && \
+    ninja -C build && \
+    ninja -C build install && \
+    cd .. && \
+    rm -rf ./mavlink-router_tmp
+
+ENV SHELL=/bin/bash
 
 # ********************************************************
 # * Anything else you want to do like clean up goes here *
