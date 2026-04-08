@@ -35,14 +35,18 @@ The following must be configured on the Ubuntu 24.04 host system (not in contain
 apart from well documented settup of the flight controller (FC) a correct middleware settup is crucial. This middlaware is used for communication of the FC and either a companion computer (mounted on the drone) or ground control station (GCS). [PX4 is developed with asynchronous publish/subscribe uORB messaging in mind, which well translates to topics on ROS2 with uXRCE-DDS protocol. For control via Mavlink (for example to issue lower level commands such as throttle, pitch, yaw and roll) the FC has to have these parameters settup:](https://docs.px4.io/main/en/companion_computer/pixhawk_rpi)
 ```bash
 # Mavlink setup
-MAV_1_CONFIG = TELEM2
+MAV_0_CONFIG = TELEM2
+MAV_1_CONFIG = 0 (Disabled)
 UXRCE_DDS_CFG = 0 (Disabled)
-SER_TEL2_BAUD = 57600
+SER_TEL2_BAUD = 57600  # Standard MAVLink baud rate
+                       # NOTE: Using 921600 for simplicity when planning to
+                       # switch to ROS2 later (avoids baud rate reconfiguration)
 
 # ROS2 uXRCE-DDS setup
+MAV_0_CONFIG = TELEM2  # Can keep MAV_0 enabled for simultaneous MAVLink telemetry
 MAV_1_CONFIG = 0 (Disabled)
 UXRCE_DDS_CFG = 102 (TELEM2)
-SER_TEL2_BAUD = 921600
+SER_TEL2_BAUD = 921600  # Required for ROS2 DDS bridge
 ```
 
 ## Pi5 host OS(UBUNTU 24.04 used in this case)

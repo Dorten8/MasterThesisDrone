@@ -29,7 +29,8 @@ RUN apt-get update && apt-get install -y \
     libsystemd-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install meson
+# Install Python dependencies for drone controller
+RUN pip3 install meson pymavlink pyserial
 # 3. Build MAVLink Router (The Fix)
 # We must COPY the code from your Pi into the build environment
 # 1. Copy the folder from your Pi into a TEMPORARY spot inside the build

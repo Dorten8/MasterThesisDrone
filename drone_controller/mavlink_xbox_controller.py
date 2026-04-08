@@ -28,7 +28,7 @@ from pymavlink import mavutil
 # ============================================================================
 
 JS_DEVICE = "/dev/input/js0"  # Xbox controller input device
-SERIAL_PORT = "/dev/serial0"  # Pi to FC connection
+SERIAL_PORT = "/dev/ttyAMA0"  # Pi to FC connection (UART)
 BAUD_RATE = 921600            # INAV/PX4 default baud rate
 
 # Axis mappings (check with 'jstest /dev/input/js0' if unsure)
