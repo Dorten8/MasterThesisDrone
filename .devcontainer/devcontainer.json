@@ -55,6 +55,6 @@
        //Input devices for joystick (game controller)
        "source=/dev/input,target=/dev/input,type=bind"
     ],
-"postCreateCommand": "sudo rosdep update && sudo rosdep install --from-paths src --ignore-src -y && sudo chown -R $(whoami) /home/ws/",
+ "postCreateCommand": "bash -lc 'set -e; source /opt/ros/humble/setup.bash; rosdep update; if [ -d /home/ws/src ]; then sudo rosdep install --from-paths /home/ws/src --ignore-src -r -y; fi; sudo chown -R $(whoami) /home/ws/'",
 "postStartCommand": "echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc"
 }

@@ -138,6 +138,9 @@ ls -l /dev/ttyAMA* #(the actual hardware UART on Pi5)
 
 
 ## Setup Instructions in Docker container
+The UART configuration below is done on the **Raspberry Pi host OS**, not inside the container:
+- UART is exposed by the host Linux kernel, and `/boot/firmware/config.txt` is a host boot-time file, so container changes cannot configure hardware UART.
+- Practical implication: editing this from inside Docker will not persist hardware boot configuration for the Pi.
 ```bash
 sudo nano /boot/firmware/config.txt
 ### add this line at the end (if not present)
@@ -205,6 +208,33 @@ ssh -T git@github.com
 # Check Git configuration
 git status
 ```
+
+### 5. Getting Started (Docker) for `mocap_px4_bridge`
+
+Inside the container, use this repository as ROS 2 workspace root (`/home/ws`), and place ROS packages in `/home/ws/src`:
+
+```bash
+cd /home/ws/src
+
+git clone https://github.com/SaxionMechatronics/mocap.git
+git clone https://github.com/SaxionMechatronics/mocap_px4_bridge.git
+git clone https://github.com/PX4/px4_msgs.git
+
+cd /home/ws
+source /opt/ros/humble/setup.bash
+rosdep update
+# `rosdep init` is already handled in the Docker image; `rosdep update` should run as the current user to keep cache files in that user's home.
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+source /home/ws/install/setup.bash
+
+ros2 launch mocap_px4_bridge run.launch.py
+```
+
+Notes:
+- This adapts the upstream `mocap_px4_bridge` Getting Started flow to this Docker workspace layout.
+- Keep all ROS 2 packages in `/home/ws/src` so `rosdep` and `colcon` can resolve and build correctly.
+- Clone/build inside the container terminal so dependency resolution and builds run against the ROS 2 Humble Docker environment, not the host OS.
 
 ## Development Workflow
 
