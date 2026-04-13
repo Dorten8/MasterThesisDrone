@@ -139,6 +139,7 @@ ls -l /dev/ttyAMA* #(the actual hardware UART on Pi5)
 
 ## Setup Instructions in Docker container
 The UART configuration below is done on the **Pi host OS**, not inside the container:
+- UART is exposed by the host Linux kernel, and `/boot/firmware/config.txt` is a host boot-time file, so container changes cannot configure hardware UART.
 ```bash
 sudo nano /boot/firmware/config.txt
 ### add this line at the end (if not present)
@@ -213,7 +214,6 @@ Inside the container, use this repository as ROS 2 workspace root (`/home/ws`), 
 
 ```bash
 cd /home/ws
-mkdir -p src
 cd src
 
 git clone https://github.com/SaxionMechatronics/mocap.git
