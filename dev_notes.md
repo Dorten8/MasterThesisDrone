@@ -1,6 +1,8 @@
 # MAC addresses:
 eth0 (Ethernet): 88:a2:9e:65:43:b4
+
 wlan0 (WiFi): 88:a2:9e:65:43:b5
+
 docker0 (Docker bridge): 36:b5:a7:3c:10:02
 
 ## SSHFS

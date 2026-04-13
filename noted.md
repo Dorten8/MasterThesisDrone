@@ -1,0 +1,13 @@
+[General]
+   TcpServerPort=5760
+   ReportStats=false
+   MavlinkDialect=common
+
+[UartEndpoint serial0]
+   Device=/dev/ttyAMA0
+   Baud=921600
+
+[UdpEndpoint local]
+   Mode=eavesdropping
+   Address=192.168.74.9
+   Port=14550
