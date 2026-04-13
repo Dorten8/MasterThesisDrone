@@ -214,8 +214,7 @@ git status
 Inside the container, use this repository as ROS 2 workspace root (`/home/ws`), and place ROS packages in `/home/ws/src`:
 
 ```bash
-cd /home/ws
-cd src
+cd /home/ws/src
 
 git clone https://github.com/SaxionMechatronics/mocap.git
 git clone https://github.com/SaxionMechatronics/mocap_px4_bridge.git
