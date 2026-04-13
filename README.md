@@ -140,6 +140,7 @@ ls -l /dev/ttyAMA* #(the actual hardware UART on Pi5)
 ## Setup Instructions in Docker container
 The UART configuration below is done on the **Pi host OS**, not inside the container:
 - UART is exposed by the host Linux kernel, and `/boot/firmware/config.txt` is a host boot-time file, so container changes cannot configure hardware UART.
+- Practical implication: editing this from inside Docker will not persist hardware boot configuration for the Pi.
 ```bash
 sudo nano /boot/firmware/config.txt
 ### add this line at the end (if not present)
