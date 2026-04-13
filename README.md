@@ -223,7 +223,7 @@ git clone https://github.com/PX4/px4_msgs.git
 cd /home/ws
 source /opt/ros/humble/setup.bash
 rosdep update
-# `rosdep init` is already handled in the Docker image, so update runs as the current user.
+# `rosdep init` is already handled in the Docker image; `rosdep update` should run as the current user to keep cache files in that user's home.
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source /home/ws/install/setup.bash
