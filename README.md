@@ -233,6 +233,7 @@ ros2 launch mocap_px4_bridge run.launch.py
 Notes:
 - This adapts the upstream `mocap_px4_bridge` Getting Started flow to this Docker workspace layout.
 - Keep all ROS 2 packages in `/home/ws/src` so `rosdep` and `colcon` can resolve and build correctly.
+- Clone/build inside the container terminal so dependency resolution and builds run against the ROS 2 Humble Docker environment, not the host OS.
 
 ## Development Workflow
 
