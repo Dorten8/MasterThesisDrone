@@ -20,6 +20,7 @@ RUN groupadd --gid $USER_GID $USERNAME \
 
 RUN apt-get update && apt-get install -y \
     sudo \
+    git \
     python3-pip \
     python3-colcon-common-extensions \
     python3-rosdep \
@@ -30,6 +31,11 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     libsystemd-dev \
+    libxml2-dev \
+    # needed for mocap-px4-bridge
+    libboost-dev \
+    libboost-system-dev \
+    libboost-thread-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies for drone controller
@@ -37,6 +43,8 @@ RUN pip3 install meson pymavlink pyserial
 
 # Ensure rosdep is initialized in the image (safe if already initialized)
 RUN rosdep init || true
+
+
 # 3. Build MAVLink Router (The Fix)
 # We must COPY the code from your Pi into the build environment
 # 1. Copy the folder from your Pi into a TEMPORARY spot inside the build
