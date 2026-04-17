@@ -25,11 +25,14 @@ RUN apt-get update && apt-get install -y \
     python3-colcon-common-extensions \
     python3-rosdep \
     python3-vcstool \
+    ros-humble-micro-ros-msgs \
     joystick \
     ninja-build \
     pkg-config \
     gcc \
     g++ \
+    lsof \
+    psmisc \
     libsystemd-dev \
     libxml2-dev \
     # needed for mocap-px4-bridge
