@@ -357,3 +357,71 @@ The packages are automatically cloned and built as part of the normal colcon wor
 cd /home/ws
 colcon build --symlink-install
 ```
+
+# RVIZ simple start
+### Goal
+Show a visible object in **RViz on the laptop** that is **published from the Pi** over ROS 2 (Humble) using the simplest reliable setup: **static TF + Marker**.
+
+Assumptions:
+- Pi IP: `192.168.74.5`
+- Laptop and Pi are on the same Wi‑Fi.
+- Both use `ROS_DOMAIN_ID=0` and `rmw_fastrtps_cpp`.
+
+---
+## Pi (inside the devcontainer)
+
+### Terminal A — publish TF (`map -> base_link`)
+```bash
+source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+
+ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map base_link
+```
+
+### Terminal B — publish a red cube marker on `/visualization_marker`
+```bash
+source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+
+ros2 topic pub -r 5 /visualization_marker visualization_msgs/msg/Marker "{
+  header: {frame_id: 'map'},
+  ns: 'demo',
+  id: 1,
+  type: 1,
+  action: 0,
+  pose: {position: {x: 1.0, y: 0.0, z: 0.5}, orientation: {w: 1.0}},
+  scale: {x: 0.5, y: 0.5, z: 0.5},
+  color: {r: 1.0, g: 0.0, b: 0.0, a: 1.0}
+}"
+```
+
+Leave both running.
+
+---
+
+## Laptop
+
+### Terminal — set env + start RViz
+(fish shell version)
+```fish
+set -x ROS_DOMAIN_ID 0
+set -x ROS_LOCALHOST_ONLY 0
+set -x RMW_IMPLEMENTATION rmw_fastrtps_cpp
+bash -lc 'source /opt/ros/humble/setup.bash && rviz2'
+```
+
+### RViz steps
+1. Set **Fixed Frame** = `map`
+2. **Add** → **Marker**
+3. Set **Topic** = `/visualization_marker`
+
+You should see the red cube.
+
+(Optional quick check from laptop terminal)
+```fish
+bash -lc 'source /opt/ros/humble/setup.bash && ros2 topic echo /visualization_marker --once'
+```

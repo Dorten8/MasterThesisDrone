@@ -1,0 +1,21 @@
+{
+  "laptop_ip": "192.168.74.9",
+  "pi_ip": "192.168.74.5",
+  "optitrack_server_ip": "192.168.74.2",
+  "optitrack": {
+    "command_port": 1510,
+    "data_port": 1511,
+    "multicast_group": "239.255.42.99"
+  },
+  "tracked_bodies": [
+    { "name": "drone", "streaming_id": 3, "role": "primary" },
+    { "name": "obstacle_no_01", "streaming_id": null, "role": "obstacle" },
+    { "name": "obstacle_no_02", "streaming_id": null, "role": "obstacle" },
+    { "name": "obstacle_no_03", "streaming_id": null, "role": "obstacle" },
+    { "name": "obstacle_no_04", "streaming_id": null, "role": "obstacle" },
+    { "name": "obstacle_no_05", "streaming_id": null, "role": "obstacle" },
+    { "name": "drone_cage", "streaming_id": null, "role": "reference" }
+  ],
+  "mavlink_port": 14550,
+  "baud_rate": 921600
+}

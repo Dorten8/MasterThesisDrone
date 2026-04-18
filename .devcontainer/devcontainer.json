@@ -35,7 +35,8 @@
         "DISPLAY": "unix:0",
         "ROS_LOCALHOST_ONLY": "0",
         "ROS_DOMAIN_ID": "0",
-        "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp"
+        "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
+        "SSOT_CONFIG_PATH": "/home/ws/config"
     },
     "runArgs": [
         "--net=host",

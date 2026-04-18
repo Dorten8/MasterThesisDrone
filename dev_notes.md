@@ -1,21 +1,31 @@
-# MAC addresses:
+# Networking:
+## Finding out
+#### local IP (Linux)
+hostname -I
+#### network discovery (Linux)
+sudo nmap -sn 192.168.74.0/23
+
+## MAC Adresses
+### Pi5 drone
 eth0 (Ethernet): 88:a2:9e:65:43:b4
-
 wlan0 (WiFi): 88:a2:9e:65:43:b5
-
 docker0 (Docker bridge): 36:b5:a7:3c:10:02
 
-## SSHFS
+### Optitrack Windows PC server
+Wifi 70:CD:0D:B1:67:C3
+
+### Ubuntu Laptop
+wifi c8:94:02:5b:f0:d9
+
+# SSHFS
 ~/pi_drone_sshfs
 
 ### Make sure the target folder exists first
 mkdir -p ~/pi_drone_sshfs
-
 ### Connect the Pi's workspace to your laptop
 sshfs dorten@dorten-pi5drone.local:/home/dorten/ws ~/pi_drone_sshfs -o auto_cache,reconnect,follow_symlinks
 ### unmount
 umount ~/pi_drone_sshfs
-
 ### The -u is unmount, -z is 'lazy' (cleans up the mess even if busy)
 fusermount -u -z ~/pi_drone_sshfs
 
