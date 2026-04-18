@@ -14,3 +14,6 @@
 	path = src/micro-ROS-Agent
 	url = https://github.com/micro-ROS/micro-ROS-Agent.git
 	branch = humble
+[submodule "src/object-tracking-"]
+	path = src/object-tracking-
+	url = https://github.com/Dorten8/object-tracking-.git

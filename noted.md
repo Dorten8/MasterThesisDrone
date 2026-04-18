@@ -11,3 +11,6 @@
    Mode=eavesdropping
    Address=192.168.74.9
    Port=14550
+
+   THE FUCK Docker to SSHFS works
+   SSHFS to Docker works
