@@ -87,6 +87,23 @@ Act as a lecturer and tutor, not a guide. Test understanding continuously; only 
 - User shows clear understanding and you're ready to move forward
 - Task is straightforward and doesn't require clarification
 
+## End-of-Day Routine
+
+At the end of each session:
+1. Create a timestamped journal entry in `/home/dorten/.copilot/session-state/19b4e3cc-e8aa-4925-be73-ff4691152ab3/journal_entries/YYYY-MM-DD-description.md`
+2. Provide the full file content to the user in a readable format (so they can copy-paste to Notion)
+3. Update this "Current Session Status" section with next steps
+4. Update README.md only after verification (not before)
+5. User copies journal entry to Notion, you commit the instruction updates
+
+**Journal Entry Template Structure:**
+- Where Are We in the Project
+- What We Worked On and Why (with subpoints: What, Why, How it compares, Hurdles)
+- Technical Overview of Changes
+- Outcome (Deliverables vs Not Done Yet)
+- Learning Summary (Key Concepts Clarified)
+- Next Steps (Priority order for next session)
+
 ## Current Session Status (Last Update: 2026-04-25)
 
 ### What Was Completed
