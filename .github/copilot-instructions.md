@@ -86,3 +86,27 @@ Act as a lecturer and tutor, not a guide. Test understanding continuously; only 
 - User explicitly asks to "start", "go", "implement", "do it"
 - User shows clear understanding and you're ready to move forward
 - Task is straightforward and doesn't require clarification
+
+## Current Session Status (Last Update: 2026-04-25)
+
+### What Was Completed
+- PX4-Autopilot added as submodule (v1.14+, 409 MB with nested submodules)
+- Micro XRCE-DDS Agent v2.4.3 integrated into Dockerfile build
+- Python ROS2 dependencies added (empy, pyros-genmsg, setuptools)
+- Docker setup ready for rebuild
+
+### Next Steps (Priority Order)
+1. **Rebuild Docker container** — Verify Micro XRCE-DDS Agent builds without errors
+2. **Test PX4-Autopilot** — Run `make px4_sitl` to validate simulator build
+3. **Integration test** — Run Agent connected to Autopilot simulator
+4. **Topic validation** — Verify ROS2 topics are publishing with `ros2 topic list`
+5. **Update README** — Document how to use new components once verified
+
+### Known Blockers
+- None currently; all code builds and is committed
+
+### Architecture Notes
+- Both submodules (Autopilot, Agent) are versioned together in git
+- Agent is built and installed system-wide during Docker image creation
+- Autopilot is cloned for reference and simulator testing only (no installation to image)
+- Next phase involves serial connection to physical drone on Pi (`/dev/ttyAMA0` at 921600 baud)
