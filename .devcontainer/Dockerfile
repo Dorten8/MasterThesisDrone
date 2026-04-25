@@ -21,6 +21,7 @@ RUN groupadd --gid $USER_GID $USERNAME \
 RUN apt-get update && apt-get install -y \
     sudo \
     git \
+    # For Python dependencies of the drone controller
     python3-pip \
     python3-colcon-common-extensions \
     python3-rosdep \
@@ -43,6 +44,8 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies for drone controller
 RUN pip3 install meson pymavlink pyserial
+# Python dependencies for ROS2 packages ros2 msg generator and Python build tools (https://docs.px4.io/main/en/ros2/user_guide )
+RUN pip3 install empy==3.3.4 pyros-genmsg setuptools
 
 # Ensure rosdep is initialized in the image (safe if already initialized)
 RUN rosdep init || true
@@ -62,6 +65,17 @@ RUN cd ./mavlink-router_tmp && \
     ninja -C build install && \
     cd .. && \
     rm -rf ./mavlink-router_tmp
+# Build Micro XRCE-DDS Agent (C++ code, so we need to build it in the container)
+COPY src/Micro-XRCE-DDS-Agent ./microxrce-agent-src
+WORKDIR ./microxrce-agent-src
+RUN mkdir build && \
+    cd build && \
+    cmake .. && \
+    make && \
+    make install && \
+    ldconfig /usr/local/lib/ && \
+    cd / && \
+    rm -rf ./microxrce-agent-src
 
 ENV SHELL=/bin/bash
 

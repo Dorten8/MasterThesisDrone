@@ -17,3 +17,6 @@
 [submodule "src/object-tracking-"]
 	path = src/object-tracking-
 	url = https://github.com/Dorten8/object-tracking-.git
+[submodule "src/PX4-Autopilot"]
+	path = src/PX4-Autopilot
+	url = https://github.com/PX4/PX4-Autopilot.git

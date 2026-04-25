@@ -17,6 +17,15 @@ Wifi 70:CD:0D:B1:67:C3
 ### Ubuntu Laptop
 wifi c8:94:02:5b:f0:d9
 
+# ROS2
+### Pc settup
+run this
+```bash
+bash -lc 'source /opt/ros/humble/setup.bash && rviz2'
+# or
+rviz2b
+```
+
 # SSHFS
 ~/pi_drone_sshfs
 
@@ -140,3 +149,29 @@ The daemon is not running
 /fmu/out/vehicle_odometry
 /fmu/out/vehicle_status_v1
 /fmu/out/vtol_vehicle_status
+
+### PX4-Autopilot
+
+#### Regular run
+```bash
+bash /home/ws/src/PX4-Autopilot/Tools/setup/ubuntu.sh
+cd /home/ws/src/PX4-Autopilot/
+make px4_sitl
+```
+
+#### Option: Add to post-create.sh (if needed for Docker build)
+```bash
+bash -lc '
+  source /opt/ros/humble/setup.bash
+  cd /home/ws
+  rosdep update
+  rosdep install --from-paths /home/ws/src --ignore-src -r -y
+  sudo chown -R $(whoami) /home/ws/
+  colcon build --symlink-install
+  pip install -e /home/ws/src/object-tracking-
+  bash /home/ws/src/PX4-Autopilot/Tools/setup/ubuntu.sh
+  cd /home/ws/src/PX4-Autopilot/
+  make px4_sitl
+'
+```
+
