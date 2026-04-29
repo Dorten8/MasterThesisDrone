@@ -11,6 +11,7 @@ bash -lc '
   sudo chown -R $(whoami) /home/ws/
   colcon build --symlink-install
   pip install -e /home/ws/src/object-tracking-
+  /home/ws/src/PX4-Autopilot/Tools/setup/ubuntu.sh
 '
 
 echo "✅ Workspace ready! (.devcontainer/post-create.sh executed)"
