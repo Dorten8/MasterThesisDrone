@@ -40,6 +40,8 @@ RUN apt-get update && apt-get install -y \
     libboost-dev \
     libboost-system-dev \
     libboost-thread-dev \
+    # for PX4-Autopilot gazebo install
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies for drone controller
