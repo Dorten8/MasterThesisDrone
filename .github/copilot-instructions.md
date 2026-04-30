@@ -4,11 +4,6 @@
 
 ### ROS 2 workspace (this repo as `/home/ws`)
 ```bash
-cd /home/ws
-source /opt/ros/humble/setup.bash
-rosdep update
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
 source /home/ws/install/setup.bash
 ```
 

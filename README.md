@@ -209,6 +209,43 @@ ssh -T git@github.com
 git status
 ```
 
+### 4.1 Verify PX4 <-> ROS 2 XRCE-DDS Link (SITL)
+
+These checks confirm PX4 SITL can publish to ROS 2 and accept commands back.
+
+#### A) PX4 -> ROS 2 (read path)
+```bash
+source /opt/ros/humble/setup.bash
+source /home/ws/install/setup.bash
+
+ros2 topic list | grep -E '^/fmu/|^/rt/fmu/'
+ros2 interface show px4_msgs/msg/VehicleStatus
+ros2 topic hz /fmu/out/vehicle_status
+ros2 topic echo /fmu/out/vehicle_status
+```
+
+#### B) ROS 2 -> PX4 (write path)
+```bash
+source /opt/ros/humble/setup.bash
+source /home/ws/install/setup.bash
+
+ros2 topic pub /fmu/in/vehicle_command px4_msgs/msg/VehicleCommand "{timestamp: 0, param1: 1.0, param2: 0.0, command: 400, target_system: 1, target_component: 1, source_system: 1, source_component: 1, from_external: true}"
+```
+In the PX4 shell, confirm an ACK arrives:
+```bash
+listener vehicle_command_ack
+```
+Note: If `result: 1` appears, the command was rejected (common when not ready to arm), but the round-trip link still works.
+
+#### C) XRCE status and time sync (sanity)
+```bash
+source /opt/ros/humble/setup.bash
+source /home/ws/install/setup.bash
+
+ros2 topic echo /fmu/out/timesync_status
+ros2 topic hz /fmu/out/sensor_combined
+```
+
 ### 5. Getting Started (Docker) for `mocap_px4_bridge`
 
 Inside the container, use this repository as ROS 2 workspace root (`/home/ws`), and place ROS packages in `/home/ws/src`:
@@ -425,3 +462,18 @@ You should see the red cube.
 ```fish
 bash -lc 'source /opt/ros/humble/setup.bash && ros2 topic echo /visualization_marker --once'
 ```
+
+## Thesis Finish Bootstrap (Draft)
+
+1. Lock the ROS 2 <-> PX4 link (SITL + FC) using the XRCE-DDS checks above.
+2. Bring up the FC in XRCE-DDS mode on TELEM2 at 921600 and confirm `/fmu/out/*` topics.
+3. Ingest OptiTrack mocap and convert ENU/FLU -> NED/FRD once, immediately after read.
+4. Feed the transformed pose into `mocap_px4_bridge` -> `/fmu/in/vehicle_visual_odometry`.
+5. Validate fusion with stationary tests (move up/down, yaw) against `vehicle_odometry` or `vehicle_local_position`.
+6. Run simple ROS 2 commands: takeoff, hover, land.
+7. Run a simple end-to-end test setup from A -> B.
+8. Introduce obstacles.
+9. Design and run tests that collide with the obstacle.
+10. Review data in Foxglove, plot signals, and check hypothesized correlations.
+11. Write the empirical part of the thesis.
+12. Write the remaining thesis sections.

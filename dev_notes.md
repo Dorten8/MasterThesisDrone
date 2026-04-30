@@ -153,10 +153,24 @@ The daemon is not running
 ### PX4-Autopilot
 
 #### Regular run
+keeping it lightweight for docker build
 ```bash
 bash /home/ws/src/PX4-Autopilot/Tools/setup/ubuntu.sh
 cd /home/ws/src/PX4-Autopilot/
 make px4_sitl
+```
+
+#### If `gz_x500` target is missing
+If `make px4_sitl gz_x500` fails with `ninja: error: unknown target 'gz_x500'`, clean and rebuild:
+```bash
+cd /home/ws/src/PX4-Autopilot/
+make distclean
+make px4_sitl gz_x500
+```
+Headless mode (no GUI):
+```bash
+cd /home/ws/src/PX4-Autopilot/
+HEADLESS=1 make px4_sitl gz_x500
 ```
 
 #### Option: Add to post-create.sh (if needed for Docker build)

@@ -12,6 +12,11 @@ bash -lc '
   colcon build --symlink-install
   pip install -e /home/ws/src/object-tracking-
   /home/ws/src/PX4-Autopilot/Tools/setup/ubuntu.sh
+  cd /home/ws/src/PX4-Autopilot/
+  make px4_sitl/
+  source /home/ws/install/setup.bash
 '
+
+
 
 echo "✅ Workspace ready! (.devcontainer/post-create.sh executed)"
