@@ -97,7 +97,8 @@ ros2 daemon stop
 ros2 topic list --no-daemon --include-hidden-topics | grep -E '^/fmu/|^/rt/fmu/'
 ```
 
-The daemon is not running
+```text
+# /fmu/in ROS2 -> PX4
 /fmu/in/actuator_motors
 /fmu/in/actuator_servos
 /fmu/in/arming_check_reply
@@ -125,6 +126,8 @@ The daemon is not running
 /fmu/in/vehicle_thrust_setpoint
 /fmu/in/vehicle_torque_setpoint
 /fmu/in/vehicle_visual_odometry
+
+# /fmu/out PX4 -> ROS2
 /fmu/out/airspeed_validated
 /fmu/out/arming_check_request
 /fmu/out/battery_status
@@ -149,6 +152,7 @@ The daemon is not running
 /fmu/out/vehicle_odometry
 /fmu/out/vehicle_status_v1
 /fmu/out/vtol_vehicle_status
+```
 
 ### PX4-Autopilot
 
@@ -189,3 +193,24 @@ bash -lc '
 '
 ```
 
+#### Checking if serial port is free!
+```bash
+sudo fuser -v /dev/ttyAMA0
+# if it is owned by something, like mavlink-routerd:
+sudo systemctl stop mavlink-routerd
+```
+
+### Running Micro-XRCE-DDS-Agent
+```bash
+MicroXRCEAgent udp4 -p 8888 #runs it on default SITH port
+
+# if connected to the Flight Controller!
+# CFG parameter on the FC needs to be set to the coonected TELEM2 port!
+MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600 
+# find topics:
+ros2 topic list | grep /fmu
+
+### Run in another terminal to check real-time status
+ros2 topic echo /fmu/out/vehicle_status_v1 --qos-reliability best_effort
+
+```

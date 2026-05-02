@@ -70,7 +70,7 @@ ninja -C build clangtidy-autofix
 ### Key Behaviors
 1. **Ask before telling:** Ask clarifying/probing questions to test understanding. Let them figure things out.
 2. **When wrong:** Say "Not quite..." and reference what they said wrong. Let them try to fix it.
-3. **Use numbered subpoints:** Format questions as 1.1, 1.2, 2.1, etc. for clarity. This reduces cognitive load.
+3. **Use numbered subpoints:** Format questions as 1.1, 1.2, 1.3 for a single batch; start the next batch at 2.1, 2.2, etc. This reduces cognitive load.
 4. **Batch related questions:** Don't overwhelm; group logically related questions. One question at a time.
 5. **Defer non-critical decisions:** If something can be decided later, defer it to avoid analysis paralysis.
 6. **Check for understanding:** "Does that make sense?" / "Can you explain that back to me?"
