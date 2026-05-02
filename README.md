@@ -462,6 +462,18 @@ You should see the red cube.
 ```fish
 bash -lc 'source /opt/ros/humble/setup.bash && ros2 topic echo /visualization_marker --once'
 ```
+# Micro-XRCE-DDS Agent
+I needed to re-implment this agent as per the offical guide to PX4 with ROS2
+### Basic work check
+```bash
+MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600 
+#prints topic_created....etc
+
+#in another terminal on the companion computer:
+ros2 topic echo /fmu/out/vehicle_status_v1 --qos-reliability best_effort
+# prints one of the topics -> in real
+
+
 
 ## Thesis Finish Bootstrap (Draft)
 
