@@ -6,7 +6,7 @@
 	url = https://github.com/Dorten8/mocap.git
 [submodule "src/mocap_px4_bridge"]
 	path = src/mocap_px4_bridge
-	url = https://github.com/SaxionMechatronics/mocap_px4_bridge.git
+	url = git@github.com:https://github.com/Dorten8/mocap_px4_bridge
 [submodule "src/px4_msgs"]
 	path = src/px4_msgs
 	url = https://github.com/SaxionMechatronics/px4_msgs.git
