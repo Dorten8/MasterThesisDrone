@@ -26,3 +26,6 @@
 [submodule "src/px4_ros_com"]
 	path = src/px4_ros_com
 	url = https://github.com/PX4/px4_ros_com.git
+[submodule "src/motion_capture_tracking"]
+	path = src/motion_capture_tracking
+	url = https://github.com/Lorite/motion_capture_tracking

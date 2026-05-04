@@ -472,6 +472,64 @@ MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600
 #in another terminal on the companion computer:
 ros2 topic echo /fmu/out/vehicle_status_v1 --qos-reliability best_effort
 # prints one of the topics -> in real
+```
+
+# motion_capture_tracking -> submodule
+this submodule connects Optitrack settup directly with ros2 poses topics
+I used a forked version by Alejandro Moira
+https://github.com/Lorite/motion_capture_tracking
+
+this needs addtional dependency 
+```bash
+sudo apt-get update && sudo apt-get install -y libpcl-dev
+#then run from docker workspace
+colcon build --packages-select motion_capture_tracking
+# alternatively just:
+colcon build # finished with some warnings but works fine
+# source anew from the install folder
+source /home/ws/install/setup.bash
+# run the motion_capture_tracking_node
+ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=192.168.74.9
+#under ros2, run motion capture                               --            type: optitrack    hostname:=the multicasting ip of the optitrack server
+
+#this should automatically publish into ros2 topic /poses, views it in another terminal
+ros2 topic echo /poses 
+# PS dev note -> need to only get only pose of one ID
+# From now on plan:
+# - limit the pose to be taken from the MOCAP to only 1ID
+# - transform the poses via: src/mocap_px4_bridge/src/mocap_px4_bridge.cpp, already prepped, 
+# - publish it to visual odomotetry topic -> PX4 should be already subscribed to it
+      ros2 topic info /fmu/in/vehicle_visual_odometry -v
+      # or
+      ros2 topic info /fmu/in/vehicle_mocap_odometry -v
+      # Type: px4_msgs/msg/VehicleOdometry
+
+      # Publisher count: 0 ### this needs to be 1 
+
+      # Subscription count: 1
+
+      # Node name: px4_micro_xrce_dds
+      # Node namespace: /
+      # Topic type: px4_msgs/msg/VehicleOdometry
+      # Endpoint type: SUBSCRIPTION
+      # GID: 01.0f.0d.fc.51.3a.a6.52.00.00.00.00.00.00.14.04.00.00.00.00.00.00.00.00
+      # QoS profile:
+      # Reliability: BEST_EFFORT
+      # History (Depth): UNKNOWN
+      # Durability: VOLATILE
+      # Lifespan: Infinite
+      # Deadline: Infinite
+      # Liveliness: AUTOMATIC
+      # Liveliness lease duration: Infinite
+# - Make visual odometry SSoT
+# - Make sure Rviz works with these
+# - Make sure simple commands work from ros2 to PX4 -> simple python program
+# - when it is aware of everthing -> implmenet reliable killswitch to turn it off whenever!!!
+# - Make it take off, hover, land
+# - Make it Take off, hover, Fly from A -> B hover, B->A, hover, land
+# - Its ready for experiments!!!!
+
+```
 
 
 
