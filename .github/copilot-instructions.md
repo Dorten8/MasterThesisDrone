@@ -89,7 +89,7 @@ ninja -C build clangtidy-autofix
 At the end of each session:
 1. Create a timestamped journal entry in `/home/dorten/.copilot/session-state/19b4e3cc-e8aa-4925-be73-ff4691152ab3/journal_entries/YYYY-MM-DD-description.md`
 2. **Format as markdown** (`#` for main heading, `##` for sections, `###` for subsections, `-` for bullet lists) so it pastes cleanly into Notion
-3. Provide the file path (user will copy-paste from there)
+3. Provide clickable links for every file path you list in the end-of-day result (journal entry, updated instruction files, and any other referenced files)
 4. Update this "Current Session Status" section with next steps
 5. Update README.md only after verification (not before)
 6. User copies journal entry to Notion, you commit the instruction updates
@@ -104,26 +104,20 @@ At the end of each session:
 - `## Learning Summary` (numbered lists for key concepts)
 - `## Next Steps` (numbered priority list)
 
-## Current Session Status (Last Update: 2026-04-25)
+## Current Session Status (Last Update: 2026-05-06)
 
 ### What Was Completed
-- PX4-Autopilot added as submodule (v1.14+, 409 MB with nested submodules)
-- Micro XRCE-DDS Agent v2.4.3 integrated into Dockerfile build
-- Python ROS2 dependencies added (empy, pyros-genmsg, setuptools)
-- Docker setup ready for rebuild
+- Re-confirmed live updates reaching `/fmu/in/vehicle_visual_odometry` on the Pi from the mocap bridge path.
+- Consolidated next architecture discussion focus: where NED/ENU transform responsibility should live so PX4 can use MoCap as source of truth.
 
 ### Next Steps (Priority Order)
-1. **Rebuild Docker container** — Verify Micro XRCE-DDS Agent builds without errors
-2. **Test PX4-Autopilot** — Run `make px4_sitl` to validate simulator build
-3. **Integration test** — Run Agent connected to Autopilot simulator
-4. **Topic validation** — Verify ROS2 topics are publishing with `ros2 topic list`
-5. **Update README** — Document how to use new components once verified
+1. **Get RViz working from MoCap** — Publish RViz-friendly pose/odometry topic(s) from mocap data for stable visual debugging.
+2. **Make MoCap the drone SSoT (understood and verified)** — Resolve frame semantics and verify exactly how PX4 interprets external vision for takeoff/hover/land command design.
+3. **Develop simple Python control loop** — Extend `offboard_control.py` so test commands can be issued and acknowledgment paths are visible.
 
 ### Known Blockers
-- None currently; all code builds and is committed
+- Limited session time today; frame-semantics decision and RViz republisher implementation are pending.
 
 ### Architecture Notes
-- Both submodules (Autopilot, Agent) are versioned together in git
-- Agent is built and installed system-wide during Docker image creation
-- Autopilot is cloned for reference and simulator testing only (no installation to image)
-- Next phase involves serial connection to physical drone on Pi (`/dev/ttyAMA0` at 921600 baud)
+- `/dev/ttyAMA0` remains single-owner: do not run MicroXRCEAgent and `mavlink-routerd` simultaneously.
+

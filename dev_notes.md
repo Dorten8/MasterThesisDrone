@@ -206,7 +206,10 @@ MicroXRCEAgent udp4 -p 8888 #runs it on default SITH port
 
 # if connected to the Flight Controller!
 # CFG parameter on the FC needs to be set to the coonected TELEM2 port!
-MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600 
+MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600
+# if it does not work reboot the FC!
+
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyAMA0 -b 921600 -v6
 # find topics:
 ros2 topic list | grep /fmu
 
@@ -214,3 +217,27 @@ ros2 topic list | grep /fmu
 ros2 topic echo /fmu/out/vehicle_status_v1 --qos-reliability best_effort
 
 ```
+
+### motion_capture_tracking
+
+
+# How to run shit rn
+2026-05-06
+1. run XRCE-Agent on Pi5 -> should have continous print out
+MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600
+2. Run MOCAP 
+ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=192.168.74.9
+  2.1 Should now have lot of topics in 
+  ros2 topic list
+3. Run MOCAP PX4 Bridge to adjust the XYZ frame
+ros2 run mocap_px4_bridge mocap_px4_bridge --ros-args -p mocap_topic:=/poses -p drone_name:=Puck -p px4_topic:=/fmu/in/vehicle_visual_odometry
+should print out
+[INFO] [1777993919.204392344] [mocap_px4_bridge]: mocap_topic: /poses
+[INFO] [1777993919.204558918] [mocap_px4_bridge]: px4_topic:   /fmu/in/vehicle_visual_odometry
+4. Run Ros2 topic echo to see if is being updated
+ros2 topic echo /fmu/in/vehicle_visual_odometry
+![alt text](image.png)
+  Check the topic
+  ros2 topic info -v /fmu/in/vehicle_mocap_odometry
+
+
