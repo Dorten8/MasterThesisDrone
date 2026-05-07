@@ -48,6 +48,15 @@ ninja -C build clangtidy-autofix
   - UDP endpoint: `192.168.74.9:14550`
 - `drone_controller/` contains Python joystick/manual-control tooling (`pymavlink`, `pyserial`) for direct MAVLink command flow.
 
+## User Profile
+
+**Developer:** Dorten
+- **Terminal Shell:** Fish 🐟 (not Bash)
+- **Dev Machine:** Ubuntu 22.04 on Legion laptop
+- **When providing commands:** Always use Fish syntax (`set -x` for env vars, `fish` script headers)
+- **Pi hostname:** `dorten-pi5drone` (mDNS: `dorten-pi5drone.local`)
+- **Pi network:** 192.168.74.x range (verify with `hostname -I` on Pi)
+
 ## Key repository conventions
 
 - Read `README.md` intro first before making architectural or workflow changes.
@@ -60,6 +69,7 @@ ninja -C build clangtidy-autofix
 - `/dev/ttyAMA0` is single-owner at runtime: do not run `micro_ros_agent` and `mavlink-routerd` against it simultaneously.
 - For PX4↔ROS 2 bridge work, use `src/micro-ROS-Agent` (ROS package). Do not use `src/Micro-XRCE-DDS-Agent` in colcon workflows.
 - Motion-capture topic convention is driven by `mocap_px4_bridge/config/params.yaml`; ensure `mocap_topic` matches the OptiTrack rigid body topic name, and keep PX4 output topic aligned with `/fmu/in/vehicle_visual_odometry` unless intentionally changed.
+- **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
 ## Tutoring Mode: Socratic Learning Style (Default)
 
@@ -104,20 +114,26 @@ At the end of each session:
 - `## Learning Summary` (numbered lists for key concepts)
 - `## Next Steps` (numbered priority list)
 
-## Current Session Status (Last Update: 2026-05-06)
+## Current Session Status (Last Update: 2026-05-07)
 
 ### What Was Completed
-- Re-confirmed live updates reaching `/fmu/in/vehicle_visual_odometry` on the Pi from the mocap bridge path.
-- Consolidated next architecture discussion focus: where NED/ENU transform responsibility should live so PX4 can use MoCap as source of truth.
+- Built complete RViz visualization pipeline: `drone_odometry.rviz` config + `launch_rviz_laptop.sh` for real-time pose monitoring on laptop.
+- Created flight telemetry recording script (`record_flight_bag.sh`) to capture mocap→PX4 chain topics for post-flight analysis.
+- Created multi-process startup helper (`startup-sequence.sh`) for reproducible commissioning.
+- Updated copilot-instructions.md with User Profile (Dorten) and Visualization section (Foxglove on port 8765).
+- Consolidated networking and ROS 2 workflow docs in `dev_notes.md`.
 
 ### Next Steps (Priority Order)
-1. **Get RViz working from MoCap** — Publish RViz-friendly pose/odometry topic(s) from mocap data for stable visual debugging.
-2. **Make MoCap the drone SSoT (understood and verified)** — Resolve frame semantics and verify exactly how PX4 interprets external vision for takeoff/hover/land command design.
-3. **Develop simple Python control loop** — Extend `offboard_control.py` so test commands can be issued and acknowledgment paths are visible.
+1. **Verify RViz on laptop with Pi network** — Connect to Pi ROS 2 topics via SSHFS mount; confirm 30 Hz real-time updates in drone_odometry.rviz.
+2. **Confirm frame semantics (NED/ENU)** — Test with known reference pose; verify PX4 accepts MoCap visual odometry in expected frame.
+3. **Extend offboard_control.py** — Add waypoint loop or hover setpoint; validate command flow end-to-end with logged acknowledgments.
+4. **Test flight recording & replay** — Short manual flight → record bag → replay in RViz with mocap input vs. PX4 estimates side-by-side.
 
 ### Known Blockers
-- Limited session time today; frame-semantics decision and RViz republisher implementation are pending.
+- Frame-semantics design decision still pending (NED vs. ENU transform responsibility).
+- RViz integration test deferred pending next session (requires Pi network access).
 
 ### Architecture Notes
-- `/dev/ttyAMA0` remains single-owner: do not run MicroXRCEAgent and `mavlink-routerd` simultaneously.
+- `/dev/ttyAMA0` remains single-owner: do not run micro-ROS agent and `mavlink-routerd` simultaneously.
+- Visualization stack: RViz on laptop (port 11311 for DDS) + Foxglove on Pi (port 8765 for browser) + flight bag replay for offline analysis.
 
