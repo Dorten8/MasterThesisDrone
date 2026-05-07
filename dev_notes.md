@@ -208,7 +208,7 @@ MicroXRCEAgent udp4 -p 8888 #runs it on default SITH port
 # CFG parameter on the FC needs to be set to the coonected TELEM2 port!
 MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600
 # if it does not work reboot the FC!
-
+#not this one!!!
 ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyAMA0 -b 921600 -v6
 # find topics:
 ros2 topic list | grep /fmu
@@ -239,5 +239,11 @@ ros2 topic echo /fmu/in/vehicle_visual_odometry
 ![alt text](image.png)
   Check the topic
   ros2 topic info -v /fmu/in/vehicle_mocap_odometry
+5. ### Run Foxlove
+```bash
+# on Pi
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml address:=0.0.0.0
+
+# on pc 
 
 
