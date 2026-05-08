@@ -245,5 +245,21 @@ ros2 topic echo /fmu/in/vehicle_visual_odometry
 ros2 launch foxglove_bridge foxglove_bridge_launch.xml address:=0.0.0.0
 
 # on pc 
+foxglove-studio
+```
+6. Run Rviz
+On your Laptop:
+Open a new terminal and set the ROS 2 environment variables, then launch RViz, loading the configuration file from your SSHFS mount:
+```fish
+set -x ROS_DOMAIN_ID 0
+set -x ROS_LOCALHOST_ONLY 0
+set -x RMW_IMPLEMENTATION rmw_fastrtps_cpp
+bash -lc 'source /opt/ros/humble/setup.bash && rviz2 -d ~/pi_drone_sshfs/config/rviz/drone_odometry.rviz'
+```
 
-
+RViz Configuration Steps (within the RViz GUI):
+Set Fixed Frame: In the "Displays" panel on the left, change "Fixed Frame" to `world`.
+Add TF Display: Click "Add" -> "By display type" -> "TF". This will allow you to visualize all coordinate frames, including your drone's.
+Add Odometry Display: Click "Add" -> "By display type" -> "Odometry". Set its "Topic" to `/fmu/out/vehicle_odometry`. This will show PX4's estimated pose.
+Add Pose Display (Optional, for raw mocap): Click "Add" -> "By display type" -> "Pose". Set its "Topic" to `/poses`. This will show the raw pose data from the motion_capture_tracking_node.
+You should now see your drone's representation (the "puck") moving in RViz, along with its coordinate frames and odometry data.

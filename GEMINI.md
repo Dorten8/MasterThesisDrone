@@ -2,7 +2,7 @@
 
 ## 🎯 Core Directive
 This is the central workspace for my Master's Thesis. 
-**Primary Source of Truth:** Always read and prioritize the `README.md` file (specifically the "Intro" section) before suggesting actions or code.
+**Primary Source of Truth:** Always read and prioritize `.github/copilot-instructions.md`. This file in this repo is the most important SSoT for AI initialization.
 
 ## 🔗 Project Ecosystem
 These links represent the different dimensions of the project. Reference them when discussing design, documentation, or research.

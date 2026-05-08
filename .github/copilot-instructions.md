@@ -48,14 +48,24 @@ ninja -C build clangtidy-autofix
   - UDP endpoint: `192.168.74.9:14550`
 - `drone_controller/` contains Python joystick/manual-control tooling (`pymavlink`, `pyserial`) for direct MAVLink command flow.
 
+## Project Ecosystem
+These links represent the different dimensions of the project. Reference them when discussing design, documentation, or research.
+* **Thesis Manuscript (Overleaf):** https://overleaf.com/read/ptfbgvrbbkpq#ba9385
+* **Design & Ideation (Figma):** Master Thesis Board
+* **Research & Notes (Notion):** Thesis Management
+* **Project Data (OneDrive):** Raw Data & Assets
+
 ## User Profile
 
 **Developer:** Dorten
+- **Background:** Architecture, Construction, and Machinery.
 - **Terminal Shell:** Fish 🐟 (not Bash)
 - **Dev Machine:** Ubuntu 22.04 on Legion laptop
-- **When providing commands:** Always use Fish syntax (`set -x` for env vars, `fish` script headers)
+- **Command Explanations:** Provide explanations phonetically/logically. Always use Fish syntax (`set -x` for env vars, `fish` script headers).
 - **Pi hostname:** `dorten-pi5drone` (mDNS: `dorten-pi5drone.local`)
 - **Pi network:** 192.168.74.x range (verify with `hostname -I` on Pi)
+- **Learning Style:** Prefers "nudges" and technical logic over large, unexplained code blocks. Explain the *why* behind the *how*.
+- **Working Memory:** Use clear, specific instructions and maintain a coherent, holistic project view.
 
 ## Key repository conventions
 
@@ -98,11 +108,12 @@ ninja -C build clangtidy-autofix
 
 At the end of each session:
 1. Create a timestamped journal entry in `/home/dorten/.copilot/session-state/19b4e3cc-e8aa-4925-be73-ff4691152ab3/journal_entries/YYYY-MM-DD-description.md`
-2. **Format as markdown** (`#` for main heading, `##` for sections, `###` for subsections, `-` for bullet lists) so it pastes cleanly into Notion
-3. Provide clickable links for every file path you list in the end-of-day result (journal entry, updated instruction files, and any other referenced files)
-4. Update this "Current Session Status" section with next steps
-5. Update README.md only after verification (not before)
-6. User copies journal entry to Notion, you commit the instruction updates
+2. Append the raw chat transcript to `/home/ws/dev_logs/chat_history.md`.
+3. **Format the journal entry as markdown** (`#` for main heading, `##` for sections, `###` for subsections, `-` for bullet lists) so it pastes cleanly into Notion.
+4. Provide clickable links for every file path you list in the end-of-day result (journal entry, updated instruction files, and any other referenced files).
+5. Update this "Current Session Status" section with next steps.
+6. Update README.md only after verification (not before).
+7. User copies the journal entry to Notion, you commit the instruction updates.
 
 **Journal Entry Template Structure:**
 - `# Session Journal: YYYY-MM-DD — Title`
@@ -114,20 +125,21 @@ At the end of each session:
 - `## Learning Summary` (numbered lists for key concepts)
 - `## Next Steps` (numbered priority list)
 
-## Current Session Status (Last Update: 2026-05-07)
+## Current Session Status (Last Update: 2026-05-08)
 
 ### What Was Completed
+- Realigned AI context and Single Source of Truth to point to `.github/copilot-instructions.md`.
 - Built complete RViz visualization pipeline: `drone_odometry.rviz` config + `launch_rviz_laptop.sh` for real-time pose monitoring on laptop.
+- Verified RViz on laptop with Pi network — Successfully connected to Pi ROS 2 topics via SSHFS mount and confirmed real-time updates in RViz, including visualizing the drone's representation.
 - Created flight telemetry recording script (`record_flight_bag.sh`) to capture mocap→PX4 chain topics for post-flight analysis.
 - Created multi-process startup helper (`startup-sequence.sh`) for reproducible commissioning.
 - Updated copilot-instructions.md with User Profile (Dorten) and Visualization section (Foxglove on port 8765).
 - Consolidated networking and ROS 2 workflow docs in `dev_notes.md`.
 
 ### Next Steps (Priority Order)
-1. **Verify RViz on laptop with Pi network** — Connect to Pi ROS 2 topics via SSHFS mount; confirm 30 Hz real-time updates in drone_odometry.rviz.
-2. **Confirm frame semantics (NED/ENU)** — Test with known reference pose; verify PX4 accepts MoCap visual odometry in expected frame.
-3. **Extend offboard_control.py** — Add waypoint loop or hover setpoint; validate command flow end-to-end with logged acknowledgments.
-4. **Test flight recording & replay** — Short manual flight → record bag → replay in RViz with mocap input vs. PX4 estimates side-by-side.
+1. **Confirm frame semantics (NED/ENU)** — Test with known reference pose; verify PX4 accepts MoCap visual odometry in expected frame.
+2. **Extend offboard_control.py** — Add waypoint loop or hover setpoint; validate command flow end-to-end with logged acknowledgments.
+3. **Test flight recording & replay** — Short manual flight → record bag → replay in RViz with mocap input vs. PX4 estimates side-by-side.
 
 ### Known Blockers
 - Frame-semantics design decision still pending (NED vs. ENU transform responsibility).
@@ -136,4 +148,3 @@ At the end of each session:
 ### Architecture Notes
 - `/dev/ttyAMA0` remains single-owner: do not run micro-ROS agent and `mavlink-routerd` simultaneously.
 - Visualization stack: RViz on laptop (port 11311 for DDS) + Foxglove on Pi (port 8765 for browser) + flight bag replay for offline analysis.
-
