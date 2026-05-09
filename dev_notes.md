@@ -230,7 +230,7 @@ ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type
   2.1 Should now have lot of topics in 
   ros2 topic list
 3. Run MOCAP PX4 Bridge to adjust the XYZ frame
-ros2 run mocap_px4_bridge mocap_px4_bridge --ros-args -p mocap_topic:=/poses -p drone_name:=Puck -p px4_topic:=/fmu/in/vehicle_visual_odometry
+ros2 run mocap_px4_bridge mocap_px4_bridge --ros-args -p mocap_topic:=/poses -p drone_name:=Arrow -p px4_topic:=/fmu/in/vehicle_visual_odometry
 should print out
 [INFO] [1777993919.204392344] [mocap_px4_bridge]: mocap_topic: /poses
 [INFO] [1777993919.204558918] [mocap_px4_bridge]: px4_topic:   /fmu/in/vehicle_visual_odometry

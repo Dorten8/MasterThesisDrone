@@ -8,7 +8,7 @@
     "multicast_group": "239.255.42.99"
   },
   "tracked_bodies": [
-    { "name": "drone", "streaming_id": 3, "role": "primary" },
+    { "name": "drone", "streaming_id": 18, "role": "primary" },
     { "name": "obstacle_no_01", "streaming_id": null, "role": "obstacle" },
     { "name": "obstacle_no_02", "streaming_id": null, "role": "obstacle" },
     { "name": "obstacle_no_03", "streaming_id": null, "role": "obstacle" },

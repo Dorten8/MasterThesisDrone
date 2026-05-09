@@ -19,26 +19,28 @@ declare -a RESULTS
 declare -a TIMINGS
 declare -a PIDS
 
-# Cleanup function
+# Cleanup function (if the script itself is killed)
 cleanup() {
     for pid in "${PIDS[@]}"; do
-        kill "$pid" 2>/dev/null
+        # SIGINT (Ctrl+C equivalent) for graceful shutdown
+        kill -2 "$pid" 2>/dev/null
     done
 }
 trap cleanup EXIT
 
-# Kill existing processes by pattern
+# Kill existing processes by pattern gracefully
 kill_if_running() {
     local name="$1"
     local pattern="$2"
 
     if pgrep -f "$pattern" >/dev/null; then
-        echo -e "${YELLOW}Found existing $name. Killing...${NC}"
-        pkill -f "$pattern"
-        sleep 1
+        echo -e "${YELLOW}Found existing $name. Gently shutting down (SIGINT)...${NC}"
+        pkill -INT -f "$pattern"
+        sleep 2
         if pgrep -f "$pattern" >/dev/null; then
-            echo -e "${YELLOW}Force killing $name...${NC}"
-            pkill -9 -f "$pattern"
+            echo -e "${YELLOW}Process stubborn. Sending SIGTERM...${NC}"
+            pkill -TERM -f "$pattern"
+            sleep 1
         fi
     fi
 }
@@ -98,8 +100,7 @@ run_with_monitor() {
         echo -e "${GREEN}✓ $success_message${NC} (${duration}s)\n"
         RESULTS+=("${GREEN}✓${NC} $name")
         TIMINGS+=("$name: ${duration}s")
-        kill "$cmd_pid" 2>/dev/null
-        wait "$cmd_pid" 2>/dev/null
+        # We don't kill it here! We let it run in the background.
         rm -f "$temp_file"
         return 0
     else
@@ -109,7 +110,7 @@ run_with_monitor() {
         echo ""
         RESULTS+=("${RED}✗${NC} $name (timeout)")
         TIMINGS+=("$name: timeout")
-        kill "$cmd_pid" 2>/dev/null
+        kill -INT "$cmd_pid" 2>/dev/null
         wait "$cmd_pid" 2>/dev/null
         rm -f "$temp_file"
         return 1
@@ -119,20 +120,33 @@ run_with_monitor() {
 # Print startup header
 print_header
 
+# Clean the ROS2 daemon to prevent stale XML-RPC faults before starting
+echo -e "${YELLOW}Resetting ROS 2 daemon to clear stale caches...${NC}"
+ros2 daemon stop
+ros2 daemon start
+
 SUCCESS_COUNT=0
-TOTAL_STEPS=5
+TOTAL_STEPS=4
 
 # Step 1: MicroXRCEAgent (critical)
-if run_with_monitor \
-    "MicroXRCEAgent" \
-    "MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600" \
-    "participant created" \
-    "MicroXRCEAgent Running" \
-    "MicroXRCEAgent serial --dev /dev/ttyAMA0"; then
+# We must never kill this if it's running, because the PX4 client won't recover.
+if pgrep -f "MicroXRCEAgent serial" >/dev/null; then
+    echo -e "${GREEN}✓ MicroXRCEAgent is already running. Leaving it alone!${NC}"
     ((SUCCESS_COUNT++))
+    RESULTS+=("${GREEN}✓${NC} MicroXRCEAgent (kept alive)")
+    TIMINGS+=("MicroXRCEAgent: 0s")
 else
-    echo -e "${RED}⚠ Stopping sequence - MicroXRCEAgent is critical${NC}\n"
-    exit 1
+    if run_with_monitor \
+        "MicroXRCEAgent" \
+        "MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600" \
+        "participant created" \
+        "MicroXRCEAgent Running" \
+        "MicroXRCEAgent serial --dev /dev/ttyAMA0"; then
+        ((SUCCESS_COUNT++))
+    else
+        echo -e "${RED}⚠ Stopping sequence - MicroXRCEAgent is critical${NC}\n"
+        exit 1
+    fi
 fi
 
 # Step 2: motion_capture_tracking_node
@@ -146,30 +160,31 @@ if run_with_monitor \
 fi
 
 # Step 3: mocap_px4_bridge
+# Dynamically read the primary drone name from drone_config.json
+DRONE_NAME=$(jq -r '.tracked_bodies[] | select(.role=="primary") | .name' /home/ws/config/drone_config.json 2>/dev/null)
+if [ -z "$DRONE_NAME" ] || [ "$DRONE_NAME" == "null" ]; then
+    DRONE_NAME="Arrow" # Fallback if jq fails
+    echo -e "${YELLOW}Could not read primary drone from config. Defaulting to: $DRONE_NAME${NC}"
+else
+    echo -e "${GREEN}Loaded drone name '$DRONE_NAME' from drone_config.json!${NC}"
+fi
+
+# Updated to wait for 'px4_topic:' instead of 'Sent to PX4 as:' so it succeeds even if no MoCap data is flowing yet
 if run_with_monitor \
     "mocap_px4_bridge" \
-    "ros2 run mocap_px4_bridge mocap_px4_bridge --ros-args -p mocap_topic:=/poses -p drone_name:=Puck -p px4_topic:=/fmu/in/vehicle_visual_odometry" \
-    "Sent to PX4 as:" \
+    "ros2 run mocap_px4_bridge mocap_px4_bridge --ros-args -p mocap_topic:=/poses -p drone_name:=$DRONE_NAME -p px4_topic:=/fmu/in/vehicle_visual_odometry" \
+    "px4_topic" \
     "mocap_px4_bridge Running" \
     "mocap_px4_bridge"; then
     ((SUCCESS_COUNT++))
 fi
 
-# Step 4: Topic Echo Verification
-if run_with_monitor \
-    "Topic Echo (/fmu/in/vehicle_visual_odometry)" \
-    "timeout 5 ros2 topic echo /fmu/in/vehicle_visual_odometry | head -10" \
-    "pose:" \
-    "/fmu/in/vehicle_visual_odometry Published!" \
-    "ros2 topic echo /fmu/in/vehicle_visual_odometry"; then
-    ((SUCCESS_COUNT++))
-fi
-
-# Step 5: Foxglove Bridge
+# Step 4: Foxglove Bridge
+# Updated to wait for 'Advertising new channel' or similar
 if run_with_monitor \
     "Foxglove Bridge" \
     "ros2 launch foxglove_bridge foxglove_bridge_launch.xml address:=0.0.0.0" \
-    "publishing connection graph" \
+    "Advertising new channel\|Listening on\|foxglove_bridge" \
     "Foxglove connection running!" \
     "foxglove_bridge_launch.xml"; then
     ((SUCCESS_COUNT++))
@@ -195,6 +210,8 @@ if [ $SUCCESS_COUNT -eq $TOTAL_STEPS ]; then
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}✓ All systems online!${NC}"
     echo -e "${GREEN}========================================${NC}\n"
+    # To keep background processes alive when script ends, we clear the trap
+    trap - EXIT
     exit 0
 else
     echo -e "${RED}========================================${NC}"

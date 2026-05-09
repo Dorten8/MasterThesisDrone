@@ -166,10 +166,10 @@ def main(args=None) -> None:
     )
 
     def ack_cb(msg: VehicleCommandAck):
-        if msg.command != VehicleCommand.VEHICLE_CMD_CUSTOM_1:
+        if msg.command != VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM:
             return
         node.get_logger().info(
-            f'Ack for CUSTOM_1: result={msg.result} result_param2={msg.result_param2}'
+            f'Ack for DISARM command: result={msg.result} result_param2={msg.result_param2}'
         )
         rclpy.shutdown()
 
@@ -186,7 +186,8 @@ def main(args=None) -> None:
         if sent['done']:
             return
         msg = VehicleCommand()
-        msg.command = VehicleCommand.VEHICLE_CMD_CUSTOM_1  # Test command (ID=1)
+        msg.command = VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM  # Real command to force an Ack
+        msg.param1 = 0.0 # 0.0 means DISARM (100% safe to test)
         msg.target_system = 1
         msg.target_component = 1
         msg.source_system = 1
@@ -194,7 +195,7 @@ def main(args=None) -> None:
         msg.from_external = True
         msg.timestamp = int(node.get_clock().now().nanoseconds / 1000)
         pub.publish(msg)
-        node.get_logger().info('Test command sent (CUSTOM_1)')
+        node.get_logger().info('Test command sent (DISARM)')
         sent['done'] = True
 
     node.create_timer(0.2, send_once)
