@@ -77,8 +77,10 @@ These links represent the different dimensions of the project. Reference them wh
   - `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`
 - Serial link convention across components is `/dev/ttyAMA0` with baud `921600`.
 - `/dev/ttyAMA0` is single-owner at runtime: do not run `micro_ros_agent` and `mavlink-routerd` against it simultaneously.
+- **CRITICAL SERIAL BUG**: Do not kill the `MicroXRCEAgent` once it is connected. Doing so freezes the PX4 Flight Controller client and requires a hardware reboot.
 - For PX4↔ROS 2 bridge work, use `src/micro-ROS-Agent` (ROS package). Do not use `src/Micro-XRCE-DDS-Agent` in colcon workflows.
-- Motion-capture topic convention is driven by `mocap_px4_bridge/config/params.yaml`; ensure `mocap_topic` matches the OptiTrack rigid body topic name, and keep PX4 output topic aligned with `/fmu/in/vehicle_visual_odometry` unless intentionally changed.
+- **Mocap SSoT**: `config/drone_config.json` is the Single Source of Truth for the drone's tracker name (via the "primary" role). The string in this JSON must exactly match the Rigid Body name exported by Motive.
+- **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
 ## Tutoring Mode: Socratic Learning Style (Default)
@@ -107,7 +109,7 @@ These links represent the different dimensions of the project. Reference them wh
 ## End-of-Day Routine
 
 At the end of each session:
-1. Create a timestamped journal entry in `/home/dorten/.copilot/session-state/19b4e3cc-e8aa-4925-be73-ff4691152ab3/journal_entries/YYYY-MM-DD-description.md`
+1. Create a timestamped journal entry in `/home/ws/dev_logs/journal_entries/YYYY-MM-DD-description.md` (This ensures it is saved in the repository, tracked by Git, and accessible to any AI).
 2. Append the raw chat transcript to `/home/ws/dev_logs/chat_history.md`.
 3. **Format the journal entry as markdown** (`#` for main heading, `##` for sections, `###` for subsections, `-` for bullet lists) so it pastes cleanly into Notion.
 4. Provide clickable links for every file path you list in the end-of-day result (journal entry, updated instruction files, and any other referenced files).
@@ -125,26 +127,26 @@ At the end of each session:
 - `## Learning Summary` (numbered lists for key concepts)
 - `## Next Steps` (numbered priority list)
 
-## Current Session Status (Last Update: 2026-05-08)
+## Current Session Status (Last Update: 2026-05-09)
 
 ### What Was Completed
-- Realigned AI context and Single Source of Truth to point to `.github/copilot-instructions.md`.
-- Built complete RViz visualization pipeline: `drone_odometry.rviz` config + `launch_rviz_laptop.sh` for real-time pose monitoring on laptop.
-- Verified RViz on laptop with Pi network — Successfully connected to Pi ROS 2 topics via SSHFS mount and confirmed real-time updates in RViz, including visualizing the drone's representation.
-- Created flight telemetry recording script (`record_flight_bag.sh`) to capture mocap→PX4 chain topics for post-flight analysis.
-- Created multi-process startup helper (`startup-sequence.sh`) for reproducible commissioning.
-- Updated copilot-instructions.md with User Profile (Dorten) and Visualization section (Foxglove on port 8765).
-- Consolidated networking and ROS 2 workflow docs in `dev_notes.md`.
+- Refactored `startup-sequence.sh` and `shutdown-sequence.sh` to use graceful `SIGINT` and reset ROS 2 daemons cleanly.
+- Diagnosed PX4 serial zombie bug: protected `MicroXRCEAgent` from termination to prevent FC lockups.
+- Integrated `jq` into startup sequence to dynamically source tracker names from `drone_config.json`.
+- Mapped NED/ENU frame semantics using surrogate "Arrow"; discovered 90-degree World/Rigid Body rotation mismatch requiring Motive realignment.
+- Extended `offboard_control.py` to send safe `DISARM` commands and successfully verified `VEHICLE_CMD_RESULT_ACCEPTED` acknowledgment from the Flight Controller.
+- Drafted `emergency_kill.py` software killswitch (now proven viable by the command validation).
 
 ### Next Steps (Priority Order)
-1. **Confirm frame semantics (NED/ENU)** — Test with known reference pose; verify PX4 accepts MoCap visual odometry in expected frame.
-2. **Extend offboard_control.py** — Add waypoint loop or hover setpoint; validate command flow end-to-end with logged acknowledgments.
-3. **Test flight recording & replay** — Short manual flight → record bag → replay in RViz with mocap input vs. PX4 estimates side-by-side.
+1. **Motive Re-alignment** — Adjust the Rigid Body pivot point in Motive so the X-axis points perfectly out the physical nose.
+2. **QGroundControl Failsafes** — Configure Data Link Loss to "Land" to enable the software killswitch.
+3. **End-to-End Dry Run** — Run full flight procedure with props off.
+4. **Test flight recording & replay** — Short manual flight → record bag → replay in RViz with mocap input vs. PX4 estimates side-by-side.
 
 ### Known Blockers
-- Frame-semantics design decision still pending (NED vs. ENU transform responsibility).
-- RViz integration test deferred pending next session (requires Pi network access).
+- Motive coordinate frame adjustment required before safe flight.
 
 ### Architecture Notes
 - `/dev/ttyAMA0` remains single-owner: do not run micro-ROS agent and `mavlink-routerd` simultaneously.
 - Visualization stack: RViz on laptop (port 11311 for DDS) + Foxglove on Pi (port 8765 for browser) + flight bag replay for offline analysis.
+- `MicroXRCEAgent` must remain running persistently once connected via serial to avoid PX4 client lockup.

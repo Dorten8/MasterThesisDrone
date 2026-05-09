@@ -1,0 +1,138 @@
+Session Journal: 2026-04-25 — ROS2/PX4 Integration Kickoff
+
+---HEADING: Where Are We in the Project
+
+We're starting Phase 1 of the ROS2-PX4 integration pipeline. The goal is to enable continuous sensor data reading from the drone's IMU via ROS2 topics and establish reliable communication between the flight controller and the companion computer. Today focused on understanding and implementing the foundational architecture from the official PX4 ROS2 documentation.
+
+---HEADING: What We Worked On and Why
+
+---SUBHEADING: 1. PX4-Autopilot Submodule Addition
+
+What: Cloned PX4-Autopilot (v1.14+) as a git submodule into /src/.
+
+Why: The simulator and message definitions are needed to:
+  • Understand the uORB message structure
+  • Test the full ROS2-PX4 pipeline locally before deploying to hardware
+  • Align with official PX4 documentation workflow
+
+How it compares: This is foundational infrastructure. Without it, we can't validate the ROS2↔PX4 bridge before testing on the actual drone.
+
+Hurdle: Initial clone via SSHFS was extremely slow (~200 KiB/s). Switched to devcontainer and used --recursive flag properly (git submodule update --init --recursive), which took ~1 hour but completed successfully.
+
+---SUBHEADING: 2. Micro XRCE-DDS Agent Docker Integration
+
+What: Added Micro XRCE-DDS Agent as a system-wide tool to the Docker image.
+
+Why: This is the middleware that bridges PX4 (client) and ROS2 (via DDS). It's the core communication backbone for the entire pipeline.
+
+Implementation:
+  • Added v2.4.3 as a git submodule (same as PX4-Autopilot approach)
+  • Updated Dockerfile to build and install it as a system tool during image creation
+  • Uses cmake/make build system (standard C++ workflow)
+
+Technical detail: The Dockerfile copies the submodule, builds it in a temp directory, installs binaries to /usr/local/bin, updates the library cache with ldconfig, then cleans up the temp folder to keep image size reasonable.
+
+---SUBHEADING: 3. Python Dependencies for ROS2
+
+What: Added empy==3.3.4, pyros-genmsg, setuptools to pip install.
+
+Why: These are required by the PX4 ROS2 guide for message generation and Python build tools.
+
+Hurdle: Found a typo in the PX4 documentation—it incorrectly listed empty==3.3.4 instead of empy. Created an upstream PR to fix it (learning outcome: contributing to open-source).
+
+---SUBHEADING: 4. Established Tutoring/Learning Workflow
+
+What: Documented a Socratic learning approach in .github/copilot-instructions.md.
+
+Why: User has ADHD and learns better through guided questioning rather than passive instruction. This keeps the sessions productive and prevents analysis paralysis.
+
+Structure:
+  • Ask clarifying questions before giving answers
+  • Use numbered subpoints (1.1, 1.2, etc.) for clarity
+  • Let them figure things out; only guide when asked
+  • Batch related questions logically
+
+---HEADING: Technical Overview of Changes
+
+---SUBHEADING: Dockerfile Changes
+
+Added Python ROS2 dependencies:
+RUN pip3 install empy==3.3.4 pyros-genmsg setuptools
+
+Build Micro XRCE-DDS Agent:
+COPY src/Micro-XRCE-DDS-Agent ./microxrce-agent-src
+WORKDIR ./microxrce-agent-src
+RUN mkdir build && \
+    cd build && \
+    cmake .. && \
+    make && \
+    make install && \
+    ldconfig /usr/local/lib/ && \
+    cd / && \
+    rm -rf ./microxrce-agent-src
+
+---SUBHEADING: Git Changes
+
+  • .gitmodules: Added two submodules (PX4-Autopilot, Micro-XRCE-DDS-Agent)
+  • .gitignore: Added tmp/ folder (for temporary build artifacts)
+  • .github/copilot-instructions.md: Expanded with tutoring guidelines
+
+---SUBHEADING: Documentation
+
+  • dev_notes.md: Added ROS2 installation instructions and PX4-Autopilot setup
+  • Updated noted.md with submodule setup patterns
+
+---HEADING: Outcome
+
+Status: Foundation laid for ROS2-PX4 integration. All code is staged and ready to commit.
+
+Deliverables:
+  ✓ PX4-Autopilot cloned and added as submodule (409 MB, includes nested submodules like NuttX)
+  ✓ Micro XRCE-DDS Agent integration into Docker build
+  ✓ Python dependencies declared
+  ✓ Dockerfile updated and ready to rebuild
+  ✓ Upstream bug fix PR submitted to PX4
+  ✓ Tutoring workflow documented for future sessions
+
+Not Done Yet:
+  ⏳ Docker image rebuild (to test Agent builds correctly)
+  ⏳ PX4 simulator test (make px4_sitl)
+  ⏳ Full ROS2-PX4 integration test
+
+---HEADING: Learning Summary
+
+Key Concepts Clarified:
+
+1. Git flags and build tools:
+  • -b <branch>: Checks out a specific branch
+  • cmake: C++ build configuration (generates Makefiles)
+  • make: Compiles source code to binaries
+  • make install: Places binaries on system paths
+  • ldconfig: Updates library cache so programs can find newly installed libraries
+
+2. Submodules and Docker workflow:
+  • Submodules are git pointers to external repos, not copies
+  • Build folders created during Docker image build don't get committed
+  • Full paths (/home/ws/...) work from anywhere; relative paths only work from their base directory
+
+3. Python package management:
+  • pip install --user installs to user home (~/.local), not system-wide
+  • pip install <package>==<version> pins to exact version
+
+4. Workflow insights:
+  • Clone/download first, verify progress with ps aux | grep git and du -sh, then let it finish
+  • SSHFS is slow; always work inside the devcontainer for large operations
+  • Unstaging files: git restore --staged <file>
+
+---HEADING: Next Steps
+
+For next session:
+
+1. Rebuild Docker container to validate Micro XRCE-DDS Agent builds successfully
+2. Test PX4-Autopilot build (make px4_sitl)
+3. If both succeed, proceed with the ROS2 guide: run the Micro XRCE-DDS Agent and connect to PX4 simulator
+4. Verify topics are publishing correctly with ros2 topic list
+
+Critical path: Agent build validation → Autopilot validation → Full integration test
+
+Known dependencies: Both Autopilot and Agent are now submodules, so they're versioned together in git. Future changes to either should be coordinated.
