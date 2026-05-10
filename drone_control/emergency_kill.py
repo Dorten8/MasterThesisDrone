@@ -6,6 +6,8 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 from px4_msgs.msg import VehicleCommand
 import threading
 import sys
+import tty
+import termios
 
 class EmergencyKillNode(Node):
     def __init__(self):
@@ -22,7 +24,9 @@ class EmergencyKillNode(Node):
             VehicleCommand, '/fmu/in/vehicle_command', qos_profile)
             
         self.get_logger().info('Emergency Kill Node Started!')
-        self.get_logger().warn('*** PRESS ENTER IN THIS TERMINAL AT ANY TIME TO KILL MOTORS AND LAND ***')
+        self.get_logger().warn('*** HOTKEYS ACTIVE ***')
+        self.get_logger().warn('PRESS [ENTER] -> GRACEFUL LAND')
+        self.get_logger().warn('PRESS [SPACE] -> BRUTAL FORCE DISARM (DROP FROM SKY)')
 
     def publish_vehicle_command(self, command, **params):
         msg = VehicleCommand()
@@ -42,19 +46,33 @@ class EmergencyKillNode(Node):
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.vehicle_command_publisher.publish(msg)
 
-    def trigger_kill(self):
-        self.get_logger().error('KILL SWITCH ACTIVATED! SENDING DISARM AND LAND COMMANDS...')
-        # Send disarm command
-        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0)
-        # Send land command just in case
+    def trigger_force_kill(self):
+        self.get_logger().fatal('SPACE PRESSED! BRUTAL FORCE DISARM TRIGGERED!')
+        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0, param2=21196.0)
+
+    def trigger_land(self):
+        self.get_logger().error('ENTER PRESSED! COMMANDING SAFE LANDING...')
         self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
-        self.get_logger().error('COMMANDS SENT.')
+
+def getch():
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(sys.stdin.fileno())
+        ch = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return ch
 
 def input_thread(node):
     while rclpy.ok():
-        # Wait for user to press Enter
-        sys.stdin.readline()
-        node.trigger_kill()
+        ch = getch()
+        if ch == ' ':
+            node.trigger_force_kill()
+        elif ch == '\r' or ch == '\n':
+            node.trigger_land()
+        elif ch == '\x03': # Ctrl+C
+            break
 
 def main(args=None):
     rclpy.init(args=args)
@@ -70,7 +88,8 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

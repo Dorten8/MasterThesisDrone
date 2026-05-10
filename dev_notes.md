@@ -221,45 +221,55 @@ ros2 topic echo /fmu/out/vehicle_status_v1 --qos-reliability best_effort
 ### motion_capture_tracking
 
 
-# How to run shit rn
-2026-05-06
-1. run XRCE-Agent on Pi5 -> should have continous print out
-MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600
-2. Run MOCAP 
-ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=192.168.74.9
-  2.1 Should now have lot of topics in 
-  ros2 topic list
-3. Run MOCAP PX4 Bridge to adjust the XYZ frame
-ros2 run mocap_px4_bridge mocap_px4_bridge --ros-args -p mocap_topic:=/poses -p drone_name:=Arrow -p px4_topic:=/fmu/in/vehicle_visual_odometry
-should print out
-[INFO] [1777993919.204392344] [mocap_px4_bridge]: mocap_topic: /poses
-[INFO] [1777993919.204558918] [mocap_px4_bridge]: px4_topic:   /fmu/in/vehicle_visual_odometry
-4. Run Ros2 topic echo to see if is being updated
-ros2 topic echo /fmu/in/vehicle_visual_odometry
-![alt text](image.png)
-  Check the topic
-  ros2 topic info -v /fmu/in/vehicle_mocap_odometry
-5. ### Run Foxlove
+# How to run (Updated 2026-05-10)
+
+## Automated Startup (Recommended)
+Simply run the startup script which safely handles the Agent, MoCap, Bridge, and Foxglove:
 ```bash
-# on Pi
+./startup-sequence.sh
+```
+*(To shut down gracefully without zombie processes, use `./shutdown-sequence.sh`)*
+
+## Manual Startup (For debugging)
+1. Run XRCE-Agent on Pi5 -> should have continuous print out
+```bash
+MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600
+```
+2. Run MOCAP 
+```bash
+ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=192.168.74.9
+```
+  2.1 You should now see tracking topics in `ros2 topic list`
+
+3. Run MOCAP PX4 Bridge to adjust the XYZ frame
+```bash
+# Note: drone_name must match the OptiTrack topic, e.g., rigid_body_7
+ros2 run mocap_px4_bridge mocap_px4_bridge --ros-args -p mocap_topic:=/poses -p drone_name:=rigid_body_7 -p px4_topic:=/fmu/in/vehicle_visual_odometry
+```
+
+4. Run Ros2 topic echo to see if it is being updated
+```bash
+ros2 topic echo /fmu/in/vehicle_visual_odometry
+```
+  Check the topic metadata:
+```bash
+ros2 topic info -v /fmu/in/vehicle_visual_odometry
+```
+
+5. Run Foxglove
+```bash
+# on Pi (Handled by startup-sequence.sh if using automated method)
 ros2 launch foxglove_bridge foxglove_bridge_launch.xml address:=0.0.0.0
 
 # on pc 
 foxglove-studio
 ```
+
 6. Run Rviz
-On your Laptop:
-Open a new terminal and set the ROS 2 environment variables, then launch RViz, loading the configuration file from your SSHFS mount:
 ```fish
+# on Pi (using Fish Shell)
 set -x ROS_DOMAIN_ID 0
 set -x ROS_LOCALHOST_ONLY 0
 set -x RMW_IMPLEMENTATION rmw_fastrtps_cpp
-bash -lc 'source /opt/ros/humble/setup.bash && rviz2 -d ~/pi_drone_sshfs/config/rviz/drone_odometry.rviz'
+bash -lc 'source /opt/ros/humble/setup.bash && rviz2'
 ```
-
-RViz Configuration Steps (within the RViz GUI):
-Set Fixed Frame: In the "Displays" panel on the left, change "Fixed Frame" to `world`.
-Add TF Display: Click "Add" -> "By display type" -> "TF". This will allow you to visualize all coordinate frames, including your drone's.
-Add Odometry Display: Click "Add" -> "By display type" -> "Odometry". Set its "Topic" to `/fmu/out/vehicle_odometry`. This will show PX4's estimated pose.
-Add Pose Display (Optional, for raw mocap): Click "Add" -> "By display type" -> "Pose". Set its "Topic" to `/poses`. This will show the raw pose data from the motion_capture_tracking_node.
-You should now see your drone's representation (the "puck") moving in RViz, along with its coordinate frames and odometry data.

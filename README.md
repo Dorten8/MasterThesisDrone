@@ -11,7 +11,7 @@ AI -> read newest Master Thesis_bibliography in the root of this repository
 - **Simulator:** Gazebo Classic (requires Ubuntu 22.04 for full compatibility)
 
 - **Hardware:** Raspberry Pi 5 (Ubuntu 24.04 host)
-- **Flight Controller:** Pixhawk 6C
+- **Flight Controller:** Pixhawk 6C (Firmware: PX4 v1.16.1rc)
 - **Power module** Holybro PM02
 - **Optical Flow sensor:** Matek 3901 Optical Flow
 - **ESC** Tekko32 F4 4in1 50A ESC(AM32) 

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-# from build.px4_msgs.rosidl_generator_py.px4_msgs.msg._vehicle_local_position import VehicleLocalPosition
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
@@ -8,19 +7,20 @@ from px4_msgs.msg import (
     OffboardControlMode, 
     TrajectorySetpoint, 
     VehicleCommand,
-    VehicleCommandAck, #ackowledgement for vehicle command
     VehicleLocalPosition, 
     VehicleStatus,
 )
-
+import threading
+import sys
+import tty
+import termios
 
 class OffboardControl(Node):
-    """Node for controlling a vehicle in offboard mode."""
+    """Unified node for controlling a vehicle and handling emergency kills."""
 
     def __init__(self) -> None:
-        super().__init__('offboard_control_takeoff_and_land')
+        super().__init__('offboard_control')
 
-        # Configure QoS profile for publishing and subscribing
         qos_profile = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -28,7 +28,6 @@ class OffboardControl(Node):
             depth=1
         )
 
-        # Create publishers
         self.offboard_control_mode_publisher = self.create_publisher(
             OffboardControlMode, '/fmu/in/offboard_control_mode', qos_profile)
         self.trajectory_setpoint_publisher = self.create_publisher(
@@ -36,74 +35,45 @@ class OffboardControl(Node):
         self.vehicle_command_publisher = self.create_publisher(
             VehicleCommand, '/fmu/in/vehicle_command', qos_profile)
 
-        # Create subscribers
         self.vehicle_local_position_subscriber = self.create_subscription(
             VehicleLocalPosition, '/fmu/out/vehicle_local_position', self.vehicle_local_position_callback, qos_profile)
         self.vehicle_status_subscriber = self.create_subscription(
             VehicleStatus, '/fmu/out/vehicle_status', self.vehicle_status_callback, qos_profile)
 
-        # Initialize variables
-        self.offboard_setpoint_counter = 0
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
-        self.takeoff_height = -5.0
+        
+        self.state = "WAITING_FOR_HOME"
+        self.initial_pos = None
+        self.current_setpoint_z = 0.0
+        self.target_z = 0.0
+        self.offboard_setpoint_counter = 0
+        self.timer_ticks = 0
 
-        # Create a timer to publish control commands
         self.timer = self.create_timer(0.1, self.timer_callback)
 
-    def vehicle_local_position_callback(self, vehicle_local_position):
-        """Callback function for vehicle_local_position topic subscriber."""
-        self.vehicle_local_position = vehicle_local_position
+    def vehicle_local_position_callback(self, msg):
+        self.vehicle_local_position = msg
+        if self.state == "WAITING_FOR_HOME":
+            self.initial_pos = msg
+            self.state = "READY"
+            self.get_logger().info(f"Home position locked. Z={msg.z:.2f}m")
+            self.get_logger().info("Force Disarming to guarantee safety...")
+            self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0, param2=21196.0)
+            
+            # Print unified hotkey instructions
+            print("\n" + "="*50)
+            print("🛫 UNIFIED FLIGHT CONTROLLER ACTIVE 🛫")
+            print("="*50)
+            print(" [ENTER] -> ARM & TAKEOFF to 0.5m")
+            print(" [ L ]   -> GRACEFUL LAND (If in air)")
+            print(" [SPACE] -> BRUTAL FORCE DISARM (Drop from sky)")
+            print("="*50 + "\n")
 
     def vehicle_status_callback(self, vehicle_status):
-        """Callback function for vehicle_status topic subscriber."""
         self.vehicle_status = vehicle_status
 
-    def arm(self):
-        """Send an arm command to the vehicle."""
-        self.publish_vehicle_command(
-            VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0)
-        self.get_logger().info('Arm command sent')
-
-    def disarm(self):
-        """Send a disarm command to the vehicle."""
-        self.publish_vehicle_command(
-            VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0)
-        self.get_logger().info('Disarm command sent')
-
-    def engage_offboard_mode(self):
-        """Switch to offboard mode."""
-        self.publish_vehicle_command(
-            VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
-        self.get_logger().info("Switching to offboard mode")
-
-    def land(self):
-        """Switch to land mode."""
-        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
-        self.get_logger().info("Switching to land mode")
-
-    def publish_offboard_control_heartbeat_signal(self):
-        """Publish the offboard control mode."""
-        msg = OffboardControlMode()
-        msg.position = True
-        msg.velocity = False
-        msg.acceleration = False
-        msg.attitude = False
-        msg.body_rate = False
-        msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
-        self.offboard_control_mode_publisher.publish(msg)
-
-    def publish_position_setpoint(self, x: float, y: float, z: float):
-        """Publish the trajectory setpoint."""
-        msg = TrajectorySetpoint()
-        msg.position = [x, y, z]
-        msg.yaw = 1.57079  # (90 degree)
-        msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
-        self.trajectory_setpoint_publisher.publish(msg)
-        self.get_logger().info(f"Publishing position setpoints {[x, y, z]}")
-
     def publish_vehicle_command(self, command, **params) -> None:
-        """Publish a vehicle command."""
         msg = VehicleCommand()
         msg.command = command
         msg.param1 = params.get("param1", 0.0)
@@ -121,92 +91,113 @@ class OffboardControl(Node):
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.vehicle_command_publisher.publish(msg)
 
+    def arm(self):
+        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0)
+
+    def engage_offboard_mode(self):
+        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
+
+    def publish_offboard_control_heartbeat_signal(self):
+        msg = OffboardControlMode()
+        msg.position = True
+        msg.velocity = False
+        msg.acceleration = False
+        msg.attitude = False
+        msg.body_rate = False
+        msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        self.offboard_control_mode_publisher.publish(msg)
+
+    def publish_position_setpoint(self, x: float, y: float, z: float):
+        msg = TrajectorySetpoint()
+        msg.position = [x, y, z]
+        msg.yaw = 0.0 
+        msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        self.trajectory_setpoint_publisher.publish(msg)
+
     def timer_callback(self) -> None:
-        """Callback function for the timer."""
         self.publish_offboard_control_heartbeat_signal()
 
-        if self.offboard_setpoint_counter == 10:
-            self.engage_offboard_mode()
-            self.arm()
+        if self.state == "WAITING_FOR_HOME":
+            return
 
-        if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
-            self.publish_position_setpoint(0.0, 0.0, self.takeoff_height)
+        if self.state == "READY":
+            # Send current position as setpoint so PX4 doesn't complain when we switch
+            self.publish_position_setpoint(self.initial_pos.x, self.initial_pos.y, self.initial_pos.z)
+            return
 
-        elif self.vehicle_local_position.z <= self.takeoff_height:
-            self.land()
-            exit(0)
+        if self.state == "TAKEOFF":
+            if self.offboard_setpoint_counter == 10:
+                self.engage_offboard_mode()
+                self.arm()
+            
+            if self.offboard_setpoint_counter < 11:
+                self.offboard_setpoint_counter += 1
 
-        if self.offboard_setpoint_counter < 11:
-            self.offboard_setpoint_counter += 1
+            # Smoothly ramp the Z setpoint UP (negative direction in NED)
+            if self.current_setpoint_z > self.target_z:
+                self.current_setpoint_z -= 0.02
+                
+            # Print a live altimeter to the screen every 0.5 seconds
+            if self.timer_ticks % 5 == 0:
+                current_height = abs(self.vehicle_local_position.z - self.initial_pos.z)
+                self.get_logger().info(f"Live Height: {current_height:.2f}m / 0.50m Target")
+                
+            self.publish_position_setpoint(self.initial_pos.x, self.initial_pos.y, self.current_setpoint_z)
+            self.timer_ticks += 1
 
+# --- Keyboard Input Handling ---
+def getch():
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(sys.stdin.fileno())
+        ch = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return ch
 
-# def main(args=None) -> None:
-#     print('Starting offboard control node...')
-#     rclpy.init(args=args)
-#     offboard_control = OffboardControl()
-#     rclpy.spin(offboard_control)
-#     offboard_control.destroy_node()
-#     rclpy.shutdown()
+def input_thread(node):
+    while rclpy.ok():
+        ch = getch()
+        if ch == ' ':
+            node.get_logger().fatal("SPACE PRESSED! BRUTAL FORCE DISARM TRIGGERED!")
+            node.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0, param2=21196.0)
+            
+        elif ch == '\r' or ch == '\n':
+            if node.state == "READY":
+                node.get_logger().warn("ENTER PRESSED! Initiating Offboard and Arming...")
+                node.state = "TAKEOFF"
+                node.current_setpoint_z = node.initial_pos.z
+                node.target_z = node.initial_pos.z - 0.5 
+            elif node.state == "TAKEOFF":
+                node.get_logger().error("ENTER PRESSED AGAIN! COMMANDING SAFE LANDING...")
+                node.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+                
+        elif ch == 'l' or ch == 'L':
+            node.get_logger().error("L PRESSED! COMMANDING SAFE LANDING...")
+            node.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+            
+        elif ch == '\x03': # Ctrl+C
+            node.get_logger().error("Ctrl+C detected! COMMANDING SAFE LANDING...")
+            node.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+            break
 
 def main(args=None) -> None:
-    print('Starting vehicle command test node...')
     rclpy.init(args=args)
-
-    node = rclpy.create_node('vehicle_command_test')
-
-    qos_profile = QoSProfile(
-        reliability=ReliabilityPolicy.BEST_EFFORT,
-        durability=DurabilityPolicy.TRANSIENT_LOCAL,
-        history=HistoryPolicy.KEEP_LAST,
-        depth=1,
-    )
-
-    pub = node.create_publisher(
-        VehicleCommand, '/fmu/in/vehicle_command', qos_profile
-    )
-
-    def ack_cb(msg: VehicleCommandAck):
-        if msg.command != VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM:
-            return
-        node.get_logger().info(
-            f'Ack for DISARM command: result={msg.result} result_param2={msg.result_param2}'
-        )
-        rclpy.shutdown()
-
-    node.create_subscription(
-        VehicleCommandAck,
-        '/fmu/out/vehicle_command_ack',
-        ack_cb,
-        qos_profile,
-    )
-
-    sent = {'done': False}
-
-    def send_once():
-        if sent['done']:
-            return
-        msg = VehicleCommand()
-        msg.command = VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM  # Real command to force an Ack
-        msg.param1 = 0.0 # 0.0 means DISARM (100% safe to test)
-        msg.target_system = 1
-        msg.target_component = 1
-        msg.source_system = 1
-        msg.source_component = 1
-        msg.from_external = True
-        msg.timestamp = int(node.get_clock().now().nanoseconds / 1000)
-        pub.publish(msg)
-        node.get_logger().info('Test command sent (DISARM)')
-        sent['done'] = True
-
-    node.create_timer(0.2, send_once)
-
-    rclpy.spin(node)
+    node = OffboardControl()
+    
+    # Start the keyboard listener in a separate thread
+    thread = threading.Thread(target=input_thread, args=(node,), daemon=True)
+    thread.start()
+    
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+        
     node.destroy_node()
     if rclpy.ok():
         rclpy.shutdown()
 
 if __name__ == '__main__':
-    try:
-        main()
-    except Exception as e:
-        print(e)
+    main()

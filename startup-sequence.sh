@@ -161,9 +161,9 @@ fi
 
 # Step 3: mocap_px4_bridge
 # Dynamically read the primary drone name from drone_config.json
-DRONE_NAME=$(jq -r '.tracked_bodies[] | select(.role=="primary") | .name' /home/ws/config/drone_config.json 2>/dev/null)
-if [ -z "$DRONE_NAME" ] || [ "$DRONE_NAME" == "null" ]; then
-    DRONE_NAME="Arrow" # Fallback if jq fails
+DRONE_NAME=$(python3 -c "import json; print(next((item['name'] for item in json.load(open('/home/ws/config/drone_config.json'))['tracked_bodies'] if item['role'] == 'primary'), ''))" 2>/dev/null)
+if [ -z "$DRONE_NAME" ]; then
+    DRONE_NAME="Arrow" # Fallback if python parsing fails
     echo -e "${YELLOW}Could not read primary drone from config. Defaulting to: $DRONE_NAME${NC}"
 else
     echo -e "${GREEN}Loaded drone name '$DRONE_NAME' from drone_config.json!${NC}"

@@ -42,6 +42,7 @@ ninja -C build clangtidy-autofix
   1. `mocap` (OptiTrack client + filtering) publishes ROS 2 pose topics.
   2. `mocap_px4_bridge` converts mocap pose into PX4 `VehicleOdometry` and publishes to `/fmu/in/vehicle_visual_odometry`.
   3. PX4 consumes this over uXRCE-DDS.
+- **CRITICAL OFFBOARD RULE:** When creating or adjusting any offboard control node (like `offboard_control.py`), **ALWAYS** use the code from the official `px4_ros_com` examples as the foundation. This ensures we use the proper official methodology for setpoints and mode switching.
 - `mocap_px4_bridge/launch/run.launch.py` starts both `mocap` (OptiTrack launch) and the bridge node; topic wiring is parameterized in `mocap_px4_bridge/config/params.yaml`.
 - MAVLink control/telemetry is handled separately through `mavlink-routerd` using `config/mavlink-router/main.conf`:
   - UART endpoint: `/dev/ttyAMA0` at `921600`
