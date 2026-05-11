@@ -128,26 +128,26 @@ At the end of each session:
 - `## Learning Summary` (numbered lists for key concepts)
 - `## Next Steps` (numbered priority list)
 
-## Current Session Status (Last Update: 2026-05-09)
+### Current Session Status (Last Update: 2026-05-11)
 
 ### What Was Completed
-- Refactored `startup-sequence.sh` and `shutdown-sequence.sh` to use graceful `SIGINT` and reset ROS 2 daemons cleanly.
-- Diagnosed PX4 serial zombie bug: protected `MicroXRCEAgent` from termination to prevent FC lockups.
-- Integrated `jq` into startup sequence to dynamically source tracker names from `drone_config.json`.
-- Mapped NED/ENU frame semantics using surrogate "Arrow"; discovered 90-degree World/Rigid Body rotation mismatch requiring Motive realignment.
-- Extended `offboard_control.py` to send safe `DISARM` commands and successfully verified `VEHICLE_CMD_RESULT_ACCEPTED` acknowledgment from the Flight Controller.
-- Drafted `emergency_kill.py` software killswitch (now proven viable by the command validation).
+- **Infrastructure Overhaul:** Created `dev_logs/` as a central data/documentation hub.
+- **Recording Upgrade:** Migrated `record_flight_bag.sh` to MCAP format and standardized default output to `dev_logs/flights/`.
+- **Diagnostic Roadmap:** Established `dev_logs/flying_bottlenecks.md` to track hypotheses for the uncontrolled climb anomaly.
+- **Hardware Maintenance:** Re-printed and replaced a broken motor mount on the frame.
+- **SD Card Migration:** Prepared a new 32GB SD card for PX4 and imported legacy logs to the Pi for analysis.
 
 ### Next Steps (Priority Order)
-1. **Motive Re-alignment** — Adjust the Rigid Body pivot point in Motive so the X-axis points perfectly out the physical nose.
-2. **QGroundControl Failsafes** — Configure Data Link Loss to "Land" to enable the software killswitch.
-3. **End-to-End Dry Run** — Run full flight procedure with props off.
-4. **Test flight recording & replay** — Short manual flight → record bag → replay in RViz with mocap input vs. PX4 estimates side-by-side.
+1. **Logging Fix:** Set `SDLOG_MODE=1` in PX4 to ensure internal `.ulg` logs are captured from boot.
+2. **Clock Sync:** Create and run `sync_time.sh` to align Pi and Mocap timestamps.
+3. **Log Matching:** Use coordinate-based comparison to match today's bags with the correct PX4 log session.
+4. **Hover Benchmark:** Execute the simplified 1m hover test (`drone_control/hover_benchmark.py`) to isolate software/sensor issues.
 
 ### Known Blockers
-- Motive coordinate frame adjustment required before safe flight.
+- **Missing Internal Logs:** Today's flights were not recorded internally by PX4; diagnostics currently rely solely on ROS 2 bags.
+- **Timestamp Drift:** Significant offset between Pi, Mocap, and PX4 clocks complicates data alignment.
 
 ### Architecture Notes
 - `/dev/ttyAMA0` remains single-owner: do not run micro-ROS agent and `mavlink-routerd` simultaneously.
-- Visualization stack: RViz on laptop (port 11311 for DDS) + Foxglove on Pi (port 8765 for browser) + flight bag replay for offline analysis.
+- Unified Hotkeys: Spacebar instantly drops the drone; Enter commands a safe landing.
 - `MicroXRCEAgent` must remain running persistently once connected via serial to avoid PX4 client lockup.
