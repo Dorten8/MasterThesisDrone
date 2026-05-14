@@ -131,24 +131,22 @@ At the end of each session:
 ### Current Session Status (Last Update: 2026-05-14)
 
 ### What Was Completed
-- **Infrastructure Overhaul:** Created `dev_logs/` as a central data/documentation hub.
-- **Recording Upgrade:** Migrated `record_flight_bag.sh` to MCAP format and standardized default output to `dev_logs/flights/`.
-- **Diagnostic Roadmap:** Established `dev_logs/flying_bottlenecks.md` to track hypotheses for the uncontrolled climb anomaly.
-- **Hardware Maintenance:** Re-printed and replaced a broken motor mount on the frame.
-- **SD Card Migration:** Prepared a new 32GB SD card for PX4 and imported legacy logs to the Pi for analysis.
-- **Network Stability:** Disabled Wi-Fi power management to ensure reliable headless boots.
+- **Latency Measurement:** Quantified 60ms system latency via Jerk Test and set `EKF2_EV_DELAY`.
+- **Arming Stabilization:** Resolved RC-less arming blocks by fixing QoS mismatches and identifying the "Source ID 255" requirement.
+- **Trajectory Safety:** Implemented `NaN` setpoint injection to prevent trajectory generator crashes.
+- **Operational Protocol:** Created `start_xrce_agent.sh` using `screen` to prevent "Ghost Connections" and allow real-time debugging.
+- **Architecture Blueprint:** Documented the final PX4 parameter set for indoor autonomous flight in `flying_bottlenecks.md`.
 
 ### Next Steps (Priority Order)
-1. **Logging Fix:** Set `SDLOG_MODE=1` in PX4 to ensure internal `.ulg` logs are captured from boot.
-2. **Clock Sync:** Create and run `sync_time.sh` to align Pi and Mocap timestamps.
-3. **Log Matching:** Use coordinate-based comparison to match today's bags with the correct PX4 log session.
-4. **Hover Benchmark:** Execute the simplified 1m hover test (`drone_control/hover_benchmark.py`) to isolate software/sensor issues.
+1. **Validation Hover:** Execute the simplified 1m hover test (`drone_control/offboard_control.py`) to verify EKF2 stability in the air.
+2. **ULog Analysis:** Use the now-persistent SD card logs to verify that `EKF2_HGT_REF=3` (Vision) has resolved the climb anomaly.
+3. **Mocap Noise Audit:** Check if higher `EKF2_EV_DELAY` values affect the "burstiness" of the position estimate during hover.
 
 ### Known Blockers
-- **Missing Internal Logs:** Today's flights were not recorded internally by PX4; diagnostics currently rely solely on ROS 2 bags.
-- **Timestamp Drift:** Significant offset between Pi, Mocap, and PX4 clocks complicates data alignment.
+- **Burstiness:** Mocap-to-PX4 bridge exhibits bursty transmission patterns (20% of gaps > 33ms); may require bridge timer optimization if hover is unstable.
 
 ### Architecture Notes
 - `/dev/ttyAMA0` remains single-owner: do not run micro-ROS agent and `mavlink-routerd` simultaneously.
-- Unified Hotkeys: Spacebar instantly drops the drone; Enter commands a safe landing.
-- `MicroXRCEAgent` must remain running persistently once connected via serial to avoid PX4 client lockup.
+- Use **Source ID 255** for all companion-to-PX4 MAVLink commands.
+- **Unused setpoint fields must be NaN.**
+- `MicroXRCEAgent` should be run in a screen session (`screen -r xrce_agent`) to allow persistent link management.

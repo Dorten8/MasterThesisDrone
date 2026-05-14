@@ -11,3 +11,11 @@
 ## 2026-05-14 Chat Session
 **User**: Reported issues with Wi-Fi power management causing connectivity drops on the Pi unless a monitor is attached. Provided instructions for installing `iw` and permanently disabling power save in NetworkManager.
 **AI**: Created journal entry `2026-05-14-network-stability-fix.md` and updated session status to record the permanent fix (`wifi.powersave = 2`).
+
+## Session: 2026-05-14 (Mocap Stabilization)
+- Resolved QoS mismatch for position messages.
+- Discovered "Source ID 255" requirement for arming.
+- Measured 60ms EKF2_EV_DELAY via Jerk Test.
+- Implemented NaN setpoint safety for trajectory generation.
+- Created screen-based XRCE agent protocol.
+- Full technical breakdown in: [dev_logs/journal_entries/2026-05-14-mocap-pipeline-stabilization.md](file:///home/dorten/pi_drone_sshfs/dev_logs/journal_entries/2026-05-14-mocap-pipeline-stabilization.md)
