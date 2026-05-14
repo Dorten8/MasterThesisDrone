@@ -40,6 +40,9 @@ The drone exhibits a stable initial climb (0.5m -> 1.0m) at a gentle rate. Howev
 
 ## 📊 Diagnostic Analysis — Session 2026-05-11
 
+<details>
+<summary>Click to view May 11 analysis (Climb Anomaly Discovery)</summary>
+
 > **All numbers below are real extracted values from binary bag data — not estimates.**
 > Analysis was performed on [flight_20260511_082944](file:///home/dorten/pi_drone_sshfs/dev_logs/flights/flight_20260511_082944/) on 2026-05-12.
 
@@ -239,3 +242,179 @@ The **1.3505m offset at t=0** (drone stationary on the ground, `metadata.yaml` d
 - [record_flight_bag.sh](file:///home/dorten/pi_drone_sshfs/dev_logs/record_flight_bag.sh): The recording script (now lives here).
 - [flights/](file:///home/dorten/pi_drone_sshfs/dev_logs/flights/): Folder containing all raw bag data.
 - [offboard_control.py](file:///home/dorten/pi_drone_sshfs/drone_control/offboard_control.py): The main control logic being tested.
+- [analyze_jerk_test.py](file:///home/dorten/pi_drone_sshfs/dev_logs/analyze_jerk_test.py): Post-processing script for jerk test bags and ULogs.
+
+</details>
+
+---
+
+## 📊 Diagnostic Analysis — Session 2026-05-14 (Jerk Test & Infrastructure Fixes)
+
+> **Source files:** [`flight_20260514_150702_0.mcap`](file:///home/dorten/pi_drone_sshfs/dev_logs/flights/flight_20260514_150702/) (57.3s) and ULog [`14_50_00.ulg`](file:///home/dorten/pi_drone_sshfs/dev_logs/flights/px4_sd_logs/2026-05-14/14_50_00.ulg) (1131s / 18.9min).
+> All values extracted by `analyze_deep_dissect.py` — no estimates.
+
+### 🔬 Hard Evidence Table
+
+| Metric | Raw Value | Source Field | Target | Result |
+|---|---|---|---|---|
+| Pi wall clock (bag `log_time`) | `2026-05-14 15:07:03 UTC` | `log_time_ns` | Correct date | ✅ |
+| PX4 internal `timestamp` | `2026-05-14 15:07:03 UTC` | `vehicle_odometry.timestamp` | Correct date | ✅ SYNCED |
+| **Pi ↔ PX4 drift** | **16 ms** | `timestamp` − `log_time_ns` | < 100 ms | ✅ Excellent |
+| Bridge internal delta (mean) | **0.9 ms** | `timestamp` − `timestamp_sample` | < 5 ms | ✅ |
+| Bridge internal delta (max) | **7.6 ms** | `timestamp` − `timestamp_sample` | < 20 ms | ✅ |
+| Mocap raw rate (mean) | **53.8 Hz** | `/poses` inter-message gaps | > 30 Hz | ✅ |
+| **Max raw Mocap gap** | **284.7 ms** | `/poses` max gap | < 33 ms | ⚠️ Dropout |
+| VVO mean rate to PX4 | **66.3 Hz** | `/fmu/in/vehicle_visual_odometry` | ≥ 50 Hz | ✅ |
+| **VVO median gap** | **8.6 ms** | inter-message gap | — | ℹ️ Bursty (see below) |
+| **VVO gaps > 33ms** | **761 / 3795 (20%)** | gap distribution | 0 | ⚠️ Bursty bridge |
+| **VVO max gap** | **59 ms** | max single gap | < 33 ms | ⚠️ |
+| **EV Fusion (Active Phase)** | **100%** | `cs_ev_pos`, `cs_ev_hgt` | > 90% | ✅ FULL FUSION |
+| EV Fusion (Full ULog Mean) | **65%** | `cs_ev_pos` mean | — | ℹ️ Binary 0/100% |
+| Jerk delay (Jerk #2) | **40.4 ms** | IMU vs Mocap peak delta | Measure only | 📐 EKF2_EV_DELAY |
+| ULog file header date | `1970-01-01` | `start_timestamp` | 2026 date | ❌ Boot-before-sync |
+
+---
+
+### H1: Odometry Source Switching — ✅ RESOLVED
+
+**Fix applied:** `EKF2_HGT_REF` → `3` (Vision).
+
+**Evidence from ULog `14_50_00.ulg` (window-by-window dissection):**
+
+```
+  Window (s)    EV Pos%   EV Hgt%   Interpretation
+  ---------------------------------------------------
+     0–300s       0%        0%      🔴 EKF2 not receiving Mocap — startup
+    300–310s      15%       15%     🟡 Mocap connecting
+    310–1110s    100%      100%     ✅ FULL FUSION — Mocap fully trusted
+   1110–1140s     0%        0%      🔴 Mocap disconnected (end of session)
+```
+
+> [!IMPORTANT]
+> **The "65% average" was misleading.** The EKF2 was never partially fusing — it was **binary**: either 0% (no Mocap) or 100% (full Mocap). The mean of 65% is a mathematical artifact of 5 minutes without Mocap at the start of an 18-minute session.
+>
+> **What actually happened in the first 5 minutes at 0% fusion:**
+> The ULog starts at power-on. The `startup-sequence.sh` takes ~2–3 minutes to initialize. The Mocap node then needs to connect to the OptiTrack server and begin streaming. Until that connection is established, there is literally nothing for the EKF2 to fuse — hence 0%.
+>
+> **After t=310s: 100% fusion for 13 continuous minutes.** This is the real result. The EKF2 is accepting every Mocap packet when the pipeline is healthy. There is NO evidence of delay-based rejection during normal operation.
+
+**Implication for the delay hypothesis:** My earlier claim that "delay causes 35% rejection" was **incorrect**. The data shows 100% fusion when Mocap is connected. The EKF2_EV_DELAY parameter may still need tuning for accuracy during fast motion, but it is NOT causing packet rejection under normal conditions.
+
+---
+
+### H2: Mocap Dropout & Watchdog — ✅ RESOLVED (with caveat)
+
+**Evidence — 5-second window breakdown (Bag):**
+
+```
+  Window    Poses   PoseHz   MaxGap    VVO    VVOHz   VVOMaxGap
+  ---------------------------------------------------------------
+   0–5s      271    54.2Hz   216.8ms   324   64.8Hz    51.5ms ⚠️
+   5–10s     280    56.0Hz   217.5ms   332   66.4Hz    53.8ms ⚠️
+  10–15s     272    54.4Hz   154.3ms   319   63.8Hz    55.1ms ⚠️
+  15–20s     289    57.8Hz   124.3ms   340   68.0Hz    59.0ms ⚠️
+  20–25s     269    53.8Hz   180.1ms   329   65.8Hz    53.5ms ⚠️
+  25–30s     268    53.6Hz   284.7ms   340   68.0Hz    51.5ms ⚠️ ← biggest dropout
+  30–35s     246    49.2Hz   238.2ms   333   66.6Hz    53.3ms ⚠️
+  35–40s     277    55.4Hz   162.8ms   336   67.2Hz    52.0ms ⚠️
+  40–45s     264    52.8Hz   220.5ms   326   65.2Hz    53.1ms ⚠️
+  45–50s     275    55.0Hz   124.4ms   337   67.4Hz    53.3ms ⚠️
+  50–55s     248    49.6Hz   135.1ms   331   66.2Hz    51.7ms ⚠️
+  55–60s     121    24.2Hz    70.8ms   149   29.8Hz    52.8ms ⚠️ ← recording ended
+```
+
+**Watchdog proof:** Raw Mocap had gaps up to **284.7ms** every window. VVO max gap never exceeded **59ms** in any window — the watchdog is actively filling every dropout.
+
+> [!WARNING]
+> **New finding — VVO stream is bursty, not smooth.**
+> The VVO gap distribution (Section A) shows the bridge sends **rapid bursts** then pauses, rather than a smooth 66Hz stream. 20% of inter-message gaps exceed 33ms (the 30Hz threshold). The median gap is only 8.6ms, but the mean is 15.1ms — this is classic bursty transmission.
+>
+> **Why?** The bridge fires immediately on each incoming Mocap packet (pass-through mode), and the watchdog timer fires at 50Hz. These two are not synchronized — they combine to produce uneven timing. During Mocap dropouts, the watchdog fires at 50Hz (20ms). During healthy Mocap, the bridge fires at 53Hz (18.8ms) but with large natural gaps in the OptiTrack stream.
+>
+> **Risk:** 20% of VVO packets arrive with >33ms gaps. PX4's EKF2 can tolerate this (as proven by 100% fusion), but it is not ideal. The PX4 docs cite 30–50Hz as minimum — our **mean** is well above (66Hz) but our **distribution** is wide.
+
+**VVO Gap Distribution:**
+
+```
+  Range (ms)     Count     %    Interpretation
+  ------------------------------------------------
+   0–10ms        2109    55.6%  Fast back-to-back (Mocap bursts)
+  10–20ms         663    17.5%  Normal
+  20–30ms         219     5.8%  Normal
+  30–40ms         335     8.8%  ⚠️ Below 30Hz threshold
+  40–50ms         400    10.5%  ⚠️ Below 25Hz threshold
+  50–60ms          69     1.8%  🔴 Below 20Hz (watchdog holdover)
+```
+
+---
+
+### H3: EKF2 Latency (`EKF2_EV_DELAY`) — 🟡 MEASURED, NOT YET SET
+
+**Was the drone in the Mocap volume throughout?**
+
+```
+  t(s)      X(m)      Y(m)      Z(m)   Status
+  -----------------------------------------------
+   0.0    -0.793    -0.332     0.801   ✅ In volume
+   5.0    -0.793    -0.332     0.801   ✅ In volume (stationary)
+  10.0    -0.793    -0.332     0.801   ✅ In volume (stationary)
+  15.0    -0.793    -0.332     0.801   ✅ In volume (stationary)
+  25.0    -0.795    -0.333     0.801   ✅ In volume (stationary)
+  30.0    -0.609    -0.127     1.257   ✅ In volume (being jerked)
+  35.0    -0.471    -0.233     1.429   ✅ In volume (being jerked)
+  40.0    -0.652    -0.304     1.357   ✅ In volume (being jerked)
+  50.0    -0.782    -0.351     0.800   ✅ In volume (returned to ground)
+```
+
+**Drone never left the capture volume.** Position throughout stays within ±1.5m of origin.
+
+**Jerk test measurements:**
+
+| Jerk | IMU Excess (m/s²) | Measured Delay | Reliability |
+|---|---|---|---|
+| 1 | 52.5 | 210 ms | 🔴 Slow movement — diffuse Mocap velocity peak |
+| 2 | 78.8 | **40 ms** | ✅ Sharp snap — clean narrow Mocap spike |
+| 3 | 28.2 | 229 ms | 🔴 Slow movement |
+| 4 | 29.7 | 436 ms | 🔴 Very slow — near 500ms watchdog limit |
+
+**Why only Jerk 2 is reliable:** The Mocap velocity peak (rate of position change) is only sharp and narrow when the physical movement itself is sharp. A slow 0.5-second shake produces a broad, gradual velocity curve — the algorithm picks the maximum of that curve which could be anywhere in a wide window. A fast 50ms snap produces a spike with a clear single maximum.
+
+**Action:** Set `EKF2_EV_DELAY = 50ms`. Repeat the test with **snapping** movements (not shaking). The script is ready and auto-detects the newest bag.
+
+---
+
+### Clock Sync & ULog Date — ✅ Pi Clock Working / ❌ ULog Header Still 1970
+
+**What works:** Pi ↔ PX4 drift = **16ms**. Bag data has correct 2026 timestamps.
+
+**Why ULog headers still show 1970:** PX4 creates the log file at the exact moment of power-on. The startup sequence takes ~2–3 min to boot, connect the DDS Agent, and push the time sync. The log file header is already written at 1970 before any sync arrives. With `SDLOG_MODE=from boot until shutdown`, this is unavoidable.
+
+**Implication for thesis:** Only the file metadata shows 1970. Internal data timestamps are correct after t≈30s from boot. For thesis figures, use bag data (correct timestamps) or reference data points by their relative time-in-log, not absolute date.
+
+## 🛠 Architecture Blueprint: PX4 / ROS 2 Offboard Mocap Integration (Established May 14)
+
+### 1. The Core Problems (Root Causes Identified)
+*   **The "Talking to Myself" Bug:** Commands sent with `source_system = 1` are dropped by the FC. Use **`255`** (GCS ID).
+*   **The Mocap Velocity Trap:** EKF2 rejects Mocap if 3D velocity fusion is enabled but only position is sent. Disable velocity fusion in `EKF2_EV_CTRL`.
+*   **The NaN Setpoint Requirement:** Unused fields in `TrajectorySetpoint` (velocity, acceleration, etc.) **must** be set to `float('nan')`, not `0.0`, to prevent the PX4 trajectory generator from crashing.
+*   **The 3-Second Arming Buffer:** Offboard mode requires a heartbeat of at least 2-3 seconds before an Arm command will be accepted.
+
+### 2. Final Parameter Blueprint (Indoor Autonomous)
+| Parameter | Value | Rationale |
+| :--- | :--- | :--- |
+| **`EKF2_EV_CTRL`** | `11` | Horizontal, Vertical, Yaw only (No Velocity). |
+| **`EKF2_EV_DELAY`** | `60 ms` | Based on May 14 Jerk Test results. |
+| **`COM_ARM_WO_GPS`** | `1` | Allow arming without Global Position. |
+| **`COM_RC_IN_MODE`** | `4` | Disable stick requirement for autonomous flight. |
+| **`COM_RCL_EXCEPT`** | `7` | Prevent RC Loss failsafe in Offboard mode. |
+| **`NAV_DLL_ACT`** | `0` | Disable Data Link Loss (USB unplugged check). |
+| **`CBRK_IO_SAFETY`** | `22027` | Disable physical safety button requirement. |
+| **`SDLOG_MODE`** | `1` | Record from boot to shutdown for persistent data. |
+
+### 3. Operational Protocol (The XRCE Protocol)
+*   **Power Cycle:** If the Flight Controller reboots, the `MicroXRCEAgent` on the Pi **must** be restarted to reset the serial handshake.
+*   **Agent Inspection:** Use the new [start_xrce_agent.sh](file:///home/dorten/pi_drone_sshfs/drone_control/start_xrce_agent.sh) script to run the agent in a detached `screen` session. 
+    *   **To inspect logs:** `screen -r xrce_agent`
+    *   **To detach:** `Ctrl+A` then `D`.
+    *   This prevents the "Ghost Connection" trap where the agent remains running on a dead serial link.
+*   **Failsafe:** If Mocap is lost, the drone is now configured to fail over to `Hold` mode rather than `RTL`.

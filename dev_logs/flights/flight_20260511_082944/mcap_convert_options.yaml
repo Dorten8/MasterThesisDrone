@@ -1,4 +1,0 @@
-output_bags:
-  - uri: flight_20260511_082944_mcap
-    storage_id: mcap
-    all: true

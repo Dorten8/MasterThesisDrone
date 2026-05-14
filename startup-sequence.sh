@@ -126,7 +126,23 @@ ros2 daemon stop
 ros2 daemon start
 
 SUCCESS_COUNT=0
-TOTAL_STEPS=4
+TOTAL_STEPS=5
+
+# Step 0: Time Synchronization
+# We do this first so the Pi has the correct wall-clock date before 
+# the Agent starts and pushes it to the PX4.
+echo -e "${YELLOW}[$(date +%H:%M:%S)]${NC} Starting: ${BLUE}Time Synchronization${NC}"
+# Try Internet first, then Mocap PC as fallback
+if sudo ntpdate -u pool.ntp.org >/dev/null 2>&1 || sudo ntpdate -u 192.168.74.2 >/dev/null 2>&1; then
+    echo -e "${GREEN}✓ System time synchronized: $(date)${NC}"
+    ((SUCCESS_COUNT++))
+    RESULTS+=("${GREEN}✓${NC} Time Synchronization")
+    TIMINGS+=("Time Sync: 2s")
+else
+    echo -e "${RED}✗ Time Sync failed (No internet or Mocap Server NTP)${NC}"
+    RESULTS+=("${RED}✗${NC} Time Synchronization")
+    TIMINGS+=("Time Sync: timeout")
+fi
 
 # Step 1: MicroXRCEAgent (critical)
 # We must never kill this if it's running, because the PX4 client won't recover.
@@ -150,9 +166,18 @@ else
 fi
 
 # Step 2: motion_capture_tracking_node
+# Read Mocap server IP from drone_config.json (SSoT)
+MOCAP_SERVER=$(python3 -c "import json; print(json.load(open('/home/ws/config/drone_config.json'))['optitrack_server_ip'])" 2>/dev/null)
+if [ -z "$MOCAP_SERVER" ]; then
+    MOCAP_SERVER="192.168.74.2" # Fallback
+    echo -e "${YELLOW}Could not read Mocap server IP from config. Defaulting to: $MOCAP_SERVER${NC}"
+else
+    echo -e "${GREEN}Loaded Mocap server IP '$MOCAP_SERVER' from drone_config.json${NC}"
+fi
+
 if run_with_monitor \
     "motion_capture_tracking_node" \
-    "ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=192.168.74.9" \
+    "ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=$MOCAP_SERVER" \
     "Joined multicast group" \
     "motion_capture_tracking_node Running" \
     "motion_capture_tracking_node"; then

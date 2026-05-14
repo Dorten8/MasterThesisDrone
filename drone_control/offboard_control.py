@@ -48,6 +48,7 @@ class OffboardControl(Node):
         self.current_setpoint_z = 0.0
         self.target_z = 0.0
         self.offboard_setpoint_counter = 0
+
         self.timer_ticks = 0
 
         self.timer = self.create_timer(0.1, self.timer_callback)
@@ -85,14 +86,14 @@ class OffboardControl(Node):
         msg.param7 = params.get("param7", 0.0)
         msg.target_system = 1
         msg.target_component = 1
-        msg.source_system = 1
+        msg.source_system = 255
         msg.source_component = 1
         msg.from_external = True
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.vehicle_command_publisher.publish(msg)
 
     def arm(self):
-        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0)
+        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0, param2=21196.0)
 
     def engage_offboard_mode(self):
         self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
@@ -126,12 +127,20 @@ class OffboardControl(Node):
             return
 
         if self.state == "TAKEOFF":
+            # Tick 10: Request Offboard Mode
             if self.offboard_setpoint_counter == 10:
+                self.get_logger().info("Commanding OFFBOARD mode...")
                 self.engage_offboard_mode()
+            
+            # Tick 15 (0.5s later): Command Arm
+            if self.offboard_setpoint_counter == 30:
+                self.get_logger().info("Commanding ARM...")
                 self.arm()
             
-            if self.offboard_setpoint_counter < 11:
+            # Stop incrementing once we pass the arm trigger
+            if self.offboard_setpoint_counter < 31:
                 self.offboard_setpoint_counter += 1
+
 
             # Smoothly ramp the Z setpoint UP (negative direction in NED)
             if self.current_setpoint_z > self.target_z:

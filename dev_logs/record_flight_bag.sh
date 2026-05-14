@@ -29,11 +29,17 @@ echo "=== ROS 2 Bag Recording Started ==="
 echo "Output: $BAG_FILE"
 echo ""
 echo "Topics being recorded:"
-echo "  - /fmu/in/vehicle_visual_odometry   (mocap pose sent to PX4)"
-echo "  - /fmu/out/vehicle_odometry         (PX4 fused odometry)"
-echo "  - /fmu/out/vehicle_local_position   (PX4 local position)"
-echo "  - /fmu/out/vehicle_attitude         (PX4 attitude)"
-echo "  - /poses                            (raw mocap poses)"
+echo "  - /fmu/in/vehicle_visual_odometry   (Mocap pose sent to PX4)"
+echo "  - /fmu/out/vehicle_odometry         (PX4 fused odometry - World Frame)"
+echo "  - /fmu/out/vehicle_local_position   (PX4 local position - NED)"
+echo "  - /fmu/out/vehicle_attitude         (PX4 attitude/orientation)"
+echo "  - /fmu/out/sensor_combined           (Raw/Filtered IMU data)"
+echo "  - /fmu/out/actuator_outputs         (Motor/ESC signals)"
+echo "  - /fmu/out/battery_status           (Voltage and Current)"
+echo "  - /fmu/out/vehicle_status           (Arming/Flight Mode state)"
+echo "  - /fmu/out/timesync_status          (Pi-to-PX4 clock sync quality)"
+echo "  - /fmu/in/trajectory_setpoint       (Target commands from Offboard scripts)"
+echo "  - /poses                            (Raw Mocap data from OptiTrack)"
 echo ""
 echo "Recording... Press Ctrl+C to stop."
 echo ""
@@ -47,6 +53,12 @@ ros2 bag record \
   /fmu/out/vehicle_odometry \
   /fmu/out/vehicle_local_position \
   /fmu/out/vehicle_attitude \
+  /fmu/out/sensor_combined \
+  /fmu/out/actuator_outputs \
+  /fmu/out/battery_status \
+  /fmu/out/vehicle_status \
+  /fmu/out/timesync_status \
+  /fmu/in/trajectory_setpoint \
   /poses
 
 echo ""

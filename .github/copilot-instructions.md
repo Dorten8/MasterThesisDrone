@@ -128,7 +128,7 @@ At the end of each session:
 - `## Learning Summary` (numbered lists for key concepts)
 - `## Next Steps` (numbered priority list)
 
-### Current Session Status (Last Update: 2026-05-11)
+### Current Session Status (Last Update: 2026-05-14)
 
 ### What Was Completed
 - **Infrastructure Overhaul:** Created `dev_logs/` as a central data/documentation hub.
@@ -136,6 +136,7 @@ At the end of each session:
 - **Diagnostic Roadmap:** Established `dev_logs/flying_bottlenecks.md` to track hypotheses for the uncontrolled climb anomaly.
 - **Hardware Maintenance:** Re-printed and replaced a broken motor mount on the frame.
 - **SD Card Migration:** Prepared a new 32GB SD card for PX4 and imported legacy logs to the Pi for analysis.
+- **Network Stability:** Disabled Wi-Fi power management to ensure reliable headless boots.
 
 ### Next Steps (Priority Order)
 1. **Logging Fix:** Set `SDLOG_MODE=1` in PX4 to ensure internal `.ulg` logs are captured from boot.

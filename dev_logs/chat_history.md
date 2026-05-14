@@ -7,3 +7,7 @@
 **AI**: Updated GEMINI.md to point to `.github/copilot-instructions.md`. Confirmed reading it.
 **User**: Great stuff, and u read it too right? so please run end of the day routine
 **AI**: Running End of Day Routine.
+
+## 2026-05-14 Chat Session
+**User**: Reported issues with Wi-Fi power management causing connectivity drops on the Pi unless a monitor is attached. Provided instructions for installing `iw` and permanently disabling power save in NetworkManager.
+**AI**: Created journal entry `2026-05-14-network-stability-fix.md` and updated session status to record the permanent fix (`wifi.powersave = 2`).

@@ -44,6 +44,8 @@ RUN apt-get update && apt-get install -y \
     libpcl-dev \
     # for PX4-Autopilot gazebo install
     wget \
+    # needed for time synchronization
+    ntpdate \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies for drone controller

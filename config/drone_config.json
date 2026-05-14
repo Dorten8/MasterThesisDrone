@@ -1,7 +1,7 @@
 {
-  "laptop_ip": "192.168.74.9",
-  "pi_ip": "192.168.74.5",
-  "optitrack_server_ip": "192.168.74.2",
+  "laptop_ip": "192.168.74.10",
+  "pi_ip": "192.168.74.8",
+  "optitrack_server_ip": "192.168.74.9",
   "optitrack": {
     "command_port": 1510,
     "data_port": 1511,
