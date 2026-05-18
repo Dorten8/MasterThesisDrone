@@ -395,6 +395,32 @@ cd /home/ws
 colcon build --symlink-install
 ```
 
+### ⚠️ Critical Mocap Coordinate Alignment Rules
+
+#### 1. NatNet Streaming Up-Axis Configuration (Crucial for EKF2)
+While Motive’s internal viewport is Y-Up (Green axis Up), the ROS 2 `mocap_px4_bridge` and Foxglove strictly expect the standard ROS Z-Up (ENU) frame.
+* **The Trap:** If Motive’s NatNet stream setting is set to **`Up Axis: Y-Axis`**, the broadcast `/poses` topic outputs coordinates where `Y` is the altitude. The C++ bridge (which assumes Z is Up) maps `poseMsg.position.z` directly to PX4's vertical Down axis, which physically maps your horizontal distance (e.g., `1.52m`) to the drone's estimated altitude. This causes EKF2 to completely lose its state, drift wildly, and fail to take off.
+* **The Law:** In the Motive UI, navigate to **Settings** → **Streaming** → **NatNet** and ensure **`Up Axis`** is explicitly set to **`Z-Axis`**. This tells Motive to mathematically rotate its internal coordinates to Z-Up before streaming them, keeping Foxglove, EKF2, and our control scripts in perfect alignment.
+
+#### 2. EKF2 Altitude Origin vs. MoCap World Origin
+* **The Hurdle:** When the Pixhawk boots, the EKF2 estimator initializes its own local coordinate system (`/fmu/out/vehicle_local_position`) by pinning its `[0,0,0]` origin to the starting sensor calibration (barometer). This creates a persistent coordinate translation offset $\Delta$ relative to the physical MoCap floor origin (e.g., EKF2 Z reading `-0.8m` when the drone is physically sitting `0.09m` off the floor).
+* **The Architecture Solution (Transform Layer):** Because our geofencing safety boundaries and obstacle boxes are defined in absolute room coordinates (`mocap_world` frame), we decouple safety and control through a continuous **Translation Layer** in our control scripts:
+  1. Calculate the active spatial offset vector at takeoff: $\Delta = P_{ekf2} - P_{mocap}$.
+  2. Map all absolute room coordinate setpoints $S_{mocap}$ onto the flight controller's active frame: $S_{ekf2} = S_{mocap} + \Delta$.
+  3. Enforce geofencing checks by subscribing directly to the absolute, drift-free `/poses` topic, keeping the emergency safety boundary independent of PX4's EKF2 state.
+
+#### 3. ROS 2 QoS Compatibility (Durability Policy Mismatches)
+* **The Hurdle:** In ROS 2, if a subscriber specifies a QoS durability policy, any publisher *must* offer a matching or stronger durability policy. If a subscriber expects `TRANSIENT_LOCAL` and the publisher offers `VOLATILE`, **ROS 2 silently drops the connection under the hood** with absolutely zero console logs or warnings. Conversely, if a subscriber expects `VOLATILE`, it can successfully connect to both `VOLATILE` and `TRANSIENT_LOCAL` publishers.
+* **The Offboard Trap:** PX4's uXRCE-DDS agent subscribes to `/fmu/in/vehicle_command` and `/fmu/in/offboard_control_mode` with **`TRANSIENT_LOCAL`** durability. If a custom offboard control node publishes commands using standard `VOLATILE` durability, the Pixhawk will completely ignore the node, and the drone will silently refuse to arm or switch to offboard mode.
+* **The Subscription Trap:** The OptiTrack `motion_capture_tracking_node` publishes the `/poses` topic with **`VOLATILE`** durability. If your control node subscribes to `/poses` using a `TRANSIENT_LOCAL` QoS profile, ROS 2 will print a console warning and refuse to receive any motion capture coordinates!
+* **The Law:**
+  * Use **`durability=DurabilityPolicy.TRANSIENT_LOCAL`** for all ROS 2 *publishers* sending commands into the Pixhawk.
+  * Use **`durability=DurabilityPolicy.VOLATILE`** for all ROS 2 *subscribers* receiving external data (such as `/poses` and PX4 telemetry `/fmu/out/*`).
+
+#### 4. The Eager Local State Transition Control Loop Anti-Pattern
+* **The Hurdle:** Never assume an arming or mode-change command sent to PX4 has been executed immediately on the next local script tick. Transitioning states eagerly locally (e.g., setting `self.state = "ARMED"` immediately after calling `command_arm()`) halts the arming control loop before the command is processed, and prevents status callbacks from realizing when physical confirmation is received.
+* **The Law:** Keep the offboard heartbeat stream active in the `"ARMING"` state and only transition the local state to `"ARMED"` when the flight controller broadcasts physical confirmation back over `/fmu/out/vehicle_status` (e.g., when `msg.arming_state == VehicleStatus.ARMING_STATE_ARMED`).
+
 # RVIZ simple start
 ### Goal
 Show a visible object in **RViz on the laptop** that is **published from the Pi** over ROS 2 (Humble) using the simplest reliable setup: **static TF + Marker**.

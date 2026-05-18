@@ -40,7 +40,8 @@ class EmergencyKillNode(Node):
         msg.param7 = params.get("param7", 0.0)
         msg.target_system = 1
         msg.target_component = 1
-        msg.source_system = 1
+        # MUST be 255 (GCS/Companion). PX4 ignores external commands if they claim to come from the drone itself (1)!
+        msg.source_system = 255
         msg.source_component = 1
         msg.from_external = True
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)

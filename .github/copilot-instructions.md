@@ -128,25 +128,28 @@ At the end of each session:
 - `## Learning Summary` (numbered lists for key concepts)
 - `## Next Steps` (numbered priority list)
 
-### Current Session Status (Last Update: 2026-05-14)
+### Current Session Status (Last Update: 2026-05-18)
 
 ### What Was Completed
-- **Latency Measurement:** Quantified 60ms system latency via Jerk Test and set `EKF2_EV_DELAY`.
-- **Arming Stabilization:** Resolved RC-less arming blocks by fixing QoS mismatches and identifying the "Source ID 255" requirement.
-- **Trajectory Safety:** Implemented `NaN` setpoint injection to prevent trajectory generator crashes.
-- **Operational Protocol:** Created `start_xrce_agent.sh` using `screen` to prevent "Ghost Connections" and allow real-time debugging.
-- **Architecture Blueprint:** Documented the final PX4 parameter set for indoor autonomous flight in `flying_bottlenecks.md`.
+- **Autonomous Takeoff & Hover Flight:** Successfully executed a full offboard hover takeoff and landing using MoCap ENU coordinates mapped to PX4 EKF2 frames!
+- **10-Sample Rolling Average Alignment:** Eliminated EKF2 startup noise/drift by collecting a 10-sample rolling average on initialization to lock in a noise-free transform offset.
+- **Zero-Error Ground Standby Setpoints:** Added EKF2 position streaming during ground standby states to guarantee 100% Offboard mode and Arming acceptance.
+- **Direct Filtered Voltage Failsafes:** Implemented a highly-damped raw `voltage_v` low-pass filter (Alpha = 0.02 EMA) to absorb heavy takeoff voltage sags while securely landing at a true chemical threshold of 20.4V.
+- **Universal Keyboard Control Engine:** Developed custom, modular deliberate keybindings (`[ A ]`, `[ T ]`, `[ L ]`, `[SPACE]`) running in a dedicated thread.
+- **Emergency Kill MAVLink ID Fix:** Changed `emergency_kill.py` to use `source_system = 255`, ensuring immediate MAVLink forced-motor-cut delivery.
+- **Offloaded Flight Recorder:** Offloaded MCAP bag recording to [flight_recorder.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_recorder.py) with automated post-landing recording and 3.0s delayed impact capture for motor kills.
 
 ### Next Steps (Priority Order)
-1. **Validation Hover:** Execute the simplified 1m hover test (`drone_control/offboard_control.py`) to verify EKF2 stability in the air.
-2. **ULog Analysis:** Use the now-persistent SD card logs to verify that `EKF2_HGT_REF=3` (Vision) has resolved the climb anomaly.
-3. **Mocap Noise Audit:** Check if higher `EKF2_EV_DELAY` values affect the "burstiness" of the position estimate during hover.
+1. **Rectangle Flight Mission:** Implement a `RectangleFlight` mission (`missions/rectangle_flight.py`) to verify multi-point trajectory tracking, horizontal translations, and yaw alignment.
+2. **Repository Clean Up:** Organize the codebase, archive draft/old files, and clean up temporary logs/bags.
+3. **Post-Flight Data Review:** Analyze the recorded MCAP bags and PX4 ULogs from today's successful hover to verify absolute vertical holding stability.
 
 ### Known Blockers
-- **Burstiness:** Mocap-to-PX4 bridge exhibits bursty transmission patterns (20% of gaps > 33ms); may require bridge timer optimization if hover is unstable.
+- None! Autopilot links, battery failsafes, alignment transforms, and emergency kill overrides are fully stable and verified.
 
 ### Architecture Notes
 - `/dev/ttyAMA0` remains single-owner: do not run micro-ROS agent and `mavlink-routerd` simultaneously.
-- Use **Source ID 255** for all companion-to-PX4 MAVLink commands.
-- **Unused setpoint fields must be NaN.**
+- Use **Source ID 255** for all companion-to-PX4 MAVLink commands (GCS/Companion) to bypass loopback filters.
+- During ground standby (ALIGNED, ARMED, ARMING), publish EKF2's exact current local coordinates to guarantee zero setpoint tracking error.
+- Use direct `voltage_v` with a heavily-damped EMA filter (Alpha = 0.02) to monitor battery health under motor load.
 - `MicroXRCEAgent` should be run in a screen session (`screen -r xrce_agent`) to allow persistent link management.

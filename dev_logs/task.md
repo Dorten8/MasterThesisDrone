@@ -23,7 +23,10 @@
 - [x] Republishes last known pose with refreshed timestamp during dropouts < 500ms
 - [x] Stops publishing after 500ms dropout (lets EKF2 fail safely, not freeze on stale data)
 
-## 🔵 Phase 4: Validation Flight
+## 🔵 Phase 4: Validation Flight & Safety Prep
+- [x] Code the **Ghost Flight Trajectory Recorder** (`dev_logs/ghost_flight.py`)
+- [ ] Code the **Battery Failsafe** in `offboard_control.py` (color warnings under 50%, Land under 40%)
+- [ ] Implement **Frame Alignment Translation Layer** (Mocap-to-EKF2 offset translation)
 - [ ] Fly 1m hover test (`drone_control/hover_benchmark.py`)
 - [ ] Confirm EKF2 no longer diverges in bag analysis
 - [ ] Compare with Flight 1 (082944) results

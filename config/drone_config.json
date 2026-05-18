@@ -9,7 +9,7 @@
   },
   "tracked_bodies": [
     { "name": "jake_drone_frame_01", "streaming_id": 7, "role": "primary" },
-    { "name": "obstacle_no_01", "streaming_id": null, "role": "obstacle" },
+    { "name": "rigid_body_19", "streaming_id": 19, "role": "obstacle" },
     { "name": "obstacle_no_02", "streaming_id": null, "role": "obstacle" },
     { "name": "obstacle_no_03", "streaming_id": null, "role": "obstacle" },
     { "name": "obstacle_no_04", "streaming_id": null, "role": "obstacle" },
