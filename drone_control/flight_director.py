@@ -23,12 +23,16 @@ if script_dir not in sys.path:
     sys.path.append(script_dir)
 
 from flight_recorder import FlightRecorder
-from missions.hover_test import HoverTest
+from flight_recorder import FlightRecorder
+import importlib
+import inspect
+from missions.base_mission import BaseMission
 
-# Static Mission Registry
-MISSIONS = {
-    "1": ("hover_test", HoverTest)
-}
+class StaticPose:
+    def __init__(self, x, y, z):
+        self.x = x
+        self.y = y
+        self.z = z
 
 class FlightDirector(Node):
     def __init__(self, mission_class):
@@ -87,13 +91,38 @@ class FlightDirector(Node):
 
         self.last_tick = time.time()
         
-        # Geofence Bounds (Absolute MoCap Space: 3x3m room, 2m height limit)
-        # Z is negative UP in ENU/NED representations typically. 
-        # Since MoCap /poses provides ENU (Z is positive UP), wait, let's check:
-        # We'll extract raw XYZ from MoCap and enforce bounds.
+        # Geofence Bounds (Absolute MoCap Space: Default 2.5x2.5m room, 2m height limit)
+        self.geo_x_min = -2.5
         self.geo_x_max = 2.5
+        self.geo_y_min = -2.5
         self.geo_y_max = 2.5
-        self.geo_z_max = 2.0  # If MoCap Z is positive UP
+        self.geo_z_min = 0.05
+        self.geo_z_max = 2.0
+        
+        # Load geofence limits dynamically from config/drone_config.json if calibrated
+        config_path = os.path.join(os.path.dirname(script_dir), "config", "drone_config.json")
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                if "mocap_geofence" in config:
+                    gf = config["mocap_geofence"]
+                    self.geo_x_min = gf["x_min"]
+                    self.geo_x_max = gf["x_max"]
+                    self.geo_y_min = gf["y_min"]
+                    self.geo_y_max = gf["y_max"]
+                    self.geo_z_min = gf["z_min"]
+                    self.geo_z_max = gf["z_max"]
+                    print(f"[SYSTEM] Loaded geofence limits from drone_config.json:")
+                    print(f"         X: {self.geo_x_min:.2f}m to {self.geo_x_max:.2f}m")
+                    print(f"         Y: {self.geo_y_min:.2f}m to {self.geo_y_max:.2f}m")
+                    print(f"         Z: {self.geo_z_min:.2f}m to {self.geo_z_max:.2f}m")
+                else:
+                    print("[WARN] No 'mocap_geofence' found in drone_config.json. Using defaults.")
+            except Exception as e:
+                print(f"[WARN] Failed to load geofence limits: {e}. Using defaults.")
+        else:
+            print("[WARN] config/drone_config.json not found! Using defaults.")
         
         self.state = "INIT"  # INIT -> ALIGNED -> ARMED -> TAKEOFF -> MISSION -> LANDING
 
@@ -133,7 +162,7 @@ class FlightDirector(Node):
                 print("\n[SYSTEM] Drone successfully ARMED and in OFFBOARD mode! Ready for Takeoff [T].", flush=True)
                 
                 # Start automatic bag recording the moment we arm
-                self.recorder.start_recording()
+                self.recorder.start_recording(self.mission.MISSION_NAME)
 
     def _battery_cb(self, msg):
         if self.aborted: return
@@ -178,8 +207,9 @@ class FlightDirector(Node):
     def _check_geofence(self, pos):
         if self.aborted: return
         # Assuming ENU from /poses, Z is positive UP
-        if abs(pos.x) > self.geo_x_max or abs(pos.y) > self.geo_y_max or pos.z > self.geo_z_max:
+        if not (self.geo_x_min <= pos.x <= self.geo_x_max) or not (self.geo_y_min <= pos.y <= self.geo_y_max) or not (self.geo_z_min <= pos.z <= self.geo_z_max):
             print(f"\n\033[91m[FATAL] GEOFENCE BREACH: x={pos.x:.2f}, y={pos.y:.2f}, z={pos.z:.2f}! LANDING!\033[0m")
+            print(f"         Allowed bounds -> X: [{self.geo_x_min:.2f}, {self.geo_x_max:.2f}], Y: [{self.geo_y_min:.2f}, {self.geo_y_max:.2f}], Z: [{self.geo_z_min:.2f}, {self.geo_z_max:.2f}]")
             self.command_land()
             self.aborted = True
 
@@ -203,6 +233,9 @@ class FlightDirector(Node):
 
     def command_arm(self):
         self.get_logger().info("Commanding ARM...")
+        # Start automatic bag recording the moment we command arm to avoid status callbacks delay/drops
+        self.recorder.start_recording(self.mission.MISSION_NAME)
+        # Official PX4 offboard arming uses param1=1.0 and param2=21196.0 for offboard override force arm.
         self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0, param2=21196.0)
 
     def command_offboard(self):
@@ -276,18 +309,36 @@ class FlightDirector(Node):
                     avg_m_z = sum(s[5] for s in self.alignment_samples) / 10.0
                     
                     self.transform_offset = (avg_dx, avg_dy, avg_dz)
-                    
-                    # Define a static, immutable pose object to avoid Python reference updates
-                    class StaticPose:
-                        def __init__(self, x, y, z):
-                            self.x = x
-                            self.y = y
-                            self.z = z
                     self.mocap_at_takeoff = StaticPose(avg_m_x, avg_m_y, avg_m_z)
                     self.smoothed_target_enu = [avg_m_x, avg_m_y, avg_m_z, 0.0]
                     
+                    # Pre-flight geofence check (simulate start to extract waypoints)
+                    self.mission.on_start(self.mocap_at_takeoff)
+                    geofence_passed = True
+                    if hasattr(self.mission, 'ENFORCE_GEOFENCE') and self.mission.ENFORCE_GEOFENCE:
+                        print("\n[SYSTEM] Verifying Mission Geofence boundaries...", flush=True)
+                        waypoints = self.mission.get_all_absolute_waypoints()
+                        for i, wp in enumerate(waypoints):
+                            x, y, z = wp[0], wp[1], wp[2]
+                            if not (self.geo_x_min <= x <= self.geo_x_max) or not (self.geo_y_min <= y <= self.geo_y_max) or not (self.geo_z_min <= z <= self.geo_z_max):
+                                print(f"\n\033[91m[FATAL] GEOFENCE PRE-CHECK FAILED! Waypoint {i} ({x:.2f}, {y:.2f}, {z:.2f}) violates geofence bounds!\033[0m", flush=True)
+                                print(f"         Allowed bounds -> X: [{self.geo_x_min:.2f}, {self.geo_x_max:.2f}], Y: [{self.geo_y_min:.2f}, {self.geo_y_max:.2f}], Z: [{self.geo_z_min:.2f}, {self.geo_z_max:.2f}]", flush=True)
+                                print("\033[91m[SYSTEM] Arming BLOCKED. Refusing to start flight with unsafe parameters.\033[0m\n", flush=True)
+                                geofence_passed = False
+                                break
+                    
+                    if not geofence_passed:
+                        self.state = "GEOFENCE_BLOCKED"
+                        print("\n" + "="*45, flush=True)
+                        print("🕹️  FLIGHT DIRECTOR LOCKED (GEOFENCE BLOCKED)", flush=True)
+                        print("="*45, flush=True)
+                        print(" [ SPACE ] -> KILL MOTORS / RESET", flush=True)
+                        print("="*45 + "\n", flush=True)
+                        return
+                    
                     self.state = "ALIGNED"
                     print(f"\n[SYSTEM] Frame Transform Aligned! EKF2 Z-Offset: {avg_dz:.2f}m (Averaged over 10 samples)")
+                    print("[SYSTEM] Geofence check PASSED.")
                     print("\n" + "="*45)
                     print("🕹️  FLIGHT DIRECTOR ACTIVE")
                     print("="*45)
@@ -325,27 +376,37 @@ class FlightDirector(Node):
                 self.command_land()
                 return
 
+            if self.mission.is_paused:
+                # If paused, hold the last smoothed target
+                self._send_mocap_setpoint(*self.smoothed_target_enu)
+                return
+
             sp = self.mission.get_next_setpoint(self.mocap_pos, dt)
             if sp:
-                # Interpolate smoothed_target towards requested sp
-                # sp format: (x, y, z, yaw)
-                max_step = self.max_speed_mps * dt
+                # sp format: (x, y, z, face_forward_bool, [speed_mps])
+                target_x, target_y, target_z, face_forward = sp[0], sp[1], sp[2], sp[3]
                 
-                dx = sp[0] - self.smoothed_target_enu[0]
-                dy = sp[1] - self.smoothed_target_enu[1]
-                dz = sp[2] - self.smoothed_target_enu[2]
+                # Check for explicit speed override, otherwise fallback to default
+                active_speed = sp[4] if len(sp) >= 5 else self.max_speed_mps
+                max_step = active_speed * dt
+                
+                dx = target_x - self.smoothed_target_enu[0]
+                dy = target_y - self.smoothed_target_enu[1]
+                dz = target_z - self.smoothed_target_enu[2]
                 
                 dist = math.sqrt(dx*dx + dy*dy + dz*dz)
                 if dist <= max_step:
-                    self.smoothed_target_enu[0] = sp[0]
-                    self.smoothed_target_enu[1] = sp[1]
-                    self.smoothed_target_enu[2] = sp[2]
+                    self.smoothed_target_enu[0] = target_x
+                    self.smoothed_target_enu[1] = target_y
+                    self.smoothed_target_enu[2] = target_z
                 else:
                     self.smoothed_target_enu[0] += (dx / dist) * max_step
                     self.smoothed_target_enu[1] += (dy / dist) * max_step
                     self.smoothed_target_enu[2] += (dz / dist) * max_step
                     
-                self.smoothed_target_enu[3] = sp[3] # Snap yaw for now
+                # Auto-yaw computation if face_forward is true
+                if face_forward and dist > 0.05: # Only yaw if we have meaningful travel vector
+                    self.smoothed_target_enu[3] = math.atan2(dy, dx)
                 
                 self._send_mocap_setpoint(*self.smoothed_target_enu)
 
@@ -378,9 +439,9 @@ class FlightDirector(Node):
         if self.state != "ARMED" and self.state != "ARMING":
             print("[WARN] Must ARM first before Takeoff!")
             return
+            
         print("[SYSTEM] Engaging Offboard and Starting Mission...")
         self.command_offboard()
-        self.mission.on_start(self.mocap_at_takeoff)
         self.state = "MISSION"
 
     def destroy_node(self):
@@ -406,11 +467,13 @@ def input_thread(node):
                 print("\n[SYSTEM] Initiating Arming sequence (Switching to Offboard, then Arming)...", flush=True)
                 node.state = "ARMING"
                 node.arming_counter = 0
+            elif node.state == "GEOFENCE_BLOCKED":
+                print("\n\033[91m[FATAL] CANNOT ARM! Mission waypoints violate geofence limits.\033[0m", flush=True)
         elif ch == 't' or ch == 'T':
             node.trigger_takeoff()
         elif ch == '\r' or ch == '\n':
             if node.state == "MISSION":
-                node.mission.on_proceed()
+                node.mission.toggle_pause()
         elif ch == 'l' or ch == 'L':
             node.command_land()
         elif ch == ' ':
@@ -421,19 +484,44 @@ def input_thread(node):
 
 # --- Mission Loader ---
 def load_mission():
-    print("\n--- Available Missions ---", flush=True)
-    for key, (name, _) in MISSIONS.items():
-        print(f" [{key}] {name}", flush=True)
+    missions_dir = os.path.join(script_dir, "missions")
+    available_missions = []
     
-    choice = input("\nSelect mission to load [1-{}]: ".format(len(MISSIONS)))
+    # Auto-discover mission classes
+    for filename in sorted(os.listdir(missions_dir)):
+        if filename.endswith(".py") and filename not in ["__init__.py", "base_mission.py"]:
+            module_name = f"missions.{filename[:-3]}"
+            try:
+                module = importlib.import_module(module_name)
+                for name, obj in inspect.getmembers(module, inspect.isclass):
+                    # Check if it inherits from BaseMission but is not BaseMission itself
+                    if obj.__module__ == module_name and hasattr(obj, 'MISSION_NAME'):
+                        available_missions.append((filename, obj))
+            except Exception as e:
+                print(f"[WARN] Failed to load {filename}: {e}")
+                
+    if not available_missions:
+        print("[FATAL] No missions found in the missions directory!")
+        sys.exit(1)
+
+    print("\n--- Available Missions ---", flush=True)
+    for idx, (filename, cls) in enumerate(available_missions, 1):
+        desc = getattr(cls, 'MISSION_DESCRIPTION', 'No description')
+        print(f" [{idx}] {cls.MISSION_NAME} ({filename})\n     -> {desc}", flush=True)
+    
+    choice = input("\nSelect mission to load [1-{}]: ".format(len(available_missions)))
     choice = choice.strip()
     
-    if choice not in MISSIONS:
+    try:
+        idx = int(choice) - 1
+        if idx < 0 or idx >= len(available_missions):
+            raise ValueError()
+    except ValueError:
         print("Invalid choice.", flush=True)
         sys.exit(1)
         
-    name, mission_class = MISSIONS[choice]
-    print(f"\n[SYSTEM] Loaded Mission: {mission_class.__name__}", flush=True)
+    filename, mission_class = available_missions[idx]
+    print(f"\n[SYSTEM] Loaded Mission: {mission_class.MISSION_NAME}", flush=True)
     return mission_class
 
 def main(args=None):

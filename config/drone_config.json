@@ -8,14 +8,51 @@
     "multicast_group": "239.255.42.99"
   },
   "tracked_bodies": [
-    { "name": "jake_drone_frame_01", "streaming_id": 7, "role": "primary" },
-    { "name": "rigid_body_19", "streaming_id": 19, "role": "obstacle" },
-    { "name": "obstacle_no_02", "streaming_id": null, "role": "obstacle" },
-    { "name": "obstacle_no_03", "streaming_id": null, "role": "obstacle" },
-    { "name": "obstacle_no_04", "streaming_id": null, "role": "obstacle" },
-    { "name": "obstacle_no_05", "streaming_id": null, "role": "obstacle" },
-    { "name": "drone_cage", "streaming_id": null, "role": "reference" }
+    {
+      "name": "jake_drone_frame_01",
+      "streaming_id": 7,
+      "role": "primary"
+    },
+    {
+      "name": "rigid_body_19",
+      "streaming_id": 19,
+      "role": "obstacle"
+    },
+    {
+      "name": "obstacle_no_02",
+      "streaming_id": null,
+      "role": "obstacle"
+    },
+    {
+      "name": "obstacle_no_03",
+      "streaming_id": null,
+      "role": "obstacle"
+    },
+    {
+      "name": "obstacle_no_04",
+      "streaming_id": null,
+      "role": "obstacle"
+    },
+    {
+      "name": "obstacle_no_05",
+      "streaming_id": null,
+      "role": "obstacle"
+    },
+    {
+      "name": "drone_cage",
+      "streaming_id": null,
+      "role": "reference"
+    }
   ],
   "mavlink_port": 14550,
-  "baud_rate": 921600
+  "baud_rate": 921600,
+  "mocap_geofence": {
+    "x_min": -1.25,
+    "x_max": 2.0,
+    "y_min": -1.3,
+    "y_max": 1.5,
+    "z_min": 0.08,
+    "z_max": 2.2,
+    "safety_margin": 0.05
+  }
 }

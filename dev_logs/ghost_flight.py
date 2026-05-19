@@ -204,7 +204,8 @@ def main():
     raw_path = node.stop_recording()
     
     # Save files to dev_logs/paths
-    output_directory = "/home/dorten/pi_drone_sshfs/dev_logs/paths"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    output_directory = os.path.join(script_dir, "paths")
     save_and_smooth_path(raw_path, output_directory)
 
     rclpy.shutdown()

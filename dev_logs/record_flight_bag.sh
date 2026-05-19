@@ -20,10 +20,11 @@ DEFAULT_OUTPUT_DIR="$SCRIPT_DIR/flights"
 
 # Output directory
 OUTPUT_DIR="${1:-$DEFAULT_OUTPUT_DIR}"
+MISSION_NAME="${2:-unknown_mission}"
 
 # Create timestamp for bag file
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BAG_FILE="$OUTPUT_DIR/flight_${TIMESTAMP}"
+BAG_FILE="$OUTPUT_DIR/flight_${MISSION_NAME}_${TIMESTAMP}"
 
 echo "=== ROS 2 Bag Recording Started ==="
 echo "Output: $BAG_FILE"

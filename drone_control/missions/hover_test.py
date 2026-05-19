@@ -1,28 +1,23 @@
 from .base_mission import BaseMission
 
 class HoverTest(BaseMission):
-    """
-    A simple mission that commands the drone to take off to an absolute 
-    MoCap altitude of 1.0 meters and hold position.
-    """
-    def __init__(self):
+    MISSION_NAME = "Hover Test"
+    MISSION_DESCRIPTION = "Takes off and hovers 0.5m above the starting MoCap position."
+    
+    ENFORCE_GEOFENCE = True
+
+    def __init__(self, relative_z_hover=0.5):
         super().__init__()
-        self.target_z = 0.0
-        self.origin_x = 0.0
-        self.origin_y = 0.0
+        self.relative_z_hover = relative_z_hover
 
     def on_start(self, initial_mocap_pos):
-        self.origin_x = initial_mocap_pos.x
-        self.origin_y = initial_mocap_pos.y
-        # MoCap ENU Z is positive UP. We take off 0.5 meters relative to the start position!
-        self.target_z = initial_mocap_pos.z + 0.5
-        print(f"\n[MISSION] HoverTest started! Target absolute altitude: {self.target_z:.2f}m (MoCap Z).")
+        x0 = initial_mocap_pos.x
+        y0 = initial_mocap_pos.y
+        h = initial_mocap_pos.z + self.relative_z_hover
+        
+        # Waypoints format: (Absolute X, Absolute Y, Absolute Z, Face Forward Bool, Speed m/s, Pause At Waypoint Bool)
+        self.waypoints = [
+            (x0, y0, h, False, 0.2, True) # 0.2 m/s explicit takeoff speed, pause indefinitely to hover
+        ]
+        print(f"\n[MISSION] HoverTest started! Target absolute altitude: {h:.2f}m (MoCap Z).")
 
-    def get_next_setpoint(self, current_mocap_pos, dt):
-        # We simply hold the origin X/Y and the new target Z.
-        # The Flight Director will apply the Transform Layer automatically.
-        return (self.origin_x, self.origin_y, self.target_z, 0.0)
-
-    def on_proceed(self):
-        print("\n[MISSION] HoverTest has no further phases. Landing...")
-        self.is_finished = True

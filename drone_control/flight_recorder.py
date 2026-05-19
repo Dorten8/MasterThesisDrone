@@ -19,19 +19,22 @@ class FlightRecorder:
         self.recording_proc = None
         self.delayed_thread = None
 
-    def start_recording(self):
+    def start_recording(self, mission_name="unknown"):
         if self.recording_proc is not None:
             print("[RECORDER] Recording already active.")
             return
 
+        # Slugify mission name (remove spaces, parentheses, make safe for filenames)
+        slug = mission_name.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_")
+
         try:
             self.recording_proc = subprocess.Popen(
-                [self.script_path],
+                [self.script_path, "", slug],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid
             )
-            print("\n[SYSTEM] Automatic Flight Recording Started (MCAP Bag)!")
+            print(f"\n[SYSTEM] Automatic Flight Recording Started (MCAP Bag: flight_{slug}_<timestamp>)!")
         except Exception as e:
             print(f"[RECORDER] [ERROR] Failed to start bag recording: {e}")
 
