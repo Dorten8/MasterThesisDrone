@@ -49,7 +49,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies for drone controller
-RUN pip3 install meson pymavlink pyserial
+RUN pip3 install meson pymavlink pyserial mcap-ros2-support
 # Python dependencies for ROS2 packages ros2 msg generator and Python build tools, PX4-Autopilot kconfiglib (https://docs.px4.io/main/en/ros2/user_guide )
 RUN pip3 install empy==3.3.4 pyros-genmsg setuptools kconfiglib
 

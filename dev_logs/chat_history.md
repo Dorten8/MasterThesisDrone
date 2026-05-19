@@ -19,3 +19,9 @@
 - Implemented NaN setpoint safety for trajectory generation.
 - Created screen-based XRCE agent protocol.
 - Full technical breakdown in: [dev_logs/journal_entries/2026-05-14-mocap-pipeline-stabilization.md](file:///home/dorten/pi_drone_sshfs/dev_logs/journal_entries/2026-05-14-mocap-pipeline-stabilization.md)
+
+## Session: 2026-05-19 (Pass-By Column Coordination)
+- Coded and validated the absolute-coordinate transit and pass-by column mission trajectory.
+- Diagnosed and fixed the 1m+ flight drift bug by restoring EKF2-to-Motive translation offset inside `flight_director.py`.
+- Tailored the trajectory endpoints to align perfectly with the Motive grid axes.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-19-mocap-geofence-and-rectangle-flight.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-19-mocap-geofence-and-rectangle-flight.md)

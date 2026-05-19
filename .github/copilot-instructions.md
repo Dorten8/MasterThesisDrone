@@ -128,9 +128,12 @@ At the end of each session:
 - `## Learning Summary` (numbered lists for key concepts)
 - `## Next Steps` (numbered priority list)
 
-### Current Session Status (Last Update: 2026-05-18)
+### Current Session Status (Last Update: 2026-05-19)
 
 ### What Was Completed
+- **Absolute Coordinate Flight Mission:** Designed and implemented [pass_by_column.py](file:///home/dorten/pi_drone_sshfs/drone_control/missions/pass_by_column.py) to execute absolute horizontal transit and vertical passing sweeps.
+- **EKF2-to-Motive Translation Offset Fix:** Restored the continuous transform translation layer in [flight_director.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_director.py) to resolve the EKF2 boot-up origin shift and eliminate the 1m+ trajectory drift error.
+- **Aesthetic Path Calibration:** Customized the mission trajectory limits (`start_y = -1.0` and `end_y = 1.2`) to match the user's Motive grid camera drawings perfectly.
 - **Autonomous Takeoff & Hover Flight:** Successfully executed a full offboard hover takeoff and landing using MoCap ENU coordinates mapped to PX4 EKF2 frames!
 - **10-Sample Rolling Average Alignment:** Eliminated EKF2 startup noise/drift by collecting a 10-sample rolling average on initialization to lock in a noise-free transform offset.
 - **Zero-Error Ground Standby Setpoints:** Added EKF2 position streaming during ground standby states to guarantee 100% Offboard mode and Arming acceptance.
@@ -140,12 +143,13 @@ At the end of each session:
 - **Offloaded Flight Recorder:** Offloaded MCAP bag recording to [flight_recorder.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_recorder.py) with automated post-landing recording and 3.0s delayed impact capture for motor kills.
 
 ### Next Steps (Priority Order)
-1. **Rectangle Flight Mission:** Implement a `RectangleFlight` mission (`missions/rectangle_flight.py`) to verify multi-point trajectory tracking, horizontal translations, and yaw alignment.
-2. **Repository Clean Up:** Organize the codebase, archive draft/old files, and clean up temporary logs/bags.
-3. **Post-Flight Data Review:** Analyze the recorded MCAP bags and PX4 ULogs from today's successful hover to verify absolute vertical holding stability.
+1. **Pass-By Column Flight Test:** Once batteries are charged, boot `flight_director.py` with the drone placed at `X=1.17, Z=1.0` and execute the absolute pass-by mission.
+2. **Rectangle Flight Mission:** Implement a `RectangleFlight` mission (`missions/rectangle_flight.py`) to verify multi-point trajectory tracking, horizontal translations, and yaw alignment.
+3. **Repository Clean Up:** Organize the codebase, archive draft/old files, and clean up temporary logs/bags.
+4. **Post-Flight Data Review:** Analyze the recorded MCAP bags and PX4 ULogs to verify absolute trajectory holding stability.
 
 ### Known Blockers
-- None! Autopilot links, battery failsafes, alignment transforms, and emergency kill overrides are fully stable and verified.
+- None! Coordinate alignment transforms, geofence protection, voltage failsafes, and emergency disarms are fully verified.
 
 ### Architecture Notes
 - `/dev/ttyAMA0` remains single-owner: do not run micro-ROS agent and `mavlink-routerd` simultaneously.

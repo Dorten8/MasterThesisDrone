@@ -421,6 +421,22 @@ While Motive’s internal viewport is Y-Up (Green axis Up), the ROS 2 `mocap_px4
 * **The Hurdle:** Never assume an arming or mode-change command sent to PX4 has been executed immediately on the next local script tick. Transitioning states eagerly locally (e.g., setting `self.state = "ARMED"` immediately after calling `command_arm()`) halts the arming control loop before the command is processed, and prevents status callbacks from realizing when physical confirmation is received.
 * **The Law:** Keep the offboard heartbeat stream active in the `"ARMING"` state and only transition the local state to `"ARMED"` when the flight controller broadcasts physical confirmation back over `/fmu/out/vehicle_status` (e.g., when `msg.arming_state == VehicleStatus.ARMING_STATE_ARMED`).
 
+#### 5. The 90-Degree Cross-Coupling Trap (Horizontal Instability)
+* **The Hurdle:** The `mocap_px4_bridge` C++ node hardcodes its coordinate transforms by setting $X_{ned} = X_{mocap}$ and $Y_{ned} = -Y_{mocap}$. This mirrors the Y-axis but keeps X identical. If your offboard control script assumes standard textbook ENU-to-NED swap ($X_{ned} = Y_{enu}, Y_{ned} = X_{enu}$), the commanded horizontal velocities and positions will be rotated by exactly $90^\circ$! This creates a positive feedback cross-coupling loop where the drone attempts to correct drift by driving sideways, causing it to spiral outward and crash.
+* **The Law:** Ensure your companion computer offboard command layer applies the exact coordinate transforms utilized by the physical bridge:
+  $$\text{m\_ned\_x} = x_{\text{enu}}$$
+  $$\text{m\_ned\_y} = -y_{\text{enu}}$$
+  $$\text{m\_ned\_z} = -z_{\text{enu}}$$
+
+#### 6. The Trigonometric Yaw Inversion (Counter-Clockwise vs. Clockwise)
+* **The Hurdle:** Standard Python trigonometry functions like `math.atan2(dy, dx)` compute angles increasing in the **counter-clockwise (CCW)** direction. However, in PX4's local frame, the Z-axis points Down, which means a positive yaw represents a **clockwise (CW)** rotation when viewed from above. If you send `math.atan2(dy, dx)` directly to the flight controller, the drone will orient correctly when flying East or West, but will face exactly **backwards (180° wrong)** when flying North or South!
+* **The Law:** Always negate the calculated trigonometric angle to translate counter-clockwise angles into clockwise yaw orientations:
+  $$\psi_{\text{px4}} = -\text{atan2}(dy, dx)$$
+
+#### 7. Sensor Latency & EKF2_EV_DELAY Cross-Correlation Calibration
+* **The Hurdle:** Motion Capture processing, camera exposure times, and network packet transmission to the companion computer introduce a physical latency of 20-60ms. If `EKF2_EV_DELAY` is set to 0, EKF2 fuses the data assuming it represents the drone's position in the current instant. When the drone accelerates or changes direction, the temporal mismatch between raw IMU changes (instantaneous) and delayed visual inputs creates innovation spikes, causing wobbling and overshoot.
+* **The Law:** Use cross-correlation analysis of your flight records to align the instantaneous onboard gyroscope yaw rate against the delayed raw visual odometry yaw rate. The time offset that yields the highest correlation is your physical system latency. Enter this exact value in QGroundControl as `EKF2_EV_DELAY` (in ms) and reboot the flight controller to achieve razor-sharp tracking.
+
 # RVIZ simple start
 ### Goal
 Show a visible object in **RViz on the laptop** that is **published from the Pi** over ROS 2 (Humble) using the simplest reliable setup: **static TF + Marker**.

@@ -11,12 +11,15 @@
     {
       "name": "jake_drone_frame_01",
       "streaming_id": 7,
-      "role": "primary"
+      "role": "primary",
+      "cage_diameter_m": 0.358
     },
     {
-      "name": "rigid_body_19",
+      "name": "jake_column_drone",
       "streaming_id": 19,
-      "role": "obstacle"
+      "role": "obstacle",
+      "diameter_m": 0.09,
+      "default_flight_height_m": 0.522
     },
     {
       "name": "obstacle_no_02",

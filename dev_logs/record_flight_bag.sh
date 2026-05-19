@@ -22,9 +22,9 @@ DEFAULT_OUTPUT_DIR="$SCRIPT_DIR/flights"
 OUTPUT_DIR="${1:-$DEFAULT_OUTPUT_DIR}"
 MISSION_NAME="${2:-unknown_mission}"
 
-# Create timestamp for bag file
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BAG_FILE="$OUTPUT_DIR/flight_${MISSION_NAME}_${TIMESTAMP}"
+# Create timestamp for bag file (YYYYMMDD-HHMM format)
+TIMESTAMP=$(date +%Y%m%d-%H%M)
+BAG_FILE="$OUTPUT_DIR/flight_${TIMESTAMP}_${MISSION_NAME}"
 
 echo "=== ROS 2 Bag Recording Started ==="
 echo "Output: $BAG_FILE"
@@ -45,6 +45,18 @@ echo ""
 echo "Recording... Press Ctrl+C to stop."
 echo ""
 
+# Function to cleanly forward signals to the ros2 bag process
+cleanup() {
+  echo "Received stop signal. Cleanly stopping ros2 bag record..."
+  kill -INT "$BAG_PID" 2>/dev/null
+  wait "$BAG_PID"
+  echo "=== Recording Complete (Cleanly Stopped) ==="
+  exit 0
+}
+
+# Trap SIGINT (Ctrl+C) and SIGTERM
+trap cleanup INT TERM
+
 mkdir -p "$OUTPUT_DIR"
 
 ros2 bag record \
@@ -60,7 +72,12 @@ ros2 bag record \
   /fmu/out/vehicle_status \
   /fmu/out/timesync_status \
   /fmu/in/trajectory_setpoint \
-  /poses
+  /poses &
+
+BAG_PID=$!
+
+# Wait for the background process to finish or be interrupted
+wait "$BAG_PID"
 
 echo ""
 echo "=== Recording Complete ==="

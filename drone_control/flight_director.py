@@ -287,9 +287,9 @@ class FlightDirector(Node):
                 if not hasattr(self, 'alignment_samples'):
                     self.alignment_samples = []
                 
-                # Collect relative offset sample
-                m_ned_x = self.mocap_pos.y
-                m_ned_y = self.mocap_pos.x
+                # Collect relative offset sample (Mapped to match mocap_px4_bridge's custom transform)
+                m_ned_x = self.mocap_pos.x
+                m_ned_y = -self.mocap_pos.y
                 m_ned_z = -self.mocap_pos.z
                 
                 dx = self.ekf_pos.x - m_ned_x
@@ -406,14 +406,16 @@ class FlightDirector(Node):
                     
                 # Auto-yaw computation if face_forward is true
                 if face_forward and dist > 0.05: # Only yaw if we have meaningful travel vector
-                    self.smoothed_target_enu[3] = math.atan2(dy, dx)
+                    # PX4's Z-axis is Down, so positive yaw is clockwise. 
+                    # math.atan2 gives counter-clockwise angles, so we negate it.
+                    self.smoothed_target_enu[3] = -math.atan2(dy, dx)
                 
                 self._send_mocap_setpoint(*self.smoothed_target_enu)
 
     def _send_mocap_setpoint(self, x_enu, y_enu, z_enu, yaw):
-        """ Translates an absolute MoCap ENU setpoint into the PX4 EKF2 NED frame """
-        m_ned_x = y_enu
-        m_ned_y = x_enu
+        """ Translates an absolute MoCap ENU setpoint into the PX4 EKF2 NED frame (Mapped to match mocap_px4_bridge's custom transform) """
+        m_ned_x = x_enu
+        m_ned_y = -y_enu
         m_ned_z = -z_enu
 
         msg = TrajectorySetpoint()
