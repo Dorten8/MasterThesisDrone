@@ -9,13 +9,14 @@ class PassByColumn(BaseMission):
     # Enforce safety geofence checking
     ENFORCE_GEOFENCE = True
 
-    def __init__(self, target_x=0.0, start_y=-1.0, end_y=1.2, target_z=0.522, speed=0.2, hold_time=2.0, face_forward=True):
+    def __init__(self, target_x=0.0, start_y=-1.0, end_y=1.2, target_z=0.5, speed=0.2, climb_speed=0.4, hold_time=2.0, face_forward=True):
         super().__init__()
         self.target_x = target_x
         self.start_y = start_y
         self.end_y = end_y
         self.target_z = target_z
         self.speed = speed
+        self.climb_speed = climb_speed
         self.hold_time = hold_time
         self.face_forward = face_forward
 
@@ -46,15 +47,17 @@ class PassByColumn(BaseMission):
         
         # Column X is hardcoded at 0.41 for this absolute test
         column_x = 0.41
+        
         horizontal_dist = abs(column_x - self.target_x)
         clearance = horizontal_dist - cage_radius - column_radius
 
         # Waypoints format: (Absolute X, Absolute Y, Absolute Z, Face Forward Bool, Speed m/s, Pause At Waypoint Bool)
         # s is our speed limit
         s = self.speed
+        cs = self.climb_speed
         
         self.waypoints = [
-            (x0, y0, self.target_z, False, s, True),                                   # WP0: Hover at current position (INTERRUPT)
+            (x0, y0, self.target_z, False, cs, False),                              # WP0: Takeoff and Hover (NO INTERRUPT, CLIMB SPEED)
             (self.target_x, self.start_y, self.target_z, self.face_forward, s, False), # WP1: Transit smoothly to Point A (Start)
             (self.target_x, self.start_y, self.target_z, False, s, True),              # WP2: Hold/Align at Point A (INTERRUPT - USER DOUBLE-CHECK)
             (self.target_x, self.end_y, self.target_z, self.face_forward, s, False),   # WP3: Execute straight-line Pass-By to Point B

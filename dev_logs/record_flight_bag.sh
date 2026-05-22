@@ -41,16 +41,63 @@ echo "  - /fmu/out/vehicle_status           (Arming/Flight Mode state)"
 echo "  - /fmu/out/timesync_status          (Pi-to-PX4 clock sync quality)"
 echo "  - /fmu/in/trajectory_setpoint       (Target commands from Offboard scripts)"
 echo "  - /poses                            (Raw Mocap data from OptiTrack)"
+echo "  - /tf                               (Coordinate transform tree - live 3D visualization)"
+echo "  - /tf_static                        (Static coordinate transforms)"
 echo ""
 echo "Recording... Press Ctrl+C to stop."
 echo ""
 
-# Function to cleanly forward signals to the ros2 bag process
+# Function to cleanly forward signals to the ros2 bag process and post-process the bag
 cleanup() {
   echo "Received stop signal. Cleanly stopping ros2 bag record..."
   kill -INT "$BAG_PID" 2>/dev/null
   wait "$BAG_PID"
-  echo "=== Recording Complete (Cleanly Stopped) ==="
+  echo "=== Recording Stopped ==="
+  
+  # Resolve dynamic path to mcap binary based on architecture
+  ARCH=$(uname -m)
+  PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+  
+  if [ "$ARCH" = "x86_64" ]; then
+    MCAP_BIN="$PROJECT_ROOT/dev_logs/analysis/bin/mcap_amd64"
+  elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+    MCAP_BIN="$PROJECT_ROOT/dev_logs/analysis/bin/mcap_arm64"
+  else
+    MCAP_BIN="mcap"
+  fi
+  
+  RAW_BAG="$BAG_FILE/$(basename "$BAG_FILE")_0.mcap"
+  TEMP_RECOVERED="$BAG_FILE/temp_recovered.mcap"
+  
+  if [ -f "$RAW_BAG" ]; then
+    echo ""
+    echo "=============================================================="
+    echo "⚡ POST-FLIGHT BAG OPTIMIZATION ACTIVE"
+    echo "=============================================================="
+    echo "  System Architecture: $ARCH"
+    echo "  Optimizing: $RAW_BAG"
+    echo "  Applying: Chunking, Full Indexing, and Zstd Compression"
+    echo "  Processing... Please wait."
+    
+    # Try using the pre-compiled binary first, falling back to global 'mcap' command
+    if [ -x "$MCAP_BIN" ]; then
+      RUN_CMD="$MCAP_BIN"
+    else
+      RUN_CMD="mcap"
+    fi
+    
+    if "$RUN_CMD" recover "$RAW_BAG" -o "$TEMP_RECOVERED" >/dev/null 2>&1; then
+      mv "$TEMP_RECOVERED" "$RAW_BAG"
+      echo "  Status: ✅ Success! File is fully indexed and compressed."
+    else
+      echo "  Status: ⚠️ Optimization failed. File left in high-throughput raw format."
+      rm -f "$TEMP_RECOVERED"
+    fi
+    echo "=============================================================="
+    echo ""
+  fi
+
+  echo "=== Recording Complete ==="
   exit 0
 }
 
@@ -59,8 +106,11 @@ trap cleanup INT TERM
 
 mkdir -p "$OUTPUT_DIR"
 
+# Record in high-throughput mode (fastwrite) to keep CPU overhead at absolute zero during flight.
+# Chunking, indexing, and compression are automatically handled after the flight in the cleanup handler.
 ros2 bag record \
   -s mcap \
+  --storage-preset-profile fastwrite \
   -o "$BAG_FILE" \
   /fmu/in/vehicle_visual_odometry \
   /fmu/out/vehicle_odometry \
@@ -72,7 +122,9 @@ ros2 bag record \
   /fmu/out/vehicle_status \
   /fmu/out/timesync_status \
   /fmu/in/trajectory_setpoint \
-  /poses &
+  /poses \
+  /tf \
+  /tf_static &
 
 BAG_PID=$!
 

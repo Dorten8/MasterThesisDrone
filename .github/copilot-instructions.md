@@ -128,25 +128,19 @@ At the end of each session:
 - `## Learning Summary` (numbered lists for key concepts)
 - `## Next Steps` (numbered priority list)
 
-### Current Session Status (Last Update: 2026-05-19)
+### Current Session Status (Last Update: 2026-05-22)
 
 ### What Was Completed
-- **Absolute Coordinate Flight Mission:** Designed and implemented [pass_by_column.py](file:///home/dorten/pi_drone_sshfs/drone_control/missions/pass_by_column.py) to execute absolute horizontal transit and vertical passing sweeps.
-- **EKF2-to-Motive Translation Offset Fix:** Restored the continuous transform translation layer in [flight_director.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_director.py) to resolve the EKF2 boot-up origin shift and eliminate the 1m+ trajectory drift error.
-- **Aesthetic Path Calibration:** Customized the mission trajectory limits (`start_y = -1.0` and `end_y = 1.2`) to match the user's Motive grid camera drawings perfectly.
-- **Autonomous Takeoff & Hover Flight:** Successfully executed a full offboard hover takeoff and landing using MoCap ENU coordinates mapped to PX4 EKF2 frames!
-- **10-Sample Rolling Average Alignment:** Eliminated EKF2 startup noise/drift by collecting a 10-sample rolling average on initialization to lock in a noise-free transform offset.
-- **Zero-Error Ground Standby Setpoints:** Added EKF2 position streaming during ground standby states to guarantee 100% Offboard mode and Arming acceptance.
-- **Direct Filtered Voltage Failsafes:** Implemented a highly-damped raw `voltage_v` low-pass filter (Alpha = 0.02 EMA) to absorb heavy takeoff voltage sags while securely landing at a true chemical threshold of 20.4V.
-- **Universal Keyboard Control Engine:** Developed custom, modular deliberate keybindings (`[ A ]`, `[ T ]`, `[ L ]`, `[SPACE]`) running in a dedicated thread.
-- **Emergency Kill MAVLink ID Fix:** Changed `emergency_kill.py` to use `source_system = 255`, ensuring immediate MAVLink forced-motor-cut delivery.
-- **Offloaded Flight Recorder:** Offloaded MCAP bag recording to [flight_recorder.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_recorder.py) with automated post-landing recording and 3.0s delayed impact capture for motor kills.
+- **Offboard Heartbeat Velocity Fix:** Enabled `hb.velocity = True` inside [flight_director.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_director.py) to activate PX4 offboard velocity feedforward. Resolves jerky speed profiles and position hunting.
+- **Physical Safety Waypoint Alignments:** Shifted [column_sweep_loop.py](file:///home/dorten/pi_drone_sshfs/drone_control/missions/column_sweep_loop.py) sweep waypoints Southward to `1.200m` along Y-axis, creating a robust `12cm` geofence ceiling margin for the drone's physical `17.9cm` carbon safety cage.
+- **Successfully Verified Live Sweep Flight:** Flew 3 fully stable passes of the autonomous sweep loop with flawless deceleration, zero waypoint overshoots, and 100% geofence security.
+- **Loopback Kinetics & Battery Profiling:** Discovered the WP4-to-WP1 abrupt deceleration step-response behavior, and profiled quadcopter loading consumption (20% per minute, strictly capping flight times at 3 minutes).
 
 ### Next Steps (Priority Order)
-1. **Pass-By Column Flight Test:** Once batteries are charged, boot `flight_director.py` with the drone placed at `X=1.17, Z=1.0` and execute the absolute pass-by mission.
-2. **Rectangle Flight Mission:** Implement a `RectangleFlight` mission (`missions/rectangle_flight.py`) to verify multi-point trajectory tracking, horizontal translations, and yaw alignment.
-3. **Repository Clean Up:** Organize the codebase, archive draft/old files, and clean up temporary logs/bags.
-4. **Post-Flight Data Review:** Analyze the recorded MCAP bags and PX4 ULogs to verify absolute trajectory holding stability.
+1. **[CRITICAL START POINT] Analyze Sweep Velocity Stability (WP2 -> WP3):** Begin the next session by processing the high-frequency ROS 2 MCAP flight logs from today's runs. Plot and analyze the drone's actual physical velocity profile during the active sweep leg (`WP2` to `WP3`). Verify if the velocity feedforward fix provides a stable, constant, and predictable speed profile (close to our `0.4 m/s` target). If the speed is stable, we are fully unblocked to start the active collision/obstacle impact experiments!
+2. **Implement Deceleration Ramping:** Refactor the trajectory generator to profile velocity down smoothly when approaching paused waypoints, avoiding the sudden WP4-to-WP1 step-change hookups.
+3. **Code Battery Failsafe Mode:** Program a dedicated voltage/failsafe node subscribing to `vehicle_status` that triggers an automatic Land/Disarm when battery capacity drops below 40%.
+4. **Repository Clean Up:** Organize the codebase, archive draft/old files, and clean up temporary logs/bags.
 
 ### Known Blockers
 - None! Coordinate alignment transforms, geofence protection, voltage failsafes, and emergency disarms are fully verified.
@@ -157,3 +151,4 @@ At the end of each session:
 - During ground standby (ALIGNED, ARMED, ARMING), publish EKF2's exact current local coordinates to guarantee zero setpoint tracking error.
 - Use direct `voltage_v` with a heavily-damped EMA filter (Alpha = 0.02) to monitor battery health under motor load.
 - `MicroXRCEAgent` should be run in a screen session (`screen -r xrce_agent`) to allow persistent link management.
+- **Trajectory Velocity step-change limits:** To prevent aggressive attitude step-responses, velocity feedforward values should be profiled smoothly rather than stepped immediately to zero when transitioning/pausing.

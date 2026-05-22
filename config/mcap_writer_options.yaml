@@ -1,0 +1,8 @@
+# MCAP Writer Configuration for rosbag2_storage_mcap
+# Forces chunking, message index, and summaries to be written for clean, indexed loading in Foxglove Studio.
+noChunkCRC: false
+noChunking: false
+noMessageIndex: false
+noSummary: false
+chunkSize: 786432
+compression: ""

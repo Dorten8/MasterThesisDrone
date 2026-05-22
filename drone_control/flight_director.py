@@ -73,7 +73,7 @@ class FlightDirector(Node):
         self.mocap_pos = None
         self.vehicle_status = None
         
-        self.transform_offset = None # Delta = EKF2 - Mocap
+        self.transform_offset = (0.0, 0.0, 0.0) # Delta = EKF2 - Mocap
         self.mocap_at_takeoff = None
         
         self.arming_counter = 0
@@ -125,6 +125,7 @@ class FlightDirector(Node):
             print("[WARN] config/drone_config.json not found! Using defaults.")
         
         self.state = "INIT"  # INIT -> ALIGNED -> ARMED -> TAKEOFF -> MISSION -> LANDING
+        self.column_pos = None  # Live rigid body location tracked from MoCap
 
         # 10Hz Timer
         self.timer = self.create_timer(0.1, self._control_loop)
@@ -202,10 +203,14 @@ class FlightDirector(Node):
             if named_pose.name == self.drone_name:
                 self.mocap_pos = named_pose.pose.position
                 self._check_geofence(self.mocap_pos)
-                break
+            elif named_pose.name == "jake_column_drone":
+                self.column_pos = named_pose.pose.position
 
     def _check_geofence(self, pos):
         if self.aborted: return
+        # Only enforce runtime geofence checking during active flight missions
+        if self.state != "MISSION": return
+
         # Assuming ENU from /poses, Z is positive UP
         if not (self.geo_x_min <= pos.x <= self.geo_x_max) or not (self.geo_y_min <= pos.y <= self.geo_y_max) or not (self.geo_z_min <= pos.z <= self.geo_z_max):
             print(f"\n\033[91m[FATAL] GEOFENCE BREACH: x={pos.x:.2f}, y={pos.y:.2f}, z={pos.z:.2f}! LANDING!\033[0m")
@@ -263,10 +268,10 @@ class FlightDirector(Node):
         dt = now - self.last_tick
         self.last_tick = now
 
-        # Publish heartbeat (position control)
+        # Publish heartbeat (position control with velocity feedforward)
         hb = OffboardControlMode()
         hb.position = True
-        hb.velocity = False
+        hb.velocity = True
         hb.acceleration = False
         hb.attitude = False
         hb.body_rate = False
@@ -399,10 +404,19 @@ class FlightDirector(Node):
                     self.smoothed_target_enu[0] = target_x
                     self.smoothed_target_enu[1] = target_y
                     self.smoothed_target_enu[2] = target_z
+                    # Arrived: zero feedforward velocity to hold position
+                    vx_ff, vy_ff, vz_ff = 0.0, 0.0, 0.0
                 else:
-                    self.smoothed_target_enu[0] += (dx / dist) * max_step
-                    self.smoothed_target_enu[1] += (dy / dist) * max_step
-                    self.smoothed_target_enu[2] += (dz / dist) * max_step
+                    unit_x = dx / dist
+                    unit_y = dy / dist
+                    unit_z = dz / dist
+                    self.smoothed_target_enu[0] += unit_x * max_step
+                    self.smoothed_target_enu[1] += unit_y * max_step
+                    self.smoothed_target_enu[2] += unit_z * max_step
+                    # Feedforward velocity: tells PX4 the desired velocity, not just position
+                    vx_ff = unit_x * active_speed
+                    vy_ff = unit_y * active_speed
+                    vz_ff = unit_z * active_speed
                     
                 # Auto-yaw computation if face_forward is true
                 if face_forward and dist > 0.05: # Only yaw if we have meaningful travel vector
@@ -410,20 +424,33 @@ class FlightDirector(Node):
                     # math.atan2 gives counter-clockwise angles, so we negate it.
                     self.smoothed_target_enu[3] = -math.atan2(dy, dx)
                 
-                self._send_mocap_setpoint(*self.smoothed_target_enu)
+                self._send_mocap_setpoint(*self.smoothed_target_enu, vx_enu=vx_ff, vy_enu=vy_ff, vz_enu=vz_ff)
 
-    def _send_mocap_setpoint(self, x_enu, y_enu, z_enu, yaw):
-        """ Translates an absolute MoCap ENU setpoint into the PX4 EKF2 NED frame (Mapped to match mocap_px4_bridge's custom transform) """
+    def _send_mocap_setpoint(self, x_enu, y_enu, z_enu, yaw, vx_enu=0.0, vy_enu=0.0, vz_enu=0.0):
+        """ Translates an absolute MoCap ENU setpoint into the PX4 EKF2 NED frame """
         m_ned_x = x_enu
         m_ned_y = -y_enu
         m_ned_z = -z_enu
 
+        # Use the statically locked offset calculated during the INIT state.
+        # This prevents EKF2 estimation latency and time-lag from introducing dynamic feedback
+        # distortion as a function of the drone's flight velocity.
         msg = TrajectorySetpoint()
         msg.position = [
             m_ned_x + self.transform_offset[0],
             m_ned_y + self.transform_offset[1],
             m_ned_z + self.transform_offset[2]
         ]
+        # Velocity feedforward in NED (ENU -> NED: y and z negated)
+        # This tells PX4 how fast to move, not just where to go
+        msg.velocity = [vx_enu, -vy_enu, -vz_enu]
+        
+        # Explicitly set unused derivatives to NaN per standard PX4 implementation
+        # This prevents PX4 from forcing 0.0 acceleration, which causes massive integrator windup
+        msg.acceleration = [float('nan'), float('nan'), float('nan')]
+        msg.jerk = [float('nan'), float('nan'), float('nan')]
+        msg.yawspeed = float('nan')
+        
         msg.yaw = yaw
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_pub.publish(msg)
@@ -433,6 +460,13 @@ class FlightDirector(Node):
         if self.ekf_pos is not None:
             msg = TrajectorySetpoint()
             msg.position = [self.ekf_pos.x, self.ekf_pos.y, self.ekf_pos.z]
+            
+            # Explicitly set all unused derivatives to NaN per standard PX4 implementation
+            msg.velocity = [float('nan'), float('nan'), float('nan')]
+            msg.acceleration = [float('nan'), float('nan'), float('nan')]
+            msg.jerk = [float('nan'), float('nan'), float('nan')]
+            msg.yawspeed = float('nan')
+            
             msg.yaw = 0.0
             msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
             self.trajectory_pub.publish(msg)
@@ -466,6 +500,42 @@ def input_thread(node):
         ch = getch()
         if ch == 'a' or ch == 'A':
             if node.state == "ALIGNED":
+                # Dynamically set takeoff coordinates to the drone's actual physical position at this moment
+                current_m_x = node.mocap_pos.x
+                current_m_y = node.mocap_pos.y
+                current_m_z = node.mocap_pos.z
+                
+                node.mocap_at_takeoff = StaticPose(current_m_x, current_m_y, current_m_z)
+                node.smoothed_target_enu = [current_m_x, current_m_y, current_m_z, 0.0]
+                
+                print(f"\n[SYSTEM] Locking Takeoff Position: X={current_m_x:.3f}m, Y={current_m_y:.3f}m, Z={current_m_z:.3f}m", flush=True)
+                
+                # Re-initialize the mission waypoints based on this new takeoff position
+                node.mission.on_start(node.mocap_at_takeoff)
+                
+                # Re-verify the safety geofence limits with the dynamic waypoints
+                geofence_passed = True
+                if hasattr(node.mission, 'ENFORCE_GEOFENCE') and node.mission.ENFORCE_GEOFENCE:
+                    print("[SYSTEM] Verifying Dynamic Mission Geofence boundaries...", flush=True)
+                    waypoints = node.mission.get_all_absolute_waypoints()
+                    for i, wp in enumerate(waypoints):
+                        x, y, z = wp[0], wp[1], wp[2]
+                        if not (node.geo_x_min <= x <= node.geo_x_max) or not (node.geo_y_min <= y <= node.geo_y_max) or not (node.geo_z_min <= z <= node.geo_z_max):
+                            print(f"\n\033[91m[FATAL] GEOFENCE PRE-CHECK FAILED! Dynamic Waypoint {i} ({x:.2f}, {y:.2f}, {z:.2f}) violates geofence bounds!\033[0m", flush=True)
+                            print(f"         Allowed bounds -> X: [{node.geo_x_min:.2f}, {node.geo_x_max:.2f}], Y: [{node.geo_y_min:.2f}, {node.geo_y_max:.2f}], Z: [{node.geo_z_min:.2f}, {node.geo_z_max:.2f}]", flush=True)
+                            print("\033[91m[SYSTEM] Arming BLOCKED. Refusing to start flight with unsafe parameters.\033[0m\n", flush=True)
+                            geofence_passed = False
+                            break
+                
+                if not geofence_passed:
+                    node.state = "GEOFENCE_BLOCKED"
+                    print("\n" + "="*45, flush=True)
+                    print("🕹️  FLIGHT DIRECTOR LOCKED (GEOFENCE BLOCKED)", flush=True)
+                    print("="*45, flush=True)
+                    print(" [ SPACE ] -> KILL MOTORS / RESET", flush=True)
+                    print("="*45 + "\n", flush=True)
+                    continue
+
                 print("\n[SYSTEM] Initiating Arming sequence (Switching to Offboard, then Arming)...", flush=True)
                 node.state = "ARMING"
                 node.arming_counter = 0

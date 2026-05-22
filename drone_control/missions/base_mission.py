@@ -82,9 +82,10 @@ class BaseMission:
                 self.wp_entered_time = now
             
             elapsed = now - self.wp_entered_time
-            if elapsed >= self.hold_time:
+            active_hold_time = self.hold_time if pause_at_waypoint else 0.0
+            if elapsed >= active_hold_time:
                 # Advance waypoint!
-                if self.hold_time > 0:
+                if active_hold_time > 0:
                     print(f"\n[MISSION] Reached Waypoint {self.current_wp_idx}! Holding for {elapsed:.1f}s. Moving to next WP...")
                 else:
                     print(f"\n[MISSION] Reached Waypoint {self.current_wp_idx}! Moving to next WP...")

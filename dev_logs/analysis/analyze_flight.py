@@ -30,15 +30,30 @@ def main():
     project_root = os.path.dirname(os.path.dirname(script_dir))
     flights_dir = os.path.join(project_root, "dev_logs", "flights")
     
-    # 1. Find the latest descriptive flight folder
-    flight_folders = glob.glob(os.path.join(flights_dir, "flight_*"))
-    flight_folders = [d for d in flight_folders if os.path.isdir(d) and "px4_sd_logs" not in d]
-    
-    if not flight_folders:
-        print(f"\033[91m[ERROR] No flight directories found in: {flights_dir}\033[0m")
-        return
+    # Check if a custom flight directory or name was provided
+    if len(sys.argv) > 1:
+        target = sys.argv[1]
+        if os.path.exists(target) and os.path.isdir(target):
+            latest_folder = os.path.abspath(target)
+        else:
+            # Try to look it up in flights_dir
+            potential_path = os.path.join(flights_dir, target)
+            if os.path.exists(potential_path) and os.path.isdir(potential_path):
+                latest_folder = potential_path
+            else:
+                print(f"\033[91m[ERROR] Provided flight path does not exist: {target}\033[0m")
+                return
+    else:
+        # Find the latest descriptive flight folder
+        flight_folders = glob.glob(os.path.join(flights_dir, "flight_*"))
+        flight_folders = [d for d in flight_folders if os.path.isdir(d) and "px4_sd_logs" not in d]
         
-    latest_folder = max(flight_folders, key=os.path.getmtime)
+        if not flight_folders:
+            print(f"\033[91m[ERROR] No flight directories found in: {flights_dir}\033[0m")
+            return
+            
+        latest_folder = max(flight_folders, key=os.path.getmtime)
+        
     folder_name = os.path.basename(latest_folder)
     print(f"\n=============================================================")
     print(f"📊 FLIGHT RECORDER ANALYZER ACTIVE")
