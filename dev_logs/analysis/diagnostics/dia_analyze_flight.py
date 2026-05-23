@@ -25,14 +25,14 @@ def quaternion_to_yaw(q):
     cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
     return np.arctan2(siny_cosp, cosy_cosp)
 
-def main():
+def main(target=None):
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(script_dir))
-    flights_dir = os.path.join(project_root, "dev_logs", "flights")
+    analysis_dir = os.path.dirname(script_dir)
+    dev_logs_dir = os.path.dirname(analysis_dir)
+    project_root = os.path.dirname(dev_logs_dir)
+    flights_dir = os.path.join(dev_logs_dir, "flights")
     
-    # Check if a custom flight directory or name was provided
-    if len(sys.argv) > 1:
-        target = sys.argv[1]
+    if target is not None:
         if os.path.exists(target) and os.path.isdir(target):
             latest_folder = os.path.abspath(target)
         else:
@@ -451,4 +451,7 @@ def main():
     print("=============================================================\n")
 
 if __name__ == "__main__":
-    main()
+    t = None
+    if len(sys.argv) > 1:
+        t = sys.argv[1]
+    main(t)

@@ -32,3 +32,12 @@
 - Discovered and diagnosed the loopback deceleration hookup (WP4 to WP1) due to instantaneous velocity feedforward step-changes.
 - Measured battery consumption under active motor load (20% capacity depletion per minute of flight, estimated max flight time of 3 minutes).
 - Full technical breakdown in: [dev_logs/session_journals/2026-05-22-flight-hardening-and-loopback-optimization.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-22-flight-hardening-and-loopback-optimization.md)
+
+## Session: 2026-05-23 (MoCap Recovery & Universal Modular Analysis Pipeline)
+- Resolved startup hangs and socket multicast timeouts caused by OptiTrack PC power outage reboots.
+- Replaced hardcoded IP references in `startup-sequence.sh` with robust, config-driven JSON queries from `drone_config.json`.
+- Refactored `experiments_analysis.ipynb` into a clean parameter-driven thin-notebook backed by the modular `experiments_analysis` package.
+- Restored strict 1:1 aspect ratios, equal 0.5m grid ticks, and scaled vector CAD drone viewport overlays inside 2D top-down trajectory plots.
+- Integrated a self-healing Jupyter module reload guard to clear memory cache dynamically and successfully verified headless notebook execution and vector TikZ compilation (exit code 0).
+- Configured, renamed, and mathematically validated the `exp_collision_75deg.py` mission. Forced a safe `1.0 m/s` rapid transit/approach and symmetrized coordinates to trace a strictly vertical straight-line sweep at $X = -0.186$ m, matching CAD and MoCap `/poses` column offset offsets.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-23-mocap-tracking-recovery.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-23-mocap-tracking-recovery.md)

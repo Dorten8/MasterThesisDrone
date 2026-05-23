@@ -1,0 +1,26 @@
+<svg id="cad-svg" viewBox="0 0 600 600" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" class="text-slate-950">
+                        <!-- Custom Arrow & Line markers defined inside defs -->
+                        <defs>
+                            <marker id="arrow-start" viewBox="0 0 10 10" refX="0" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                <path d="M 10 0 L 0 5 L 10 10 z" fill="context-stroke"/>
+                            </marker>
+                            <marker id="arrow-end" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                                <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/>
+                            </marker>
+                            <style id="svg-inline-styles">
+                .cad-line-primary { stroke: #1e293b; fill: none; stroke-width: 2.2px; stroke-linecap: round; stroke-linejoin: round; }
+                .cad-line-secondary { stroke: #64748b; fill: none; stroke-width: 1.5px; stroke-linecap: round; stroke-linejoin: round; }
+                .cad-line-dim { stroke: #ef4444; fill: none; stroke-width: 1.2px; stroke-linecap: round; }
+                .cad-line-dashed { stroke: #64748b; fill: none; stroke-width: 1.2px; stroke-dasharray: 4,4; }
+                .cad-text-label { fill: #0f172a; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: bold; text-anchor: middle; }
+                .cad-text-dim { fill: #ef4444; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: bold; text-anchor: middle; }
+                .cad-plate-fill { fill: #f1f5f9; stroke: #1e293b; stroke-width: 2.2px; stroke-linejoin: round; }
+                .cad-prop-fill { fill: rgba(100, 116, 139, 0.08); stroke: #64748b; stroke-width: 1.2px; stroke-dasharray: 4,3; }
+                .cad-cage-line { stroke: #1e293b; fill: none; stroke-width: 1.8px; stroke-dasharray: 6,4; }
+                .cad-hidden { display: none; }
+            </style>
+                        </defs>
+                        <!-- Interactive Render Group -->
+                        <g id="drone-graphics-layer"><line x1="300" y1="50" x2="300" y2="550" class="cad-line-dashed" opacity="0.45"/><line x1="50" y1="300" x2="550" y2="300" class="cad-line-dashed" opacity="0.45"/><line x1="300" y1="300" x2="374.2462120245875" y2="225.75378797541254" class="cad-line-primary" stroke-width="12"/><line x1="300" y1="300" x2="225.7537879754125" y2="225.75378797541254" class="cad-line-primary" stroke-width="12"/><line x1="300" y1="300" x2="225.7537879754125" y2="374.24621202458746" class="cad-line-primary" stroke-width="12"/><line x1="300" y1="300" x2="374.2462120245875" y2="374.24621202458746" class="cad-line-primary" stroke-width="12"/><circle cx="300" cy="300" r="180" class="cad-cage-line"/><line x1="360" y1="300" x2="480" y2="300" class="cad-line-secondary" stroke-width="2"/><line x1="364.34671708797583" y1="364.34671708797583" x2="427.27922061357856" y2="427.27922061357856" class="cad-line-secondary" stroke-width="2"/><line x1="300" y1="360" x2="300" y2="480" class="cad-line-secondary" stroke-width="2"/><line x1="235.65328291202417" y1="364.34671708797583" x2="172.72077938642144" y2="427.27922061357856" class="cad-line-secondary" stroke-width="2"/><line x1="240" y1="300" x2="120" y2="300" class="cad-line-secondary" stroke-width="2"/><line x1="235.65328291202417" y1="235.65328291202417" x2="172.7207793864214" y2="172.72077938642144" class="cad-line-secondary" stroke-width="2"/><line x1="300" y1="240" x2="299.99999999999994" y2="120" class="cad-line-secondary" stroke-width="2"/><line x1="364.3467170879758" y1="235.65328291202417" x2="427.2792206135785" y2="172.7207793864214" class="cad-line-secondary" stroke-width="2"/><polygon points="275.15999999999997,240 324.84000000000003,240 360,275.15999999999997 360,324.84000000000003 324.84000000000003,360 275.15999999999997,360 240,324.84000000000003 240,275.15999999999997" class="cad-plate-fill"/><circle cx="300" cy="300" r="15" class="cad-line-secondary"/><circle cx="374.2462120245875" cy="225.75378797541254" r="14" class="cad-plate-fill"/><circle cx="374.2462120245875" cy="225.75378797541254" r="3" fill="#1e293b"/><circle cx="374.2462120245875" cy="225.75378797541254" r="50.8" class="cad-prop-fill"/><circle cx="225.7537879754125" cy="225.75378797541254" r="14" class="cad-plate-fill"/><circle cx="225.7537879754125" cy="225.75378797541254" r="3" fill="#1e293b"/><circle cx="225.7537879754125" cy="225.75378797541254" r="50.8" class="cad-prop-fill"/><circle cx="225.7537879754125" cy="374.24621202458746" r="14" class="cad-plate-fill"/><circle cx="225.7537879754125" cy="374.24621202458746" r="3" fill="#1e293b"/><circle cx="225.7537879754125" cy="374.24621202458746" r="50.8" class="cad-prop-fill"/><circle cx="374.2462120245875" cy="374.24621202458746" r="14" class="cad-plate-fill"/><circle cx="374.2462120245875" cy="374.24621202458746" r="3" fill="#1e293b"/><circle cx="374.2462120245875" cy="374.24621202458746" r="50.8" class="cad-prop-fill"/></g>
+                        <g id="dimensions-layer"/>
+                    </svg>

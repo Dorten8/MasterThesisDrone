@@ -237,7 +237,7 @@ MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600
 ```
 2. Run MOCAP 
 ```bash
-ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=192.168.74.9
+ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=192.168.74.9 #or other IP of the MOTIVE server
 ```
   2.1 You should now see tracking topics in `ros2 topic list`
 

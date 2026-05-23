@@ -81,6 +81,15 @@ These links represent the different dimensions of the project. Reference them wh
 - **CRITICAL SERIAL BUG**: Do not kill the `MicroXRCEAgent` once it is connected. Doing so freezes the PX4 Flight Controller client and requires a hardware reboot.
 - For PX4↔ROS 2 bridge work, use `src/micro-ROS-Agent` (ROS package). Do not use `src/Micro-XRCE-DDS-Agent` in colcon workflows.
 - **Mocap SSoT**: `config/drone_config.json` is the Single Source of Truth for the drone's tracker name (via the "primary" role). The string in this JSON must exactly match the Rigid Body name exported by Motive.
+- **CRITICAL MoCap Hurdle**: The Motive application can silently lose tracking of the drone's rigid body without error messages. When this happens, `motion_capture_tracking_node` runs but publishes empty pose arrays, causing `mocap_px4_bridge` to hang indefinitely. **Before running startup, always verify in the Motive GUI that the drone's rigid body is actively tracked and streaming (check for "~980 B/frame" data rate in Motive's Streaming panel).** If tracking is lost, physically move the drone in the capture volume to force Motive to re-detect it.
+- **Motive Streaming Configuration (Verified Stable Settings):**
+  - Camera Frame Rate: **360 Hz** (default was 120 Hz; user discovered 360 Hz is optimal for this cage setup)
+  - Data Port: 1511, Command Port: 1510
+  - Multicast Address: 239.255.42.99
+  - Local Interface: 192.168.74.3 (OptiTrack PC static IP)
+  - All 6 cameras enabled with 250 µs exposure and LED enabled
+  - Target streaming rate: ~980 B/frame, final rate ~358 Hz
+  - Tracking residual should be < 1 mm (0.72 mm is good)
 - **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
@@ -110,7 +119,7 @@ These links represent the different dimensions of the project. Reference them wh
 ## End-of-Day Routine
 
 At the end of each session:
-1. Create a timestamped journal entry in `/home/ws/dev_logs/journal_entries/YYYY-MM-DD-description.md` (This ensures it is saved in the repository, tracked by Git, and accessible to any AI).
+1. **Create a timestamped journal entry strictly in the `dev_logs/session_journals/` directory** in the workspace. The absolute workspace path is `/home/dorten/pi_drone_sshfs/dev_logs/session_journals/YYYY-MM-DD-description.md` (or container-relative: `/home/ws/dev_logs/session_journals/YYYY-MM-DD-description.md`). **Do NOT** use `journal_entries/` or create daily entries in any other folder; Copilot has previously done this incorrectly, requiring manual intervention.
 2. Append the raw chat transcript to `/home/ws/dev_logs/chat_history.md`.
 3. **Format the journal entry as markdown** (`#` for main heading, `##` for sections, `###` for subsections, `-` for bullet lists) so it pastes cleanly into Notion.
 4. Provide clickable links for every file path you list in the end-of-day result (journal entry, updated instruction files, and any other referenced files).
@@ -128,22 +137,26 @@ At the end of each session:
 - `## Learning Summary` (numbered lists for key concepts)
 - `## Next Steps` (numbered priority list)
 
-### Current Session Status (Last Update: 2026-05-22)
+### Current Session Status (Last Update: 2026-05-23)
 
 ### What Was Completed
+- **Core Experimental Analysis Pipeline (20-30% Thesis Milestone):** Conceived and engineered the core mathematical and statistical data pipeline (`experiments_analysis` package) to automatically clean raw high-frequency telemetry using Savitzky-Golay filtering, isolate active sweep events, calculate perpendicular tracking errors and closest approach clearances, and compile 2x2 side-by-side comparative boxplots (With vs. Without Cage) and multi-angle progression trends.
+- **Symmetrical 75° Collision Loop Optimization:** Refactored `exp_collision_75deg.py` into a robust `ExpCollision75Deg` loop class. Symmetrized the waypoint logic to fly a straight-line vertical sweep at a constant offset of $X = -0.186$ m, matching your CAD sketch and `/poses` column offset. Hardcoded explicit `1.0 m/s` transit/recovery speeds to protect the drone, keeping `sweep_speed` strictly limited to the active `WP2 -> WP3` segment.
+- **MoCap Recovery & Diagnostics:** Debugged startup failures after the OptiTrack PC power outage reboot. Replaced all hardcoded IP references in `startup-sequence.sh` with configuration-driven queries from `config/drone_config.json`, fixed the multicast node tracking join timeout pattern, and introduced custom health diagnostics for Companion-to-FC connectivity checking.
+- **Physical Safety Aspect Ratio & Grid Restoration:** Fixed the spatial trajectory plot in `exa_plot_trajectory.py` to enforce a strictly equal aspect ratio and 0.5m grid normalization squares, restoring the CAD drone top vector illustrations at WP2, WP3, and closest approach.
 - **Offboard Heartbeat Velocity Fix:** Enabled `hb.velocity = True` inside [flight_director.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_director.py) to activate PX4 offboard velocity feedforward. Resolves jerky speed profiles and position hunting.
-- **Physical Safety Waypoint Alignments:** Shifted [column_sweep_loop.py](file:///home/dorten/pi_drone_sshfs/drone_control/missions/column_sweep_loop.py) sweep waypoints Southward to `1.200m` along Y-axis, creating a robust `12cm` geofence ceiling margin for the drone's physical `17.9cm` carbon safety cage.
-- **Successfully Verified Live Sweep Flight:** Flew 3 fully stable passes of the autonomous sweep loop with flawless deceleration, zero waypoint overshoots, and 100% geofence security.
-- **Loopback Kinetics & Battery Profiling:** Discovered the WP4-to-WP1 abrupt deceleration step-response behavior, and profiled quadcopter loading consumption (20% per minute, strictly capping flight times at 3 minutes).
 
 ### Next Steps (Priority Order)
-1. **[CRITICAL START POINT] Analyze Sweep Velocity Stability (WP2 -> WP3):** Begin the next session by processing the high-frequency ROS 2 MCAP flight logs from today's runs. Plot and analyze the drone's actual physical velocity profile during the active sweep leg (`WP2` to `WP3`). Verify if the velocity feedforward fix provides a stable, constant, and predictable speed profile (close to our `0.4 m/s` target). If the speed is stable, we are fully unblocked to start the active collision/obstacle impact experiments!
-2. **Implement Deceleration Ramping:** Refactor the trajectory generator to profile velocity down smoothly when approaching paused waypoints, avoiding the sudden WP4-to-WP1 step-change hookups.
-3. **Code Battery Failsafe Mode:** Program a dedicated voltage/failsafe node subscribing to `vehicle_status` that triggers an automatic Land/Disarm when battery capacity drops below 40%.
-4. **Repository Clean Up:** Organize the codebase, archive draft/old files, and clean up temporary logs/bags.
+1. **Verify Startup End-to-End:** Run `./startup-sequence.sh` and ensure MoCap rigid body tracking is actively streaming to the Companion before offboard takeoff.
+2. **Execute Interactive Notebook Plots:** Open `experiments_analysis.ipynb` in VS Code and visually review the comparative box plots and velocity profiles.
+3. **Collision Data Gathering:** Progressively run and populate the collision sweep templates (75° to 0°) as experimental runs are gathered.
+4. **Implement Deceleration Ramping:** Refactor the trajectory generator to profile velocity down smoothly when approaching waypoints.
+5. **Add Automatic Battery Failsafe:** Program a dedicated voltage failsafe node that triggers an automatic Land/Disarm when battery capacity drops below 40%.
 
 ### Known Blockers
-- None! Coordinate alignment transforms, geofence protection, voltage failsafes, and emergency disarms are fully verified.
+- **MoCap Rigid Body Loss (Recurring Hurdle):** The Motive application can lose rigid body tracking, especially after PC reboots or network hiccups. This is the #1 cause of startup hangs. Solution: In Motive GUI, verify the drone's rigid body is visible and streaming; physically move the drone in the capture volume if needed to force re-detection. No programmatic fix; requires manual intervention at the OptiTrack PC.
+- **MicroXRCEAgent Stale Connection:** Do not kill the agent once it connects; if it fails on first connection, power-cycle the FC and drone.
+- **Multicast Socket State:** If `motion_capture_tracking_node` crashes with "receive_from: Interrupted system call," the socket is in a bad state. Run `./startup-sequence.sh` to reset the ROS2 daemon.
 
 ### Architecture Notes
 - `/dev/ttyAMA0` remains single-owner: do not run micro-ROS agent and `mavlink-routerd` simultaneously.

@@ -129,11 +129,13 @@ SUCCESS_COUNT=0
 TOTAL_STEPS=5
 
 # Step 0: Time Synchronization
-# We do this first so the Pi has the correct wall-clock date before 
+# We do this first so the Pi has the correct wall-clock date before
 # the Agent starts and pushes it to the PX4.
 echo -e "${YELLOW}[$(date +%H:%M:%S)]${NC} Starting: ${BLUE}Time Synchronization${NC}"
+# Read Mocap server IP from drone_config.json for NTP fallback
+MOCAP_NTP=$(python3 -c "import json; print(json.load(open('/home/ws/config/drone_config.json'))['optitrack_server_ip'])" 2>/dev/null)
 # Try Internet first, then Mocap PC as fallback
-if sudo ntpdate -u pool.ntp.org >/dev/null 2>&1 || sudo ntpdate -u 192.168.74.2 >/dev/null 2>&1; then
+if sudo ntpdate -u pool.ntp.org >/dev/null 2>&1 || sudo ntpdate -u "$MOCAP_NTP" >/dev/null 2>&1; then
     echo -e "${GREEN}✓ System time synchronized: $(date)${NC}"
     ((SUCCESS_COUNT++))
     RESULTS+=("${GREEN}✓${NC} Time Synchronization")
@@ -169,7 +171,7 @@ fi
 # Read Mocap server IP from drone_config.json (SSoT)
 MOCAP_SERVER=$(python3 -c "import json; print(json.load(open('/home/ws/config/drone_config.json'))['optitrack_server_ip'])" 2>/dev/null)
 if [ -z "$MOCAP_SERVER" ]; then
-    MOCAP_SERVER="192.168.74.2" # Fallback
+    MOCAP_SERVER="192.168.74.3" # Fallback
     echo -e "${YELLOW}Could not read Mocap server IP from config. Defaulting to: $MOCAP_SERVER${NC}"
 else
     echo -e "${GREEN}Loaded Mocap server IP '$MOCAP_SERVER' from drone_config.json${NC}"
@@ -178,7 +180,7 @@ fi
 if run_with_monitor \
     "motion_capture_tracking_node" \
     "ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=$MOCAP_SERVER" \
-    "Joined multicast group" \
+    "logClouds\|Joined multicast" \
     "motion_capture_tracking_node Running" \
     "motion_capture_tracking_node"; then
     ((SUCCESS_COUNT++))
@@ -203,6 +205,33 @@ if run_with_monitor \
     "mocap_px4_bridge"; then
     ((SUCCESS_COUNT++))
 fi
+
+# Step 3b: Diagnostic - Check MicroXRCEAgent connection and MoCap data
+# MicroXRCEAgent health: /fmu/out/* topics should exist
+# MoCap health: /poses topic should have data
+echo -e "${YELLOW}[$(date +%H:%M:%S)]${NC} Checking: ${BLUE}System Health${NC}"
+
+FMU_TOPICS=$(ros2 topic list 2>/dev/null | grep "^/fmu/out/" | wc -l)
+POSES_TOPIC=$(ros2 topic list 2>/dev/null | grep -c "^/poses$")
+
+echo ""
+if [ "$FMU_TOPICS" -gt 0 ]; then
+    echo -e "${GREEN}✓ MicroXRCEAgent is connected to FC (${FMU_TOPICS} /fmu/out/* topics)${NC}"
+    RESULTS+=("${GREEN}✓${NC} MicroXRCEAgent ↔ FC Connection")
+else
+    echo -e "${RED}✗ MicroXRCEAgent NOT connected to FC (no /fmu/out/* topics)${NC}"
+    echo -e "${RED}  → Power cycle the drone and flight controller${NC}"
+    RESULTS+=("${RED}✗${NC} MicroXRCEAgent ↔ FC Connection (stale)")
+fi
+
+if [ "$POSES_TOPIC" -eq 1 ]; then
+    echo -e "${GREEN}✓ Motion capture tracking is working (/poses topic exists)${NC}"
+    RESULTS+=("${GREEN}✓${NC} Motion Capture System")
+else
+    echo -e "${RED}✗ Motion capture tracking not working (no /poses topic)${NC}"
+    RESULTS+=("${RED}✗${NC} Motion Capture System")
+fi
+echo ""
 
 # Step 4: Foxglove Bridge
 # Updated to wait for 'Advertising new channel' or similar
