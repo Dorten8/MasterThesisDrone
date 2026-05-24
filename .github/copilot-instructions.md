@@ -93,6 +93,42 @@ These links represent the different dimensions of the project. Reference them wh
 - **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
+## Current Session Status (Last Update: 2026-05-24 19:30 UTC)
+
+### 🎯 Mission Status
+- **`ExpCollision75Deg` mission:** ✅ STABLE & READY. Symmetrized waypoint logic, hardcoded safety speeds (1.0 m/s transit, variable sweep). Geometry is locked at X=–0.186m offset (CAD-verified). Autolooping enabled. Expect to gather first 75° dataset tomorrow.
+- **`experiments_analysis` pipeline:** ✅ FUNCTIONAL. Data ingestion → Savitzky-Golay filtering → event isolation → perpendicular error + closest-approach metrics → side-by-side box plots. Ready for flight processing.
+- **Startup & diagnostics:** ✅ HARDENED. Configuration-driven (drone_config.json SSoT), multicast socket glitch fixed, health checks automated.
+- **Velocity feedforward:** ✅ ENABLED. Smooth trajectory profiles active; no more jerky position hunting.
+
+### ⚠️ CRITICAL BLOCKER FOR TOMORROW
+**Bagfile Corruption:** Flight `flight_20260524-1904_75°_column_collision_loop_fixed_cage` reports:
+```
+[ERROR] Failed processing flight: unknown (opcode 0) record has length 7696581394432 that exceeds limit 4294967296
+```
+This is a **7.6 TB record claim**—almost certainly a file corruption during recording or a malformed ROS 2 bagfile header. 
+**Action for tomorrow:**
+1. Check bagfile integrity: `ros2 bag info /path/to/flight_20260524-1904_75°_column_collision_loop_fixed_cage` (may hang if corrupt)
+2. If stuck, kill the process; bagfile is likely unrecoverable
+3. Re-record the flight (it was "pretty good" per user, so worth repeating)
+4. Add file-size sanity check to `record_flight_bag.sh` to catch corruption early in future runs
+
+### ✅ Completed This Session (2026-05-24)
+- Engineered `experiments_analysis` package (6 modules + Jupyter notebook)
+- Implemented symmetrical 75° collision loop with safety hardening
+- Configuration-driven startup pipeline (IP/multicast dynamic binding)
+- Fixed trajectory visualization (equal aspect ratio, 0.5m grid, drone SVG icons)
+- Enabled velocity feedforward for smooth offboard control
+- Created comprehensive end-of-day journal documenting all changes
+
+### 📋 Tomorrow's Priority Order
+1. **Verify startup end-to-end:** `./startup-sequence.sh` → check mocap streaming in Motive GUI
+2. **Diagnose bagfile corruption:** Determine if `flight_20260524-1904_*` is recoverable
+3. **Execute fresh 75° collision run:** Record new clean bagfile to `/dev_logs/`
+4. **Process through pipeline:** Load into `experiments_analysis.ipynb`, verify tracking metrics (expect 0.1–0.3 m error)
+5. **Build first comparative plot:** If time permits, run 3× with-cage / 3× without-cage at 75°
+6. **Iterate angle series:** Begin 60°, 45°, 30°, 0° variants (if 75° yields good data)
+
 ## Tutoring Mode: Socratic Learning Style (Default)
 
 ⚠️ **This project has a dedicated Tutor Agent** (`.github/agents/tutor.agent.md`). 
@@ -146,14 +182,18 @@ At the end of each session:
 - **Physical Safety Aspect Ratio & Grid Restoration:** Fixed the spatial trajectory plot in `exa_plot_trajectory.py` to enforce a strictly equal aspect ratio and 0.5m grid normalization squares, restoring the CAD drone top vector illustrations at WP2, WP3, and closest approach.
 - **Offboard Heartbeat Velocity Fix:** Enabled `hb.velocity = True` inside [flight_director.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_director.py) to activate PX4 offboard velocity feedforward. Resolves jerky speed profiles and position hunting.
 
-### Next Steps (Priority Order)
-1. **Verify Startup End-to-End:** Run `./startup-sequence.sh` and ensure MoCap rigid body tracking is actively streaming to the Companion before offboard takeoff.
-2. **Execute Interactive Notebook Plots:** Open `experiments_analysis.ipynb` in VS Code and visually review the comparative box plots and velocity profiles.
-3. **Collision Data Gathering:** Progressively run and populate the collision sweep templates (75° to 0°) as experimental runs are gathered.
-4. **Implement Deceleration Ramping:** Refactor the trajectory generator to profile velocity down smoothly when approaching waypoints.
-5. **Add Automatic Battery Failsafe:** Program a dedicated voltage failsafe node that triggers an automatic Land/Disarm when battery capacity drops below 40%.
+### Next Steps (Priority Order — Tomorrow 2026-05-25)
+1. **Verify Startup End-to-End:** Run `./startup-sequence.sh` and ensure MoCap rigid body tracking is actively streaming in Motive GUI (expect ~980 B/frame rate, <1 mm residual).
+2. **Diagnose Bagfile Corruption:** Investigate `flight_20260524-1904_75°_column_collision_loop_fixed_cage` — check if recoverable with `ros2 bag info`. If corrupt, re-record the flight (it was good data worth repeating).
+3. **Execute Fresh 75° Collision Run:** Use `ExpCollision75Deg` mission to record clean bagfile to `/dev_logs/` (expect 2–3 loops per flight).
+4. **Process Through Pipeline:** Load bagfile into `experiments_analysis.ipynb`, verify Savitzky-Golay filtering is working, check perpendicular error metrics (expect 0.1–0.3 m).
+5. **Build First Comparative Plot:** If single 75° run validates well, execute 2–3 more runs (with & without cage) and generate box plots.
+6. **Iterate Angle Series:** Begin 60°, 45°, 30°, 0° collision angles (if 75° yields consistent data).
+7. **Implement Deceleration Ramping (Future):** Smooth velocity step-changes when transitioning between waypoints.
+8. **Add Automatic Battery Failsafe (Future):** Voltage-based auto-Land when capacity < 40%.
 
 ### Known Blockers
+- **Bagfile Corruption (NEW — 2026-05-24):** Flight `flight_20260524-1904_75°_column_collision_loop_fixed_cage` fails to process with "unknown (opcode 0) record has length 7696581394432 exceeds limit 4294967296". This is a 7.6 TB record claim—file corruption during recording likely. Action: Inspect with `ros2 bag info` (may hang if corrupt); if unrecoverable, re-record. Add file-size sanity check to `record_flight_bag.sh` to catch corruption early.
 - **MoCap Rigid Body Loss (Recurring Hurdle):** The Motive application can lose rigid body tracking, especially after PC reboots or network hiccups. This is the #1 cause of startup hangs. Solution: In Motive GUI, verify the drone's rigid body is visible and streaming; physically move the drone in the capture volume if needed to force re-detection. No programmatic fix; requires manual intervention at the OptiTrack PC.
 - **MicroXRCEAgent Stale Connection:** Do not kill the agent once it connects; if it fails on first connection, power-cycle the FC and drone.
 - **Multicast Socket State:** If `motion_capture_tracking_node` crashes with "receive_from: Interrupted system call," the socket is in a bad state. Run `./startup-sequence.sh` to reset the ROS2 daemon.
