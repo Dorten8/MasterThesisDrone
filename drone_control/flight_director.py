@@ -35,8 +35,9 @@ class StaticPose:
         self.z = z
 
 class FlightDirector(Node):
-    def __init__(self, mission_class):
+    def __init__(self, mission_class, cage_mode="rotating_cage"):
         super().__init__('flight_director')
+        self.cage_mode = cage_mode
 
         # Load Mission
         self.mission = mission_class()
@@ -162,8 +163,8 @@ class FlightDirector(Node):
                 self.state = "ARMED"
                 print("\n[SYSTEM] Drone successfully ARMED and in OFFBOARD mode! Ready for Takeoff [T].", flush=True)
                 
-                # Start automatic bag recording the moment we arm
-                self.recorder.start_recording(self.mission.MISSION_NAME)
+                # Start automatic bag recording the moment we arm with cage configuration suffix
+                self.recorder.start_recording(self.mission.MISSION_NAME + "_" + self.cage_mode)
 
     def _battery_cb(self, msg):
         if self.aborted: return
@@ -238,8 +239,8 @@ class FlightDirector(Node):
 
     def command_arm(self):
         self.get_logger().info("Commanding ARM...")
-        # Start automatic bag recording the moment we command arm to avoid status callbacks delay/drops
-        self.recorder.start_recording(self.mission.MISSION_NAME)
+        # Start automatic bag recording the moment we command arm with cage configuration suffix
+        self.recorder.start_recording(self.mission.MISSION_NAME + "_" + self.cage_mode)
         # Official PX4 offboard arming uses param1=1.0 and param2=21196.0 for offboard override force arm.
         self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0, param2=21196.0)
 
@@ -248,10 +249,27 @@ class FlightDirector(Node):
         self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
 
     def command_land(self):
-        self.get_logger().warn("Commanding LAND...")
-        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+        self.get_logger().warn("Commanding Controlled Offboard LAND...")
         self.state = "LANDING"
-        # We do NOT stop recording here; it will stop automatically when EKF2 reports disarm!
+        
+        # Initialize offboard landing coordinates at current target or actual position
+        if self.smoothed_target_enu is not None:
+            self.landing_target_x = self.smoothed_target_enu[0]
+            self.landing_target_y = self.smoothed_target_enu[1]
+            self.landing_target_z = self.smoothed_target_enu[2]
+            self.landing_target_yaw = self.smoothed_target_enu[3]
+        elif self.mocap_pos is not None:
+            self.landing_target_x = self.mocap_pos.x
+            self.landing_target_y = self.mocap_pos.y
+            self.landing_target_z = self.mocap_pos.z
+            self.landing_target_yaw = 0.0
+        else:
+            self.landing_target_x = 0.0
+            self.landing_target_y = 0.0
+            self.landing_target_z = 0.5
+            self.landing_target_yaw = 0.0
+            
+        self.landing_start_time = time.time()
 
     def command_kill(self):
         self.get_logger().fatal("BRUTAL KILL TRIGGERED! Motors off!")
@@ -278,13 +296,35 @@ class FlightDirector(Node):
         hb.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.offboard_mode_pub.publish(hb)
 
-        if self.aborted:
-            return
-            
         if self.state == "LANDING":
-            # Continue sending drone's actual EKF2 setpoint to keep the Offboard link healthy and trusted by PX4.
-            # If the offboard link drops due to missing setpoints, PX4 enters failsafe and ignores MAVLink disarm commands!
-            self._send_ekf_setpoint()
+            elapsed_landing = now - getattr(self, 'landing_start_time', now)
+            
+            # Ground detection: if MoCap Z is below 8cm, or we have been landing for > 6 seconds
+            if (self.mocap_pos is not None and self.mocap_pos.z < 0.08) or elapsed_landing > 6.0:
+                self.get_logger().warn("[SYSTEM] Ground detected or landing timeout reached. Disarming motors.")
+                # Publish normal disarm, and fallback to hard disarm
+                self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0)
+                # Stop recording cleanly
+                self.recorder.stop_recording_delayed(1.0)
+                # Send EKF setpoint to maintain offboard mode clean exit
+                self._send_ekf_setpoint()
+                return
+                
+            # Descend slowly at 0.15 m/s while holding horizontal position
+            self.landing_target_z = max(0.0, self.landing_target_z - 0.15 * dt)
+            
+            self._send_mocap_setpoint(
+                self.landing_target_x, 
+                self.landing_target_y, 
+                self.landing_target_z, 
+                self.landing_target_yaw,
+                vx_enu=0.0, 
+                vy_enu=0.0, 
+                vz_enu=-0.15
+            )
+            return
+
+        if self.aborted:
             return
 
         if self.state == "INIT":
@@ -303,56 +343,76 @@ class FlightDirector(Node):
                 
                 self.alignment_samples.append((dx, dy, dz, self.mocap_pos.x, self.mocap_pos.y, self.mocap_pos.z))
                 
-                # Wait for 10 stable samples to filter out startup glitches or EKF2 convergence spikes
-                if len(self.alignment_samples) >= 10:
-                    avg_dx = sum(s[0] for s in self.alignment_samples) / 10.0
-                    avg_dy = sum(s[1] for s in self.alignment_samples) / 10.0
-                    avg_dz = sum(s[2] for s in self.alignment_samples) / 10.0
+                # Maintain sliding window of 20 samples (2 seconds at 10Hz)
+                if len(self.alignment_samples) > 20:
+                    self.alignment_samples.pop(0)
+                
+                # Verify EKF2 convergence by checking standard deviation of samples
+                if len(self.alignment_samples) == 20:
+                    dx_vals = [s[0] for s in self.alignment_samples]
+                    dy_vals = [s[1] for s in self.alignment_samples]
+                    dz_vals = [s[2] for s in self.alignment_samples]
                     
-                    avg_m_x = sum(s[3] for s in self.alignment_samples) / 10.0
-                    avg_m_y = sum(s[4] for s in self.alignment_samples) / 10.0
-                    avg_m_z = sum(s[5] for s in self.alignment_samples) / 10.0
+                    avg_dx = sum(dx_vals) / 20.0
+                    avg_dy = sum(dy_vals) / 20.0
+                    avg_dz = sum(dz_vals) / 20.0
                     
-                    self.transform_offset = (avg_dx, avg_dy, avg_dz)
-                    self.mocap_at_takeoff = StaticPose(avg_m_x, avg_m_y, avg_m_z)
-                    self.smoothed_target_enu = [avg_m_x, avg_m_y, avg_m_z, 0.0]
+                    var_dx = sum((x - avg_dx)**2 for x in dx_vals) / 20.0
+                    var_dy = sum((y - avg_dy)**2 for y in dy_vals) / 20.0
                     
-                    # Pre-flight geofence check (simulate start to extract waypoints)
-                    self.mission.on_start(self.mocap_at_takeoff)
-                    geofence_passed = True
-                    if hasattr(self.mission, 'ENFORCE_GEOFENCE') and self.mission.ENFORCE_GEOFENCE:
-                        print("\n[SYSTEM] Verifying Mission Geofence boundaries...", flush=True)
-                        waypoints = self.mission.get_all_absolute_waypoints()
-                        for i, wp in enumerate(waypoints):
-                            x, y, z = wp[0], wp[1], wp[2]
-                            if not (self.geo_x_min <= x <= self.geo_x_max) or not (self.geo_y_min <= y <= self.geo_y_max) or not (self.geo_z_min <= z <= self.geo_z_max):
-                                print(f"\n\033[91m[FATAL] GEOFENCE PRE-CHECK FAILED! Waypoint {i} ({x:.2f}, {y:.2f}, {z:.2f}) violates geofence bounds!\033[0m", flush=True)
-                                print(f"         Allowed bounds -> X: [{self.geo_x_min:.2f}, {self.geo_x_max:.2f}], Y: [{self.geo_y_min:.2f}, {self.geo_y_max:.2f}], Z: [{self.geo_z_min:.2f}, {self.geo_z_max:.2f}]", flush=True)
-                                print("\033[91m[SYSTEM] Arming BLOCKED. Refusing to start flight with unsafe parameters.\033[0m\n", flush=True)
-                                geofence_passed = False
-                                break
+                    std_dx = math.sqrt(var_dx)
+                    std_dy = math.sqrt(var_dy)
                     
-                    if not geofence_passed:
-                        self.state = "GEOFENCE_BLOCKED"
-                        print("\n" + "="*45, flush=True)
-                        print("🕹️  FLIGHT DIRECTOR LOCKED (GEOFENCE BLOCKED)", flush=True)
-                        print("="*45, flush=True)
-                        print(" [ SPACE ] -> KILL MOTORS / RESET", flush=True)
-                        print("="*45 + "\n", flush=True)
-                        return
+                    # Print EKF2 convergence status in real-time
+                    print(f"\r[SYSTEM] EKF2 state estimator converging... (std_x: {std_dx*1000:.1f}mm, std_y: {std_dy*1000:.1f}mm) [Goal < 3.0mm] ", end="", flush=True)
                     
-                    self.state = "ALIGNED"
-                    print(f"\n[SYSTEM] Frame Transform Aligned! EKF2 Z-Offset: {avg_dz:.2f}m (Averaged over 10 samples)")
-                    print("[SYSTEM] Geofence check PASSED.")
-                    print("\n" + "="*45)
-                    print("🕹️  FLIGHT DIRECTOR ACTIVE")
-                    print("="*45)
-                    print(" [ A ]     -> ARM the drone")
-                    print(" [ T ]     -> TAKE OFF (Start Mission)")
-                    print(" [ENTER]   -> PROCEED (Next Phase)")
-                    print(" [ L ]     -> SAFE LAND")
-                    print(" [SPACE]   -> KILL MOTORS")
-                    print("="*45 + "\n")
+                    # Transition to ALIGNED only when state estimate is settled (std < 3.0mm)
+                    if std_dx < 0.003 and std_dy < 0.003:
+                        avg_m_x = sum(s[3] for s in self.alignment_samples) / 20.0
+                        avg_m_y = sum(s[4] for s in self.alignment_samples) / 20.0
+                        avg_m_z = sum(s[5] for s in self.alignment_samples) / 20.0
+                        
+                        self.transform_offset = (avg_dx, avg_dy, avg_dz)
+                        self.mocap_at_takeoff = StaticPose(avg_m_x, avg_m_y, avg_m_z)
+                        self.smoothed_target_enu = [avg_m_x, avg_m_y, avg_m_z, 0.0]
+                        
+                        # Pre-flight geofence check (simulate start to extract waypoints)
+                        self.mission.on_start(self.mocap_at_takeoff)
+                        geofence_passed = True
+                        if hasattr(self.mission, 'ENFORCE_GEOFENCE') and self.mission.ENFORCE_GEOFENCE:
+                            print("\n[SYSTEM] Verifying Mission Geofence boundaries...", flush=True)
+                            waypoints = self.mission.get_all_absolute_waypoints()
+                            for i, wp in enumerate(waypoints):
+                                x, y, z = wp[0], wp[1], wp[2]
+                                if not (self.geo_x_min <= x <= self.geo_x_max) or not (self.geo_y_min <= y <= self.geo_y_max) or not (self.geo_z_min <= z <= self.geo_z_max):
+                                    print(f"\n\033[91m[FATAL] GEOFENCE PRE-CHECK FAILED! Waypoint {i} ({x:.2f}, {y:.2f}, {z:.2f}) violates geofence bounds!\033[0m", flush=True)
+                                    print(f"         Allowed bounds -> X: [{self.geo_x_min:.2f}, {self.geo_x_max:.2f}], Y: [{self.geo_y_min:.2f}, {self.geo_y_max:.2f}], Z: [{self.geo_z_min:.2f}, {self.geo_z_max:.2f}]", flush=True)
+                                    print("\033[91m[SYSTEM] Arming BLOCKED. Refusing to start flight with unsafe parameters.\033[0m\n", flush=True)
+                                    geofence_passed = False
+                                    break
+                        
+                        if not geofence_passed:
+                            self.state = "GEOFENCE_BLOCKED"
+                            print("\n" + "="*45, flush=True)
+                            print("🕹️  FLIGHT DIRECTOR LOCKED (GEOFENCE BLOCKED)", flush=True)
+                            print("="*45, flush=True)
+                            print(" [ SPACE ] -> KILL MOTORS / RESET", flush=True)
+                            print("="*45 + "\n", flush=True)
+                            return
+                        
+                        self.state = "ALIGNED"
+                        print(f"\n\n[SYSTEM] EKF2 Estimator Fully Converged! State Settled.")
+                        print(f"[SYSTEM] Frame Transform Locked. EKF2 Ned Offset: X: {avg_dx:.3f}m | Y: {avg_dy:.3f}m | Z: {avg_dz:.3f}m")
+                        print("[SYSTEM] Geofence check PASSED.")
+                        print("\n" + "="*45)
+                        print("🕹️  FLIGHT DIRECTOR ACTIVE")
+                        print("="*45)
+                        print(" [ A ]     -> ARM the drone")
+                        print(" [ T ]     -> TAKE OFF (Start Mission)")
+                        print(" [ENTER]   -> PROCEED (Next Phase)")
+                        print(" [ L ]     -> SAFE LAND")
+                        print(" [SPACE]   -> KILL MOTORS")
+                        print("="*45 + "\n")
             return
 
         if self.state == "ALIGNED" or self.state == "ARMED":
@@ -599,8 +659,20 @@ def load_mission():
 def main(args=None):
     mission_class = load_mission()
 
+    # Prompt user for cage configuration before starting the flight node
+    print("\n=============================================")
+    print("🛡️ CAGE CONFIGURATION CALIBRATION")
+    print("=============================================")
+    cage_choice = input("Is the drone safety cage ROTATING or FIXED for this flight? [R/F] (Default is R): ").strip().upper()
+    if cage_choice == 'F' or "FIXED" in cage_choice:
+        cage_mode = "fixed_cage"
+    else:
+        cage_mode = "rotating_cage"
+    print(f"[SYSTEM] Calibrated cage profile: {cage_mode.upper().replace('_', ' ')}")
+    print("=============================================\n")
+
     rclpy.init(args=args)
-    node = FlightDirector(mission_class)
+    node = FlightDirector(mission_class, cage_mode=cage_mode)
     
     thread = threading.Thread(target=input_thread, args=(node,), daemon=True)
     thread.start()

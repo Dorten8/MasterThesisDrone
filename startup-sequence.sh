@@ -211,6 +211,9 @@ fi
 # MoCap health: /poses topic should have data
 echo -e "${YELLOW}[$(date +%H:%M:%S)]${NC} Checking: ${BLUE}System Health${NC}"
 
+# Wait for topics to register
+sleep 2
+
 FMU_TOPICS=$(ros2 topic list 2>/dev/null | grep "^/fmu/out/" | wc -l)
 POSES_TOPIC=$(ros2 topic list 2>/dev/null | grep -c "^/poses$")
 

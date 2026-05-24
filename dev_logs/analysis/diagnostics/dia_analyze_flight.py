@@ -283,10 +283,25 @@ def main(target=None):
     
     # Find the exact moment when the geofence triggered land or when EKF2/Mocap went out
     if len(mocap_t) > 0:
-        # Load geofence limits
+        # Load geofence limits dynamically from drone_config.json
         x_min, x_max = -1.25, 2.00
         y_min, y_max = -1.30, 1.50
         z_min, z_max = 0.08, 2.20
+        try:
+            import json
+            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "config", "drone_config.json")
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    geo = config.get("mocap_geofence", {})
+                    x_min = geo.get("x_min", x_min)
+                    x_max = geo.get("x_max", x_max)
+                    y_min = geo.get("y_min", y_min)
+                    y_max = geo.get("y_max", y_max)
+                    z_min = geo.get("z_min", z_min)
+                    z_max = geo.get("z_max", z_max)
+        except Exception:
+            pass
         
         breach_idx = -1
         for i in range(len(mocap_t)):

@@ -28,7 +28,7 @@
 
 ## Session: 2026-05-22 (Velocity Feedforward & Flight Hardening)
 - Enabled offboard velocity feedforward in the heartbeat flags to completely fix jerky speed tracking and deceleration overshoots.
-- Shifted sweep loop waypoints slightly Southward (1.200m Y-limit) to maintain a safe physical clearance margin (12cm) for the custom carbon cage.
+- Shifted sweep loop waypoints slightly Southward (1.200m Y-limit) to maintain a safe physical clearance margin (12cm) for the custom PETG-printed glass-fiber cage.
 - Discovered and diagnosed the loopback deceleration hookup (WP4 to WP1) due to instantaneous velocity feedforward step-changes.
 - Measured battery consumption under active motor load (20% capacity depletion per minute of flight, estimated max flight time of 3 minutes).
 - Full technical breakdown in: [dev_logs/session_journals/2026-05-22-flight-hardening-and-loopback-optimization.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-22-flight-hardening-and-loopback-optimization.md)

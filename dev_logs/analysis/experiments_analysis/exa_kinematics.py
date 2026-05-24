@@ -47,29 +47,158 @@ def compute_velocity(df_mocap, window=19, polyorder=3):
     df_mocap['vy'] = vy_filtered
     df_mocap['vz'] = vz_filtered
     df_mocap['speed'] = np.sqrt(vx_filtered**2 + vy_filtered**2 + vz_filtered**2)
+    
+    # Compute derivative accelerations from MoCap velocity signals
+    df_mocap['ax'] = np.gradient(df_mocap['vx'], df_mocap['t'])
+    df_mocap['ay'] = np.gradient(df_mocap['vy'], df_mocap['t'])
+    df_mocap['az'] = np.gradient(df_mocap['vz'], df_mocap['t'])
+    df_mocap['accel'] = np.gradient(df_mocap['speed'], df_mocap['t'])
     return df_mocap
 
-def find_waypoint_events(df_mocap, takeoff_time):
-    """Detects when the drone arrives within 15cm of predefined waypoint coordinates."""
-    wp_targets = {
-        'WP1': (0.000, 1.200),
-        'WP2': (0.100, 1.200),
-        'WP3': (0.100, -1.200),
-        'WP4': (0.000, -1.200)
-    }
-    wp_events = {}
-
+def find_waypoint_events(df_mocap, takeoff_time, label=None, column_x=0.408, column_y=0.358, column_radius=0.045, cage_radius=0.179, return_all=False):
+    """Detects all completed passes within predefined waypoint coordinates chronologically,
+    returning a list of dictionaries (one for each detected pass) or the first pass dict.
+    """
     if df_mocap.empty:
-        return wp_events
+        return [] if return_all else {}
 
-    for wp_name, (wx, wy) in wp_targets.items():
-        dist = np.sqrt((df_mocap['x'] - wx)**2 + (df_mocap['y'] - wy)**2)
-        after_takeoff = df_mocap['t'] > takeoff_time
-        arrived_mask = (dist < 0.15) & after_takeoff
-        if arrived_mask.any():
-            wp_events[wp_name] = df_mocap.loc[arrived_mask, 't'].iloc[0]
+    # 1. Determine which mission was run by inspecting the flight label
+    is_75deg = False
+    if label:
+        lbl_lower = label.lower()
+        if "75" in lbl_lower or "collision" in lbl_lower:
+            is_75deg = True
+
+    # 2. Dynamically import and instantiate the mission class
+    try:
+        import sys
+        import os
+        # Resolve project root dynamically
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(script_dir, "..", "..", ".."))
+        if project_root not in sys.path:
+            sys.path.append(project_root)
+
+        if is_75deg:
+            from drone_control.missions.exp_collision_75deg import ExpCollision75Deg
+            mission = ExpCollision75Deg(target_z=0.5)
+        else:
+            from drone_control.missions.column_sweep_loop import ColumnSweepLoop
+            mission = ColumnSweepLoop(target_z=0.5)
+
+        # 3. Simulate takeoff to populate the mission waypoints
+        # Get actual takeoff coordinate from telemetry
+        takeoff_samples = df_mocap[df_mocap['t'] >= takeoff_time]
+        if not takeoff_samples.empty:
+            x0 = takeoff_samples['x'].iloc[0]
+            y0 = takeoff_samples['y'].iloc[0]
+            z0 = takeoff_samples['z'].iloc[0]
+        else:
+            x0, y0, z0 = 0.0, 0.0, 0.5
+
+        class DummyPose:
+            def __init__(self, x, y, z):
+                self.x = x
+                self.y = y
+                self.z = z
+        
+        mission.on_start(DummyPose(x0, y0, z0))
+        
+        # 4. Build sequence dynamically from the mission class variables
+        wp_sequence = [
+            ('WP1', (mission.wp1[0], mission.wp1[1])),
+            ('WP2', (mission.wp2[0], mission.wp2[1])),
+            ('WP3', (mission.wp3[0], mission.wp3[1])),
+            ('WP4', (mission.wp4[0], mission.wp4[1]))
+        ]
+    except Exception as e:
+        # Fallback to standard ColumnSweepLoop if import fails
+        wp_sequence = [
+            ('WP1', (0.000, 1.200)),
+            ('WP2', (0.100, 1.200)),
+            ('WP3', (0.100, -1.200)),
+            ('WP4', (0.000, -1.200))
+        ]
+
+    # Find ALL loop passes sequentially
+    passes_events = []
+    current_search_time = takeoff_time
+    max_time = df_mocap['t'].max()
+
+    while current_search_time < max_time:
+        wp_events = {}
+        t_ptr = current_search_time
+        
+        # Sequentially search for WP1 -> WP2 -> WP3 -> WP4 in a single pass loop
+        found_all = True
+        for wp_name, (wx, wy) in wp_sequence:
+            dist = np.sqrt((df_mocap['x'] - wx)**2 + (df_mocap['y'] - wy)**2)
+            after_ptr = df_mocap['t'] > t_ptr
+            arrived_mask = (dist < 0.08) & after_ptr  # 8cm in analysis (vs 5cm on-drone) — robust for 100Hz MoCap replay
+            if arrived_mask.any():
+                arrival_t = df_mocap.loc[arrived_mask, 't'].iloc[0]
+                wp_events[wp_name] = arrival_t
+                # Advance search time pointer by 1.0 second for the next waypoint in sequence
+                t_ptr = arrival_t + 1.0
+            else:
+                found_all = False
+                break
+        
+        if found_all:
+            # Detect exact Column Y Crossing (Sweep intersection) inside this specific pass
+            t_wp2 = wp_events['WP2']
+            t_wp3 = wp_events['WP3']
+            sweep_data = df_mocap[(df_mocap['t'] >= t_wp2) & (df_mocap['t'] <= t_wp3)]
+            if not sweep_data.empty:
+                idx_min = (sweep_data['y'] - column_y).abs().idxmin()
+                t_cross = sweep_data.loc[idx_min, 't']
+                wp_events['Column Passed'] = t_cross
+                
+                # Detect exact Column Impact Event inside this specific pass
+                dist_profile = np.sqrt((sweep_data['x'] - column_x)**2 + (sweep_data['y'] - column_y)**2)
+                impact_threshold = column_radius + cage_radius + 0.015  # 0.224m + 0.015m = 0.239m
+                impact_mask = dist_profile <= impact_threshold
+                if impact_mask.any():
+                    idx_impact = dist_profile[impact_mask].index[0]
+                    t_geom = sweep_data.loc[idx_impact, 't']
+                    
+                    # Onset of deceleration
+                    window_mask = (sweep_data['t'] >= t_geom - 0.2) & (sweep_data['t'] <= t_geom + 0.1)
+                    window_data = sweep_data[window_mask]
+                    if not window_data.empty:
+                        idx_peak_speed = window_data['speed'].idxmax()
+                        t_impact = window_data.loc[idx_peak_speed, 't']
+                    else:
+                        t_impact = t_geom
+                    
+                    wp_events['Column Impact'] = t_impact
             
-    return wp_events
+            passes_events.append(wp_events)
+            # Advance search pointer past WP4 by 1.0 second to begin search for next loop
+            current_search_time = wp_events['WP4'] + 1.0
+        else:
+            # If we couldn't complete the full sequence, stop searching
+            break
+
+    # Fallback: if we didn't find any fully completed loops, but have partial waypoints, return at least one
+    if not passes_events:
+        wp_events = {}
+        t_ptr = takeoff_time
+        for wp_name, (wx, wy) in wp_sequence:
+            dist = np.sqrt((df_mocap['x'] - wx)**2 + (df_mocap['y'] - wy)**2)
+            after_ptr = df_mocap['t'] > t_ptr
+            arrived_mask = (dist < 0.08) & after_ptr
+            if arrived_mask.any():
+                arrival_t = df_mocap.loc[arrived_mask, 't'].iloc[0]
+                wp_events[wp_name] = arrival_t
+                t_ptr = arrival_t + 1.0
+        if wp_events:
+            passes_events.append(wp_events)
+
+    if return_all:
+        return passes_events
+    else:
+        return passes_events[0] if passes_events else {}
 
 def query_battery(df_bat, t_query):
     """Helper to query battery remaining percentage and voltage at a specific timestamp."""
@@ -79,7 +208,7 @@ def query_battery(df_bat, t_query):
     idx = min(max(0, idx), len(df_bat) - 1)
     return f"{df_bat['remaining'].iloc[idx]:.1f}%", f"{df_bat['voltage'].iloc[idx]:.2f}V"
 
-def build_events_log(df_mocap, df_bat, arming_time, takeoff_time, disarming_time, wp_events):
+def build_events_log(df_mocap, df_bat, arming_time, takeoff_time, disarming_time, wp_events, achieved_angle=None):
     """Compiles a chronological flight events table for display."""
     events_log = []
     last_t_abs = None
@@ -127,8 +256,18 @@ def build_events_log(df_mocap, df_bat, arming_time, takeoff_time, disarming_time
         add_event("2. System Armed", arming_time)
     if takeoff_time is not None:
         add_event("3. Takeoff Detected", takeoff_time)
-    for wp in sorted(wp_events.keys()):
-        add_event(f"4. Arrived {wp}", wp_events[wp])
+    
+    # Sort keys chronologically based on their timestamps to keep events in order
+    sorted_wp_names = sorted(wp_events.keys(), key=lambda k: wp_events[k])
+    for wp in sorted_wp_names:
+        if wp == 'Column Impact':
+            angle_str = f" (Achieved Angle: {achieved_angle:.1f}°)" if achieved_angle is not None else ""
+            add_event(f"💥 Column Impact{angle_str}", wp_events[wp])
+        elif wp == 'Column Passed':
+            add_event("🟢 Column Center Passed", wp_events[wp])
+        else:
+            add_event(f"4. Arrived {wp}", wp_events[wp])
+            
     if disarming_time is not None:
         add_event("5. Disarmed / Landed", disarming_time)
     if not df_mocap.empty:
@@ -204,6 +343,31 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         mean_err = 0.0
         max_err = 0.0
 
+    # Calculate achieved 2D spatial trajectory angle at exact contact point
+    achieved_angle = None
+    impact_speed = None
+    impact_accel = None
+    impact_t = wp_events.get('Column Impact')
+    if impact_t is not None and not df_mocap.empty:
+        idx_impact = (df_mocap['t'] - impact_t).abs().idxmin()
+        impact_row = df_mocap.iloc[idx_impact]
+        rx = column_x - impact_row['x']
+        ry = column_y - impact_row['y']
+        r_len = np.sqrt(rx**2 + ry**2)
+        vx = impact_row.get('vx', 0.0)
+        vy = impact_row.get('vy', -1.0)
+        v_len = np.sqrt(vx**2 + vy**2)
+        
+        impact_speed = impact_row.get('speed', 0.0)
+        impact_accel = impact_row.get('accel', 0.0)
+        
+        if r_len > 1e-3 and v_len > 1e-3:
+            cos_theta = (rx * vx + ry * vy) / (r_len * v_len)
+            cos_theta = np.clip(cos_theta, -1.0, 1.0)
+            achieved_angle = np.degrees(np.arccos(cos_theta))
+            if achieved_angle > 90.0:
+                achieved_angle = 180.0 - achieved_angle
+
     return {
         'closest_t': closest_t,
         'min_dist_center': min_dist_center,
@@ -211,5 +375,8 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         'avg_speed_wp2_wp3': avg_speed,
         'max_tracking_error': max_err,
         'mean_tracking_error': mean_err,
-        'max_lateral_displacement': max_err
+        'max_lateral_displacement': max_err,
+        'achieved_impact_angle': achieved_angle,
+        'impact_speed': impact_speed,
+        'impact_accel': impact_accel
     }

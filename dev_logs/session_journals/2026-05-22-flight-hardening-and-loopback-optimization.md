@@ -13,10 +13,10 @@ We have reached a major milestone in physical flight stabilization! Following th
 * **How it compares:** Previously, the drone relied on a laggy P-only position controller. By syncing position and velocity feedforward, the tracking error dropped to near-zero, producing perfectly fluid, linear speed profiles and flawless waypoint stopping.
 * **Hurdle:** We had previously focused on NaN-masking uncommanded derivatives to avoid integrator windup, but didn't realize the heartbeat flag itself was gating PX4's consumption of our velocity feedforward array.
 
-### 2. Physical Carbon Cage Geofence Alignment
+### 2. Physical PETG-Printed Glass-Fiber Cage Geofence Alignment
 * **What:** Shifted the northernmost sweep coordinates (`wp1` and `wp2`) in [column_sweep_loop.py](file:///home/dorten/pi_drone_sshfs/drone_control/missions/column_sweep_loop.py#L14-L20) from `1.350m` to `1.200m` along the Y-axis.
 * **Why:** During the initial flights, the drone immediately breached the room's dynamic geofence (`1.50m` limit) and triggered safety motor shutdowns.
-* **How it compares:** Previously, waypoints were plotted purely based on center-point coordinates (leaving a 15cm margin). We corrected the mathematical bounds by subtracting the drone's actual physical carbon cage radius of **17.9 cm** (`35.8 cm` diameter). 
+* **How it compares:** Previously, waypoints were plotted purely based on center-point coordinates (leaving a 15cm margin). We corrected the mathematical bounds by subtracting the drone's actual physical PETG-printed glass-fiber cage radius of **17.9 cm** (`35.8 cm` diameter). 
 * **Hurdle:** Real-world safety margins must incorporate the rigid body physical envelope. Placing a center-point target at `1.350m` meant the cage edge sat at `1.529m` (outside the geofence), making structural safety triggers mathematically guaranteed at hover.
 
 ### 3. Loopback Transition Deceleration Hookup
@@ -42,7 +42,7 @@ We have reached a major milestone in physical flight stabilization! Following th
    hb.velocity = True
    ```
 2. **Dynamic Geofence Margin ([column_sweep_loop.py](file:///home/dorten/pi_drone_sshfs/drone_control/missions/column_sweep_loop.py)):**
-   Pulled coordinates South to accommodate the physical `17.9 cm` carbon cage radius:
+   Pulled coordinates South to accommodate the physical `17.9 cm` PETG-printed glass-fiber cage radius:
    ```python
    self.wp1 = (0.000, 1.200, target_z)
    self.wp2 = (0.100, 1.200, target_z)

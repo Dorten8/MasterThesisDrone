@@ -40,9 +40,11 @@ echo "  - /fmu/out/battery_status           (Voltage and Current)"
 echo "  - /fmu/out/vehicle_status           (Arming/Flight Mode state)"
 echo "  - /fmu/out/timesync_status          (Pi-to-PX4 clock sync quality)"
 echo "  - /fmu/in/trajectory_setpoint       (Target commands from Offboard scripts)"
+echo "  - /fmu/in/actuator_motors           (Commanded actuator motor inputs)"
 echo "  - /poses                            (Raw Mocap data from OptiTrack)"
 echo "  - /tf                               (Coordinate transform tree - live 3D visualization)"
 echo "  - /tf_static                        (Static coordinate transforms)"
+echo "  - /rosout                           (ROS 2 logs for state events)"
 echo ""
 echo "Recording... Press Ctrl+C to stop."
 echo ""
@@ -122,7 +124,9 @@ ros2 bag record \
   /fmu/out/vehicle_status \
   /fmu/out/timesync_status \
   /fmu/in/trajectory_setpoint \
+  /fmu/in/actuator_motors \
   /poses \
+  /rosout \
   /tf \
   /tf_static &
 

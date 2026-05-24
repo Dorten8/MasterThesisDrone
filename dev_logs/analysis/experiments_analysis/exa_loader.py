@@ -53,6 +53,7 @@ def build_dataframes(topic_data, drone_tracker_name, bag_start_ns):
     setpoint_msgs = topic_data.get("/fmu/in/trajectory_setpoint", [])
     odom_msgs = topic_data.get("/fmu/out/vehicle_odometry", [])
     status_msgs = topic_data.get("/fmu/out/vehicle_status", [])
+    imu_msgs = topic_data.get("/fmu/out/sensor_combined", [])
 
     # MoCap
     mocap_list = []
@@ -88,6 +89,23 @@ def build_dataframes(topic_data, drone_tracker_name, bag_start_ns):
         
     if not df_mocap.empty:
         df_mocap = df_mocap.drop_duplicates(subset=['t']).sort_values('t').reset_index(drop=True)
+
+    # Column/Obstacle MoCap tracking
+    column_list = []
+    for m in poses_msgs:
+        t_rel = to_rel_time(m.log_time_ns)
+        for p in m.ros_msg.poses:
+            if "column" in p.name.lower() or p.name.lower() == "jake_column_drone":
+                column_list.append({
+                    't': t_rel,
+                    'x': p.pose.position.x,
+                    'y': p.pose.position.y,
+                    'z': p.pose.position.z
+                })
+                break
+    df_column = pd.DataFrame(column_list)
+    if not df_column.empty:
+        df_column = df_column.drop_duplicates(subset=['t']).sort_values('t').reset_index(drop=True)
 
     # Battery
     bat_list = []
@@ -135,11 +153,31 @@ def build_dataframes(topic_data, drone_tracker_name, bag_start_ns):
     if arming_time is None:
         arming_time = 0.0
 
+    # IMU
+    imu_list = []
+    for m in imu_msgs:
+        imu_list.append({
+            't': to_rel_time(m.log_time_ns),
+            'ax': m.ros_msg.accelerometer_m_s2[0],
+            'ay': m.ros_msg.accelerometer_m_s2[1],
+            'az': m.ros_msg.accelerometer_m_s2[2],
+            'gx': m.ros_msg.gyro_rad[0],
+            'gy': m.ros_msg.gyro_rad[1],
+            'gz': m.ros_msg.gyro_rad[2]
+        })
+    df_imu = pd.DataFrame(imu_list)
+    if not df_imu.empty:
+        df_imu['a_mag'] = np.sqrt(df_imu['ax']**2 + df_imu['ay']**2 + df_imu['az']**2)
+        df_imu['g_mag'] = np.sqrt(df_imu['gx']**2 + df_imu['gy']**2 + df_imu['gz']**2)
+        df_imu['a_deviation'] = np.abs(df_imu['a_mag'] - 9.81)
+
     return {
         'mocap': df_mocap,
+        'column': df_column,
         'setpoint': df_setpoint,
         'battery': df_bat,
         'odom': df_odom,
+        'imu': df_imu,
         'arming_time': arming_time,
         'disarming_time': disarming_time
     }

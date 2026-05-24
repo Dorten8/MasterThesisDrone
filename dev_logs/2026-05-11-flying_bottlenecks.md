@@ -444,7 +444,7 @@ This session tackled two critical flight behavior failures observed during live 
 
 #### 3. The 15cm Geofence Buffer & Cage Encroachment Trap
 * **The Anomaly:** In the `Column Sweep Loop`, the drone reached `WP1` at `Y = 1.35m` and immediately triggered a geofence landing at `Y = 1.50m` before the user could resume.
-* **The Culprit:** The hard geofence limit in `drone_config.json` is `Y_max = 1.50m`. The target waypoint `WP1` was placed at `Y = 1.35m`. This is a margin of only **15 cm**. However, according to configuration parameters, the drone's carbon safety cage has a radius of **17.9 cm** (`35.8 cm` diameter). 
+* **The Culprit:** The hard geofence limit in `drone_config.json` is `Y_max = 1.50m`. The target waypoint `WP1` was placed at `Y = 1.35m`. This is a margin of only **15 cm**. However, according to configuration parameters, the drone's PETG-printed glass-fiber safety cage has a radius of **17.9 cm** (`35.8 cm` diameter). 
   **The Spatial Math:** When the drone's center sits exactly at the target waypoint `Y = 1.35m`, the physical edge of its cage is at `1.35 + 0.179 = 1.529m`—which means **the drone is physically already outside the hard geofence boundary.**
 * **The Fix:** Shifted the northernmost coordinates (`wp1` and `wp2`) from `1.350m` to `1.200m`. This maintains the absolute sweep geometry past the obstacle column but leaves a safe `30 cm` physical clearance envelope from the hard geofence ceiling.
 
@@ -483,7 +483,7 @@ Following the software updates, we executed live flight verifications of the `Co
 
 * **Fluid & Linear Speed Profile (Feedforward Success):** With `hb.velocity = True` enabled in the offboard heartbeat, the physical tracking error dropped to near-zero. The drone no longer exhibited any jerky or uneven hunting behavior, tracking the position ramps with extremely smooth, continuous velocity.
 * **Flawless Waypoint Deceleration (Zero Overshoot):** Upon reaching the `WP1` transition halt, the drone utilized the feedforward velocity setpoint to ramp down smoothly to a complete hover at exactly `Y = 1.200m` with **zero physical overshoot**.
-* **Perfect Geofence Security (Spatial Shift Success):** By shifting the upper limit to `Y = 1.200m`, the drone's `17.9cm` carbon safety cage had a comfortable `12cm` clearance from the hard `1.50m` geofence wall. The mission completed all transit loops and sweeps with 100% boundary security and zero false failsafes!
+* **Perfect Geofence Security (Spatial Shift Success):** By shifting the upper limit to `Y = 1.200m`, the drone's `17.9cm` PETG-printed glass-fiber safety cage had a comfortable `12cm` clearance from the hard `1.50m` geofence wall. The mission completed all transit loops and sweeps with 100% boundary security and zero false failsafes!
 
 **Conclusion:** The autonomous offboard flight pipeline is now fully hardened, highly smooth, and ready for advanced academic sweeping profiles.
 

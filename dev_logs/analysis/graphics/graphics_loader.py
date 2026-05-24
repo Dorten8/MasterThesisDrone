@@ -113,26 +113,30 @@ def draw_vector_drone(ax, cx_val, cy_val, cage_radius, rotation_deg=0, color_mod
         zorder = 7
 
         if 'cad-line-primary' in cls:
-            stroke_color = '#1e293b'
-            lw = el.get('stroke_width', 2.2) * 1.5
+            stroke_color = '#475569'  # Slim, professional slate grey carbon fiber arms
+            lw = el.get('stroke_width', 2.2) * 0.38  # Slimmed down to prevent muddy overlapping
+            zorder = 4  # Drawn behind plates
         elif 'cad-line-secondary' in cls:
             stroke_color = '#64748b'
-            lw = el.get('stroke_width', 1.5)
+            lw = el.get('stroke_width', 1.5) * 0.7
+            zorder = 4  # Drawn behind plates
         elif 'cad-cage-line' in cls:
-            stroke_color = '#1e293b'
-            lw = 1.8
-            ls = '--'
-        elif 'cad-plate-fill' in cls:
-            stroke_color = '#1e293b'
-            fill_val = '#f1f5f9'
-            lw = 2.0
-        elif 'cad-prop-fill' in cls:
-            stroke_color = '#64748b'
-            fill_val = '#e2e8f0'
+            stroke_color = '#94a3b8'  # Softer cage boundary line
             lw = 1.0
             ls = ':'
-            opacity = 0.35
-            zorder = 6
+            zorder = 3
+        elif 'cad-plate-fill' in cls:
+            stroke_color = '#1e293b'
+            fill_val = '#f8fafc'      # Pristine clean off-white plate fill
+            lw = 1.2
+            zorder = 7  # Drawn on top of arms for crisp structural outlines
+        elif 'cad-prop-fill' in cls:
+            stroke_color = '#cbd5e1'  # Soft light grey stroke
+            fill_val = 'none'        # Transparent sweeps
+            lw = 0.5                 # Thin crisp circular sweep
+            ls = (0, (4, 4))         # Elegant dashed style
+            opacity = 0.18           # Subtle premium opacity
+            zorder = 8               # Drawn on top of everything for pure visibility
         elif fill_color == '#1e293b':  # shaft center
             stroke_color = '#1e293b'
             fill_val = '#1e293b'
@@ -140,10 +144,17 @@ def draw_vector_drone(ax, cx_val, cy_val, cage_radius, rotation_deg=0, color_mod
 
         # Adjust for 'gray' mode
         if color_mode == 'gray':
-            stroke_color = '#64748b'
-            if fill_val != 'none':
-                fill_val = '#f1f5f9'
-            opacity = 0.25 * alpha_multiplier
+            stroke_color = '#94a3b8'
+            if 'cad-prop-fill' in cls:
+                fill_val = 'none'
+                stroke_color = '#cbd5e1'
+                lw = 0.4
+                ls = (0, (4, 4))
+                opacity = 0.15 * alpha_multiplier
+            else:
+                if fill_val != 'none':
+                    fill_val = '#f8fafc'
+                opacity = 0.20 * alpha_multiplier
             zorder = 6
         else:
             opacity = opacity * alpha_multiplier
@@ -225,11 +236,11 @@ def get_drone_tikz(cx_val, cy_val, cage_radius, rotation_deg=0, is_grayed_out=Fa
             x2, y2 = transform(el['x2'], el['y2'])
             
             if 'cad-line-primary' in cls:
-                opts = f"draw={p_color}, line width=1.5pt, line cap=round"
+                opts = f"draw={p_color}, line width=0.45pt, line cap=round"
             elif 'cad-line-secondary' in cls:
-                opts = f"draw={s_color}, line width=0.8pt, line cap=round"
+                opts = f"draw={s_color}, line width=0.35pt, line cap=round"
             else:
-                opts = f"draw={s_color}, line width=0.5pt, dotted"
+                opts = f"draw={s_color}, line width=0.2pt, dotted"
                 
             tikz.append(f"  \\draw[{opts}] ({x1:.3f}, {y1:.3f}) -- ({x2:.3f}, {y2:.3f});")
             
@@ -238,11 +249,11 @@ def get_drone_tikz(cx_val, cy_val, cage_radius, rotation_deg=0, is_grayed_out=Fa
             r = el['r'] * scale
             
             if 'cad-cage-line' in cls:
-                opts = f"draw={p_color}, line width=1.0pt, dashed"
+                opts = f"draw={p_color}, line width=0.6pt, dashed"
             elif 'cad-prop-fill' in cls:
-                opts = f"draw={s_color}, fill={fill_prop}, fill opacity={prop_opacity}, line width=0.4pt, dash pattern=on 2pt off 2pt"
+                opts = f"draw={s_color}, fill=none, line width=0.35pt, dash pattern=on 2pt off 2pt"
             elif 'cad-plate-fill' in cls:
-                opts = f"draw={p_color}, fill={fill_plate}, line width=0.8pt"
+                opts = f"draw={p_color}, fill={fill_plate}, line width=0.45pt"
             elif fill_color == '#1e293b':  # shaft
                 opts = f"draw={p_color}, fill={p_color}, line width=0.2pt"
             else:

@@ -11,11 +11,11 @@ Here is the restored chronological, step-by-step execution logic. It removes the
 *This must be completed at the desk before the drone is powered on.*
 
 * [x] **Audit Parameter Hacks:** Verified EKF2 parameters (EKF2_HGT_REF=3 for Vision, EKF2_EV_CTRL=11 for No Velocity, EKF2_EVP_NOISE=0.05 for MoCap trust). Kept CBRK_IO_SAFETY=22027 since no physical button is wired. Confirmed EKF2_EV_GATE remains at standard (5.0).  
-* \[ \] **Code the Battery Failsafe:** Update the flight logic to actively monitor system voltage. Program a hard abort (immediate land/disarm) if capacity hits 40% to prevent ESC torque loss or Pi 5 compute failure.  
+* [x] **Code the Battery Failsafe:** Update the flight logic to actively monitor system voltage. Program a hard abort (immediate land/disarm) if capacity hits 40% to prevent ESC torque loss or Pi 5 compute failure.  
 * \[ \] **Align Timestamps:** Configure PX4 to begin SD card logging (.ulg) precisely upon arming. Ensure the ROS 2 bag (.mcap) recording script registers the exact same Unix arming timestamp to sync high-frequency IMU data with MoCap truth.  
 * \[ \] **Define Diagram Visual Standard:** Write the Python/Matplotlib template to generate top-down, orthogonal diagrams of the drone and column. This code must be locked in now so all future experiment graphics share an identical, thesis-ready visual standard.  
 * \[ \] **Update Obstacle SSoT:** Register the cardboard column's dimensions and OptiTrack streaming ID inside config/drone\_config.json.  
-* \[ \] **Code Geofencing:** Implement mathematical bounds in the Python trajectory script that refuse to send setpoints outside the safe MoCap area.
+* [x] **Code Geofencing:** Implement mathematical bounds in the Python trajectory script that refuse to send setpoints outside the safe MoCap area.
 
 ## **Phase 1: Physical Space & Recording Setup**
 
@@ -39,12 +39,24 @@ Here is the restored chronological, step-by-step execution logic. It removes the
 *The core loop for data collection.*
 
 * \[ \] **Plan Vector 1:** Calculate the first intentional collision path with a very shallow impact vector against the column. Generate the visual standard diagram for this specific pass.  
+* \[ \] **Ensure Stable Sweep Velocity:** Verify that the sweep starting waypoint (WP2) is placed sufficiently far from the column to ensure the drone has fully accelerated to a constant, stable sweep speed before impacting the column. **CRITICAL:** The drone must achieve a constant velocity vector with zero acceleration *before* the outer cage impacts the column to ensure high-fidelity dynamic modeling in post-flight analytical kinematics.
 * \[ \] **Execute Vector 1:** \- Start manual recording on the rooted Android phone.  
   * Initiate the modular Python recording script.  
   * Run the flight script.  
 * \[ \] **Enforce Safety Pause:** The script must pause execution after the pass and display a terminal prompt (\[Proceed to next pass? Y/N\]).  
 * \[ \] **Physical Inspection:** Visually inspect the protective cage clearance and propeller gaps to ensure structural integrity.  
 * \[ \] **Acknowledge Prompt & Iterate:** If safe, hit 'Y' and increment the impact vector severity for the next pass. Repeat this loop until the required data limit is reached.
+
+### ⚠️ Post-Flight Analysis: The Telemetry Dropout & Velocity Surge Loop
+
+When the drone's cameras experience temporary occlusions, it triggers a chain of cause-and-effect that distorts both your diagnostic data and the drone's physical stability:
+
+1. **Telemetry Dropout:** OptiTrack cameras lose sight of retroreflective markers $\rightarrow$ the `/poses` publishing rate drops below the $30\text{Hz}$ failsafe.
+2. **EKF2 Coasting:** PX4 loses absolute vision inputs $\rightarrow$ the state estimator dead-reckons using only the high-frequency onboard IMU.
+3. **Position Drift:** During dead-reckoning, small IMU sensor errors double-integrate over time $\rightarrow$ the estimated position drifts away from the true MoCap coordinate.
+4. **The Innovation Snap:** Once the drone re-enters camera view $\rightarrow$ EKF2 suddenly fuses the correct absolute coordinate and **instantly snaps** the estimated position back to the true MoCap coordinate.
+5. **The Diagnostic Artifact:** Because our post-flight code calculates velocity as a numerical derivative of position over time ($dx/dt$), this instantaneous step-change in position registers as a **massive, artificial velocity spike** (e.g., the $2.4\text{ m/s}$ spike).
+6. **The Physical Flight Surge:** Simultaneously, the PX4 position controller sees this sudden jump in estimated position as a huge error step-input. It commands aggressive attitude changes (tilts) to compensate, causing the drone to **physically surge, brake, and oscillate** mid-air.
 
 ### ---
 
@@ -154,7 +166,7 @@ This dynamic coordinate alignment layer marks a major milestone in our autonomou
 
 ### 1. The Anomaly & The Hurdle 🔍
 * **The Heartbeat Flag Desync:** While velocity feedforward was added in the setpoint message, `OffboardControlMode` had `velocity = False`, causing PX4 to ignore feedforward. This led to high tracking lag, jerky speed profiles, and an Y-overshoot of 15cm that triggered the `1.50m` geofence ceiling at WP1 (`1.35m`).
-* **The Cage Radius Overlap:** With a carbon cage radius of `17.9cm`, placing waypoints at `1.35m` meant the outer physical envelope already breached the `1.50m` geofence by `2.9cm` at steady-state.
+* **The Cage Radius Overlap:** With a PETG-printed glass-fiber cage radius of `17.9cm`, placing waypoints at `1.35m` meant the outer physical envelope already breached the `1.50m` geofence by `2.9cm` at steady-state.
 
 ### 2. The Verification Results 🛠️
 * **The Patches:** Toggled `hb.velocity = True` in the Offboard heartbeat, masked unused derivatives with `NaN`, and shifted northernmost sweep legs Southwards to `1.200m`.

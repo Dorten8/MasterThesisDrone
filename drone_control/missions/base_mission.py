@@ -16,7 +16,8 @@ class BaseMission:
 
     def __init__(self):
         self.is_finished = False
-        # Waypoints: (x, y, z, face_forward_boolean, speed_mps, pause_at_waypoint_boolean)
+        # Waypoints: (x, y, z, face_forward_boolean, speed_mps, pause_at_waypoint_boolean [, arrival_threshold_m])
+        # The 7th element is optional — defaults to WP_ARRIVAL_THRESHOLD if omitted.
         self.waypoints = [] 
         self.current_wp_idx = 0
         self.wp_entered_time = None
@@ -24,6 +25,7 @@ class BaseMission:
         
         self.is_paused = False
         self.has_paused_at_current_wp = False
+        self.loop_counter = 0  # Implicit loop/pass counter
 
     def on_start(self, initial_mocap_pos):
         """
@@ -54,9 +56,11 @@ class BaseMission:
             return self.waypoints[-1] if self.waypoints else None
 
         target = self.waypoints[self.current_wp_idx]
-        # target can be either 4, 5, or 6 elements long (backwards compatibility)
+        # Supports 4, 5, 6, or 7-element tuples (backwards compatible)
         target_x, target_y, target_z = target[0], target[1], target[2]
         pause_at_waypoint = target[5] if len(target) >= 6 else False
+        # 7th element = per-waypoint arrival threshold; default 0.05m (tight) if not specified
+        arrival_threshold = target[6] if len(target) >= 7 else 0.05
 
         # Calculate Euclidean distance to active waypoint
         dx = current_mocap_pos.x - target_x
@@ -64,16 +68,16 @@ class BaseMission:
         dz = current_mocap_pos.z - target_z
         dist = math.sqrt(dx*dx + dy*dy + dz*dz)
 
-        # Transition Logic
-        if dist < 0.15:  # 15 cm threshold
+        # Transition Logic — use per-waypoint threshold if defined, else tight 5cm default
+        if dist < arrival_threshold:
             # 1. Check for defined mission interrupts
             if pause_at_waypoint and not self.has_paused_at_current_wp:
                 self.is_paused = True
                 self.has_paused_at_current_wp = True
-                print(f"\n\033[93m[MISSION] INTERRUPT POINT REACHED at WP {self.current_wp_idx}.\033[0m")
-                print("[SYSTEM] Drone is holding current position.")
-                print(" -> Press [ENTER] to Resume.")
-                print(" -> Press [ L ] to Land.")
+                print(f"\n\033[94m[MISSION] INTERRUPT POINT REACHED at WP {self.current_wp_idx}.\033[0m")
+                print("\033[94m[SYSTEM] Drone is holding current position.\033[0m")
+                print("\033[94m -> Press [ENTER] to Resume.\033[0m")
+                print("\033[94m -> Press [ L ] to Land.\033[0m")
                 return target
 
             # 2. Handle hold timers
@@ -105,9 +109,9 @@ class BaseMission:
         """
         self.is_paused = not self.is_paused
         if self.is_paused:
-            print(f"\n\033[93m[MISSION] INTERRUPT: Mission Paused at WP {self.current_wp_idx}.\033[0m")
-            print("[SYSTEM] Drone is holding current position.")
-            print(" -> Press [ENTER] to Resume.")
-            print(" -> Press [ L ] to Land.")
+            print(f"\n\033[94m[MISSION] INTERRUPT: Mission Paused at WP {self.current_wp_idx}.\033[0m")
+            print("\033[94m[SYSTEM] Drone is holding current position.\033[0m")
+            print("\033[94m -> Press [ENTER] to Resume.\033[0m")
+            print("\033[94m -> Press [ L ] to Land.\033[0m")
         else:
             print(f"\n\033[92m[MISSION] RESUMED: Continuing to WP {self.current_wp_idx}.\033[0m")

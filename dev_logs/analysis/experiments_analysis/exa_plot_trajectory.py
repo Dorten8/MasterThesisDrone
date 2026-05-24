@@ -2,6 +2,7 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 C_MOCAP = '#1F77B4'      # Steel Blue (Actual Ground Truth)
 C_CMD = '#D62728'        # Crimson Red (Commanded Setpoint)
@@ -10,8 +11,8 @@ def rotate_coords(x_val, y_val):
     """Rotate coordinate system by 90 degrees CCW (x_new = -y, y_new = x)"""
     return -y_val, x_val
 
-def plot_trajectory(df_mocap, wp_events, column_x=0.500, column_y=0.000, 
-                    cage_diameter=0.358, column_diameter=0.09, output_path=None):
+def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358, 
+                    cage_diameter=0.358, column_diameter=0.09, output_path=None, flight_name=None):
     """Plots 2D top-down spatial trajectory, showing the flight sweep, waypoints,
     safety cage, minimum clearance vector, and the column.
     """
@@ -128,7 +129,7 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.500, column_y=0.000,
             for r in ratios:
                 arrow_x = x1 + r * dx
                 arrow_y = y1 + r * dy
-                ax.annotate('', xy=(arrow_x + ux * 0.05, arrow_y + uy * 0.05), xytext=(arrow_x - ux * 0.05, arrow_y - ux * 0.05),
+                ax.annotate('', xy=(arrow_x + ux * 0.05, arrow_y + uy * 0.05), xytext=(arrow_x - ux * 0.05, arrow_y - uy * 0.05),
                              arrowprops=dict(arrowstyle="->", color=C_CMD, lw=2, shrinkA=0, shrinkB=0))
 
     # 4. Plot drone safety cage grayed out at WP2 and WP3 positions natively from drone_top.svg
@@ -148,6 +149,72 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.500, column_y=0.000,
     # Draw line showing minimum separation vector (rotated)
     ax.plot([rot_closest_x, rot_col_x], [rot_closest_y, rot_col_y], color='purple', linestyle=':', linewidth=2, label='Separation Vector')
 
+    # Calculate achieved 2D spatial trajectory angle at exact contact point
+    achieved_angle = None
+    impact_t = wp_events.get('Column Impact')
+    if impact_t is not None and not df_mocap.empty:
+        idx_impact = (df_mocap['t'] - impact_t).abs().idxmin()
+        impact_row = df_mocap.iloc[idx_impact]
+        rx = column_x - impact_row['x']
+        ry = column_y - impact_row['y']
+        r_len = np.sqrt(rx**2 + ry**2)
+        vx = impact_row.get('vx', 0.0)
+        vy = impact_row.get('vy', -1.0)
+        v_len = np.sqrt(vx**2 + vy**2)
+        
+        if r_len > 1e-3 and v_len > 1e-3:
+            cos_theta = (rx * vx + ry * vy) / (r_len * v_len)
+            cos_theta = np.clip(cos_theta, -1.0, 1.0)
+            achieved_angle = np.degrees(np.arccos(cos_theta))
+            if achieved_angle > 90.0:
+                achieved_angle = 180.0 - achieved_angle
+
+    # Draw achieved angle dimension and straight velocity quiver at contact point
+    if achieved_angle is not None:
+        idx_impact = (df_mocap['t'] - impact_t).abs().idxmin()
+        impact_row = df_mocap.iloc[idx_impact]
+        vx = impact_row.get('vx', 0.0)
+        vy = impact_row.get('vy', -1.0)
+        rot_vx, rot_vy = rotate_coords(vx, vy)
+        
+        # Rays from drone contact center:
+        # Ray 1: Separation vector pointing to column center
+        angle_ray1 = np.arctan2(rot_col_y - rot_closest_y, rot_col_x - rot_closest_x)
+        # Ray 2: Drone's velocity vector
+        angle_ray2 = np.arctan2(rot_vy, rot_vx)
+        
+        deg_ray1 = np.degrees(angle_ray1)
+        deg_ray2 = np.degrees(angle_ray2)
+        
+        # Draw clean straight velocity arrow from drone center
+        v_norm = np.sqrt(rot_vx**2 + rot_vy**2)
+        if v_norm > 0:
+            arrow_scale = 0.28 / v_norm  # Scale to 28cm length
+            ax.quiver(rot_closest_x, rot_closest_y, rot_vx * arrow_scale, rot_vy * arrow_scale,
+                      angles='xy', scale_units='xy', scale=1, color='crimson', width=0.005, headwidth=4.5, zorder=8,
+                      label='Velocity Vector at Contact')
+            
+        # Draw angular arc
+        arc_radius = 0.22  # 22cm radius
+        t1 = min(deg_ray1, deg_ray2)
+        t2 = max(deg_ray1, deg_ray2)
+        if t2 - t1 > 180:
+            t1, t2 = t2, t1 + 360
+            
+        arc = patches.Arc((rot_closest_x, rot_closest_y), 2*arc_radius, 2*arc_radius,
+                          angle=0, theta1=t1, theta2=t2, color='crimson', linewidth=2.0, zorder=9)
+        ax.add_patch(arc)
+        
+        # Place label at the bisector
+        bisector = np.radians((t1 + t2) / 2.0)
+        label_r = arc_radius + 0.09
+        label_x = rot_closest_x + label_r * np.cos(bisector)
+        label_y = rot_closest_y + label_r * np.sin(bisector)
+        
+        ax.text(label_x, label_y, f"{achieved_angle:.1f}°", color='crimson', fontweight='bold',
+                fontsize=9, ha='center', va='center', zorder=10,
+                bbox=dict(facecolor='white', alpha=0.95, edgecolor='crimson', boxstyle='round,pad=0.15'))
+
     ax.set_title('📐 Top-Down 2D Spatial Trajectory & Column Clearance Alignment (Rotated 90° CCW)')
     ax.set_xlabel('Rotated Lab -Y Coordinate (ENU - South/North, meters)')
     ax.set_ylabel('Rotated Lab X Coordinate (ENU - East/West, meters)')
@@ -160,6 +227,12 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.500, column_y=0.000,
     # Normalize grid to exact squares of 0.5m side length
     ax.set_xticks(np.arange(-1.5, 1.6, 0.5))
     ax.set_yticks(np.arange(-0.5, 1.1, 0.5))
+
+    # Lower right corner text for flight name and pass identification
+    if flight_name:
+        ax.text(0.98, 0.02, f"{flight_name}", transform=ax.transAxes,
+                ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA', boxstyle='round,pad=0.2'))
 
     ax.legend(loc='upper left')
     ax.grid(True)
@@ -180,5 +253,6 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.500, column_y=0.000,
     return {
         'closest_t': closest_t,
         'min_dist_center': dist_to_col_center.min(),
-        'closest_clearance': closest_clearance
+        'closest_clearance': closest_clearance,
+        'achieved_impact_angle': achieved_angle
     }
