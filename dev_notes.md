@@ -42,6 +42,46 @@ fusermount -u -z ~/pi_drone_sshfs
 Running it with specific config (not default in root)
 mavlink-routerd -c /home/ws/config/mavlink-router/main.conf
 
+# Git backup workflow for flight data
+## Goal
+Keep using `git add .` as the normal habit, while still backing up the important flight MCAP files under `dev_logs/flights/`.
+
+## What changed
+- The flight archive folder stays ignored by default.
+- Two file patterns are allowed through the ignore rules:
+  - `*_0.mcap` flight bags
+  - `*-pass*.mcap` pass slices
+- Sidecar files like `metadata.yaml`, `temp_recovered.mcap`, and `.corrupt` files remain ignored.
+
+## How `git add .` behaves now
+From the repo root, `git add .` will still stage normal code changes, and it will also stage the flight MCAP files that match the allowed patterns.
+
+It will not stage:
+- ignored sidecar files in the flight folders
+- submodule changes under `src/PX4-Autopilot` and `src/px4_ros_com`
+
+## Recommended workflow
+### Option A: keep the normal habit
+```bash
+cd /home/ws
+git add .
+git status
+git commit -m "your short message"
+git push
+```
+
+### Option B: use the backup helper when you only want flight MCAPs
+```bash
+cd /home/ws
+./dev_logs/stage_flight_backups.sh /home/ws/dev_logs/flights 100M
+git commit -m "backup flight mcap files"
+git push
+```
+
+## Rule of thumb
+Use `git add .` when you want your normal repo changes plus the allowed flight bags.
+Use the helper when you only want to stage the flight MCAP backups and skip everything else.
+
 ## PX4 <-> ROS 2 (micro-ROS agent) workflow
 
 ### 1) Build workspace 
