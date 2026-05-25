@@ -1,38 +1,38 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-C_CAGE = '#1F77B4'      # Steel Blue (With Cage)
-C_NOCAGE = '#FF7F0E'    # Muted Orange (Without Cage)
+C_ROTATING = '#1F77B4'  # Steel Blue (Rotating Cage)
+C_FIXED = '#FF7F0E'     # Muted Orange (Fixed Cage)
 
-def plot_angle_boxplots(metrics_cage, metrics_no_cage, label="90° Column Collision"):
+def plot_angle_boxplots(metrics_rotating, metrics_fixed, label="90° Column Collision"):
     """Generates a premium 2x2 grid of box plots comparing performance metrics
-    across all passes for With Cage vs. Without Cage conditions.
+    across all passes for Rotating Cage vs. Fixed Cage conditions.
     Handles empty lists gracefully if one condition has not been run yet.
     """
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
     axes = axes.ravel()
 
-    # Extract metrics list
-    clearance_cage = [m['closest_clearance'] * 100.0 for m in metrics_cage]
-    clearance_no_cage = [m['closest_clearance'] * 100.0 for m in metrics_no_cage]
+    # Extract metrics lists
+    clearance_rotating = [m['closest_clearance'] * 100.0 for m in metrics_rotating]
+    clearance_fixed = [m['closest_clearance'] * 100.0 for m in metrics_fixed]
 
-    speed_cage = [m['avg_speed_wp2_wp3'] for m in metrics_cage]
-    speed_no_cage = [m['avg_speed_wp2_wp3'] for m in metrics_no_cage]
+    speed_rotating = [m['avg_speed_wp2_wp3'] for m in metrics_rotating]
+    speed_fixed = [m['avg_speed_wp2_wp3'] for m in metrics_fixed]
 
-    mean_err_cage = [m['mean_tracking_error'] * 100.0 for m in metrics_cage]
-    mean_err_no_cage = [m['mean_tracking_error'] * 100.0 for m in metrics_no_cage]
+    mean_err_rotating = [m['mean_tracking_error'] * 100.0 for m in metrics_rotating]
+    mean_err_fixed = [m['mean_tracking_error'] * 100.0 for m in metrics_fixed]
 
-    max_err_cage = [m['max_tracking_error'] * 100.0 for m in metrics_cage]
-    max_err_no_cage = [m['max_tracking_error'] * 100.0 for m in metrics_no_cage]
+    max_err_rotating = [m['max_tracking_error'] * 100.0 for m in metrics_rotating]
+    max_err_fixed = [m['max_tracking_error'] * 100.0 for m in metrics_fixed]
 
     datasets = [
-        (clearance_cage, clearance_no_cage, "Minimum Surface Clearance (cm)", "Clearance (cm)"),
-        (speed_cage, speed_no_cage, "Sweep Transit Speed (m/s)", "Speed (m/s)"),
-        (mean_err_cage, mean_err_no_cage, "Mean Path Tracking Error (cm)", "Error (cm)"),
-        (max_err_cage, max_err_no_cage, "Maximum Lateral Displacement (cm)", "Displacement (cm)")
+        (clearance_rotating, clearance_fixed, "Minimum Surface Clearance (cm)", "Clearance (cm)"),
+        (speed_rotating, speed_fixed, "Sweep Transit Speed (m/s)", "Speed (m/s)"),
+        (mean_err_rotating, mean_err_fixed, "Mean Path Tracking Error (cm)", "Error (cm)"),
+        (max_err_rotating, max_err_fixed, "Maximum Lateral Displacement (cm)", "Displacement (cm)")
     ]
 
-    for idx, (data_cage, data_nocage, title, ylabel) in enumerate(datasets):
+    for idx, (data_rotating, data_fixed, title, ylabel) in enumerate(datasets):
         ax = axes[idx]
         
         # Prepare boxplot data structure
@@ -40,14 +40,14 @@ def plot_angle_boxplots(metrics_cage, metrics_no_cage, label="90° Column Collis
         labels = []
         colors = []
         
-        if data_cage:
-            plot_data.append(data_cage)
-            labels.append("With Rotating Cage")
-            colors.append(C_CAGE)
-        if data_nocage:
-            plot_data.append(data_nocage)
-            labels.append("Without Cage")
-            colors.append(C_NOCAGE)
+        if data_rotating:
+            plot_data.append(data_rotating)
+            labels.append("Rotating Cage")
+            colors.append(C_ROTATING)
+        if data_fixed:
+            plot_data.append(data_fixed)
+            labels.append("Fixed Cage")
+            colors.append(C_FIXED)
             
         if not plot_data:
             ax.text(0.5, 0.5, "No Data Available", ha='center', va='center', fontsize=12, color='gray')
@@ -110,41 +110,41 @@ def compare_all_angles(results_list):
     for idx, (key, scale, title, ylabel) in enumerate(metrics_keys):
         ax = axes[idx]
         
-        # Calculate stats across angles for With Cage
-        cage_means, cage_sems = [], []
-        nocage_means, nocage_sems = [], []
+        # Calculate stats across angles for both Rotating and Fixed conditions
+        rotating_means, rotating_sems = [], []
+        fixed_means, fixed_sems = [], []
         
-        has_cage_any = False
-        has_nocage_any = False
+        has_rotating_any = False
+        has_fixed_any = False
 
         for r in sorted_results:
-            vals_cage = [m[key] * scale for m in r.get('metrics_cage', [])]
-            vals_nocage = [m[key] * scale for m in r.get('metrics_no_cage', [])]
+            vals_rotating = [m[key] * scale for m in r.get('metrics_rotating_cage', [])]
+            vals_fixed = [m[key] * scale for m in r.get('metrics_fixed_cage', [])]
             
-            if vals_cage:
-                cage_means.append(np.mean(vals_cage))
-                cage_sems.append(np.std(vals_cage) / np.sqrt(len(vals_cage)) if len(vals_cage) > 1 else 0.0)
-                has_cage_any = True
+            if vals_rotating:
+                rotating_means.append(np.mean(vals_rotating))
+                rotating_sems.append(np.std(vals_rotating) / np.sqrt(len(vals_rotating)) if len(vals_rotating) > 1 else 0.0)
+                has_rotating_any = True
             else:
-                cage_means.append(np.nan)
-                cage_sems.append(0.0)
+                rotating_means.append(np.nan)
+                rotating_sems.append(0.0)
                 
-            if vals_nocage:
-                nocage_means.append(np.mean(vals_nocage))
-                nocage_sems.append(np.std(vals_nocage) / np.sqrt(len(vals_nocage)) if len(vals_nocage) > 1 else 0.0)
-                has_nocage_any = True
+            if vals_fixed:
+                fixed_means.append(np.mean(vals_fixed))
+                fixed_sems.append(np.std(vals_fixed) / np.sqrt(len(vals_fixed)) if len(vals_fixed) > 1 else 0.0)
+                has_fixed_any = True
             else:
-                nocage_means.append(np.nan)
-                nocage_sems.append(0.0)
+                fixed_means.append(np.nan)
+                fixed_sems.append(0.0)
 
-        # Plot With Cage
-        if has_cage_any:
-            ax.errorbar(angles, cage_means, yerr=cage_sems, fmt='-o', color=C_CAGE,
-                        linewidth=2.5, elinewidth=1.8, capsize=4, label="With Rotating Cage")
-        # Plot Without Cage
-        if has_nocage_any:
-            ax.errorbar(angles, nocage_means, yerr=nocage_sems, fmt='-s', color=C_NOCAGE,
-                        linewidth=2.5, elinewidth=1.8, capsize=4, label="Without Cage")
+        # Plot Rotating Cage
+        if has_rotating_any:
+            ax.errorbar(angles, rotating_means, yerr=rotating_sems, fmt='-o', color=C_ROTATING,
+                        linewidth=2.5, elinewidth=1.8, capsize=4, label="Rotating Cage")
+        # Plot Fixed Cage
+        if has_fixed_any:
+            ax.errorbar(angles, fixed_means, yerr=fixed_sems, fmt='-s', color=C_FIXED,
+                        linewidth=2.5, elinewidth=1.8, capsize=4, label="Fixed Cage")
 
         ax.set_title(title, pad=12, fontsize=12, fontweight='bold')
         ax.set_xlabel("Collision Sweep Angle (degrees)", fontsize=10)

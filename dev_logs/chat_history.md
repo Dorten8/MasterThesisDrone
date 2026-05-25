@@ -40,4 +40,18 @@
 - Restored strict 1:1 aspect ratios, equal 0.5m grid ticks, and scaled vector CAD drone viewport overlays inside 2D top-down trajectory plots.
 - Integrated a self-healing Jupyter module reload guard to clear memory cache dynamically and successfully verified headless notebook execution and vector TikZ compilation (exit code 0).
 - Configured, renamed, and mathematically validated the `exp_collision_75deg.py` mission. Forced a safe `1.0 m/s` rapid transit/approach and symmetrized coordinates to trace a strictly vertical straight-line sweep at $X = -0.186$ m, matching CAD and MoCap `/poses` column offset offsets.
-- Full technical breakdown in: [dev_logs/session_journals/2026-05-23-mocap-tracking-recovery.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-23-mocap-tracking-recovery.md)
+## Session: 2026-05-24 (Experimental Analysis Pipeline & Symmetrical Collision Loop)
+- Conceived and engineered the core mathematical and statistical data pipeline (`experiments_analysis` package) to clean raw high-frequency telemetry using Savitzky-Golay filtering, isolate active sweep events, calculate perpendicular tracking errors and closest approach clearances, and compile 2x2 comparative plots.
+- Symmetrized the waypoint logic in `exp_collision_75deg.py` to fly a straight-line vertical sweep at a constant offset of $X = -0.186$ m, matching CAD sketch and `/poses` column offset.
+- Replaced all hardcoded IP references in `startup-sequence.sh` with configuration-driven queries from `drone_config.json`, fixed the multicast node tracking join timeout pattern, and introduced custom health diagnostics for Companion-to-FC connectivity checking.
+- Enabled `hb.velocity = True` inside [flight_director.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_director.py) to activate PX4 offboard velocity feedforward.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-24-experimental-analysis-pipeline-and-collision-loop.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-24-experimental-analysis-pipeline-and-collision-loop.md)
+
+## Session: 2026-05-25 (Corrupted MCAP Auto-Repair & DB Population)
+- Designed and built a robust low-level MCAP auto-repair engine utilizing `StreamReader(record_size_limit=None)` to recover **150,905 raw messages** from the corrupted `flight_20260525-1706` bag.
+- Implemented dynamic ROS 2 message schema registration using `writer.register_msgdef()` during pass slicing to eliminate deserialization `KeyError` crashes in standard readers.
+- Added a direct `__main__` entry launcher block to `exa_pipeline.py` enabling fully automated, terminal-based pipeline execution and database population with duplicate-skipping support.
+- Fully cached 9 verified sweep passes in `collision_experiments.db`, successfully updating metrics for battery capacity, sweep speed, impact speed, acceleration, and perpendicular rebound deviations.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-25-telemetry-pipeline-upgrades-and-mcap-repair.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-25-telemetry-pipeline-upgrades-and-mcap-repair.md)
+
+

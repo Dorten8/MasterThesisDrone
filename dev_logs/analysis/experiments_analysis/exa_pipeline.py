@@ -9,19 +9,29 @@ from .exa_kinematics import compute_velocity, find_waypoint_events, build_events
 from .exa_plot_trajectory import plot_trajectory
 from .exa_plot_kinematics import plot_velocity_profile, plot_battery_sag, plot_imu_dynamics, plot_imu_xyz_components, plot_tangential_accel
 from .exa_plot_statistics import plot_angle_boxplots
+from .exa_database import insert_or_replace_flight, get_database_summary_markdown, is_already_cached
 
 def run(label, angle_deg, column_x=0.408, column_y=0.358, 
-        flights_cage=None, flights_no_cage=None, 
-        representative_cage=0, representative_no_cage=0, 
-        project_root=None):
+        flights_rotating_cage=None, flights_fixed_cage=None, 
+        representative_rotating_cage=0, representative_fixed_cage=0, 
+        project_root=None, **kwargs):
     """Orchestrates the loading, analysis, and visualization pipeline for one angle.
-    Processes both cage and no-cage passes, prints event tables, and draws
+    Processes both rotating cage and fixed cage passes, prints event tables, and draws
     representative plots and comparative statistics boxplots.
     """
-    if flights_cage is None:
-        flights_cage = []
-    if flights_no_cage is None:
-        flights_no_cage = []
+    # Map old aliases if provided for robustness
+    if flights_rotating_cage is None:
+        flights_rotating_cage = kwargs.get('flights_cage', None)
+    if flights_fixed_cage is None:
+        flights_fixed_cage = kwargs.get('flights_no_cage', None)
+
+    if flights_rotating_cage is None:
+        flights_rotating_cage = []
+    if flights_fixed_cage is None:
+        flights_fixed_cage = []
+
+    representative_rotating_cage = kwargs.get('representative_cage', representative_rotating_cage)
+    representative_fixed_cage = kwargs.get('representative_no_cage', representative_fixed_cage)
 
     # 1. Resolve project root and flights path dynamically
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -44,14 +54,13 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
     print(f"🔧 Loaded SSoT Configs: Tracker='{drone_tracker_name}', Cage D={cage_diameter*100:.1f}cm, Column D={column_diameter*100:.1f}cm\n")
 
     # Helper to process a list of flight folders
-    def process_flights(flight_folder_names):
+    def process_flights(flight_folder_names, condition_label):
         metrics_list = []
         details_list = []
         
         for idx, f_name in enumerate(flight_folder_names):
             flight_path = os.path.join(flights_dir, f_name)
             if not os.path.exists(flight_path):
-                # Retry relative to workspace directly
                 flight_path = os.path.join(project_root, f_name)
                 
             if not os.path.exists(flight_path):
@@ -69,6 +78,8 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                 df_column = dfs.get('column', pd.DataFrame())
                 arming_time = dfs['arming_time']
                 disarming_time = dfs['disarming_time']
+                mocap_rate = dfs.get('mocap_rate', 240.0)
+                dynamic_waypoints = dfs.get('dynamic_waypoints', [])
                 
                 # Compute velocity derivative signals
                 df_mocap = compute_velocity(df_mocap)
@@ -92,54 +103,96 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     df_mocap, takeoff_time, label=f_name, 
                     column_x=col_x_flight, column_y=col_y_flight, 
                     column_radius=column_radius, cage_radius=cage_radius,
-                    return_all=True
+                    return_all=True, dynamic_waypoints=dynamic_waypoints
                 )
                 
                 if not wp_events_list:
                     wp_events_list = [{}]
-                
+
+                # --- Resolve declared sweep_speed from the mission class ---
+                sweep_speed = None
+                try:
+                    sys.path.insert(0, project_root)
+                    from drone_control.missions.exp_collision_75deg import ExpCollision75Deg
+                    _m = ExpCollision75Deg()
+                    sweep_speed = _m.sweep_speed  # e.g. 0.3 m/s
+                except Exception:
+                    pass  # Not critical — falls back to None in the DB
+
                 for p_idx, wp_events in enumerate(wp_events_list):
                     pass_name = f"{f_name} - Pass-{p_idx+1:02d}"
+
+                    # Only write a complete pass (WP1 + WP2 + WP3 all detected)
+                    has_full_pass = ('WP1' in wp_events or 'WP2' in wp_events) and 'WP3' in wp_events
+                    if not has_full_pass:
+                        print(f"⚠️  Incomplete pass detected ({pass_name}), skipping DB insert.")
+                        continue
+
                     print(f"🔄 Segmented implicit pass: {pass_name}")
-                    
+
                     # Calculate physical metrics with dynamic column coordinates
                     metrics = calculate_metrics(df_mocap, wp_events, col_x_flight, col_y_flight, column_radius, cage_radius)
-                    
+
+                    # Attach declared sweep speed to metrics
+                    metrics['sweep_speed'] = sweep_speed
+
+                    # Battery % at Exp. Start-point (WP1 / WP2, whichever is earliest available)
+                    t_exp_start = wp_events.get('WP1') or wp_events.get('WP2')
+                    if t_exp_start is not None and not df_bat.empty:
+                        from .exa_kinematics import query_battery
+                        bat_pct_str, _ = query_battery(df_bat, t_exp_start)
+                        try:
+                            metrics['battery_at_start'] = float(bat_pct_str.replace('%', ''))
+                        except (ValueError, AttributeError):
+                            metrics['battery_at_start'] = None
+                    else:
+                        metrics['battery_at_start'] = None
+
+                    # Skip if already cached in the database (idempotent runs)
+                    if is_already_cached(pass_name):
+                        print(f"⏭️  '{pass_name}' already in database, skipping insert.")
+                    else:
+                        insert_or_replace_flight(pass_name, condition_label, metrics)
+
                     metrics_list.append(metrics)
                     details_list.append({
                         'flight_name': pass_name,
                         'df_mocap': df_mocap,
                         'df_bat': df_bat,
                         'df_imu': df_imu,
+                        'df_column': df_column,
                         'col_x_flight': col_x_flight,
                         'col_y_flight': col_y_flight,
                         'arming_time': arming_time,
                         'takeoff_time': takeoff_time,
                         'disarming_time': disarming_time,
                         'wp_events': wp_events,
-                        'achieved_impact_angle': metrics['achieved_impact_angle']
+                        'achieved_impact_angle': metrics['achieved_impact_angle'],
+                        'mocap_rate': mocap_rate,
+                        'dynamic_waypoints': dynamic_waypoints
                     })
             except Exception as e:
                 print(f"[ERROR] Failed processing flight {f_name}: {e}")
-                
+                import traceback; traceback.print_exc()
+
         return metrics_list, details_list
 
     # Process all flights
-    print("⏳ Processing 'Rotating Cage (Collision)' passes...")
-    metrics_cage, details_cage = process_flights(flights_cage)
-    print(f"✅ Successfully processed {len(metrics_cage)} passes.\n")
+    print("⏳ Processing 'Rotating Cage' passes...")
+    metrics_rotating, details_rotating = process_flights(flights_rotating_cage, "Rotating Cage")
+    print(f"✅ Successfully processed {len(metrics_rotating)} passes.\n")
 
-    print("⏳ Processing 'Rotating Cage (Safe Sweep)' passes...")
-    metrics_nocage, details_nocage = process_flights(flights_no_cage)
-    print(f"✅ Successfully processed {len(metrics_nocage)} passes.\n")
+    print("⏳ Processing 'Fixed Cage' passes...")
+    metrics_fixed, details_fixed = process_flights(flights_fixed_cage, "Fixed Cage")
+    print(f"✅ Successfully processed {len(metrics_fixed)} passes.\n")
 
-    # Render representative with cage flight
-    if details_cage:
-        rep_idx = min(max(0, representative_cage), len(details_cage) - 1)
-        rep = details_cage[rep_idx]
-        rep_metrics = metrics_cage[rep_idx]
+    # Render representative rotating cage flight
+    if details_rotating:
+        rep_idx = min(max(0, representative_rotating_cage), len(details_rotating) - 1)
+        rep = details_rotating[rep_idx]
+        rep_metrics = metrics_rotating[rep_idx]
         
-        print(f"📈 --- Representative Pass: ROTATING CAGE COLLISION ({rep['flight_name']}) ---")
+        print(f"📈 --- Representative Pass: ROTATING CAGE ({rep['flight_name']}) ---")
         if rep_metrics.get('achieved_impact_angle') is not None:
             print(f"💥 Achieved Contact Impact Angle: {rep_metrics['achieved_impact_angle']:.1f}° (Nominal Target: {angle_deg}°)")
         
@@ -149,7 +202,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                                   achieved_angle=rep.get('achieved_impact_angle'))
         df_events_table = pd.DataFrame(events)
         
-        print("\n📊 CHRONOLOGICAL FLIGHT EVENTS & BATTERY AUDIT JOURNAL (WITH CAGE)")
+        print("\n📊 CHRONOLOGICAL FLIGHT EVENTS & BATTERY AUDIT JOURNAL (ROTATING CAGE)")
         display(HTML(df_events_table.to_html(index=False)))
         
         if rep_metrics.get('achieved_impact_angle') is not None:
@@ -163,36 +216,42 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
         print("-" * 80)
         
         # Render trajectory plot using the flight's exact dynamic column coordinates
-        output_plot_path = os.path.join(project_root, "dev_logs", "analysis", f"trajectory_{label.lower().replace(' ', '_')}_cage.png")
+        output_plot_path = os.path.join(project_root, "dev_logs", "analysis", f"trajectory_{label.lower().replace(' ', '_')}_rotating_cage.png")
         plot_trajectory(rep['df_mocap'], rep['wp_events'], rep['col_x_flight'], rep['col_y_flight'], 
-                        cage_diameter, column_diameter, output_path=output_plot_path, flight_name=rep['flight_name'])
+                        cage_diameter, column_diameter, output_path=output_plot_path, flight_name=rep['flight_name'],
+                        dynamic_waypoints=rep['dynamic_waypoints'], df_column=rep['df_column'])
         
         # Render velocity profile
         plot_velocity_profile(rep['df_mocap'], rep['wp_events'], rep['arming_time'], 
-                              rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage (Collision)", flight_name=rep['flight_name'])
+                              rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage", flight_name=rep['flight_name'],
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'])
         
         # Render tangential acceleration / deceleration profile
         plot_tangential_accel(rep['df_mocap'], rep['wp_events'], rep['arming_time'],
-                              rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage (Collision)", flight_name=rep['flight_name'])
+                              rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage", flight_name=rep['flight_name'],
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'))
         
         # Render battery profile
-        plot_battery_sag(rep['df_bat'], rep['takeoff_time'], label="Rotating Cage (Collision)", flight_name=rep['flight_name'])
+        plot_battery_sag(rep['df_bat'], rep['takeoff_time'], rep['wp_events'], rep['arming_time'], label="Rotating Cage", flight_name=rep['flight_name'],
+                         achieved_angle=rep_metrics.get('achieved_impact_angle'))
  
         # Render physical IMU Dynamics & raw components (XYZ-RGB standard)
         plot_imu_dynamics(rep['df_imu'], rep['wp_events'], rep['arming_time'],
-                          rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage (Collision)", flight_name=rep['flight_name'])
+                          rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage", flight_name=rep['flight_name'],
+                          achieved_angle=rep_metrics.get('achieved_impact_angle'))
         
         plot_imu_xyz_components(rep['df_imu'], rep['wp_events'], rep['arming_time'],
-                                rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage (Collision)", flight_name=rep['flight_name'])
+                                rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage", flight_name=rep['flight_name'],
+                                achieved_angle=rep_metrics.get('achieved_impact_angle'))
         print("\n" + "="*80 + "\n")
- 
-    # Render representative no cage flight
-    if details_nocage:
-        rep_idx = min(max(0, representative_no_cage), len(details_nocage) - 1)
-        rep = details_nocage[rep_idx]
-        rep_metrics = metrics_nocage[rep_idx]
+  
+    # Render representative fixed cage flight
+    if details_fixed:
+        rep_idx = min(max(0, representative_fixed_cage), len(details_fixed) - 1)
+        rep = details_fixed[rep_idx]
+        rep_metrics = metrics_fixed[rep_idx]
         
-        print(f"📈 --- Representative Pass: ROTATING CAGE SAFE SWEEP ({rep['flight_name']}) ---")
+        print(f"📈 --- Representative Pass: FIXED CAGE ({rep['flight_name']}) ---")
         if rep_metrics.get('achieved_impact_angle') is not None:
             print(f"💥 Achieved Contact Impact Angle: {rep_metrics['achieved_impact_angle']:.1f}° (Nominal Target: {angle_deg}°)")
         
@@ -202,7 +261,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                                   achieved_angle=rep.get('achieved_impact_angle'))
         df_events_table = pd.DataFrame(events)
         
-        print("\n📊 CHRONOLOGICAL FLIGHT EVENTS & BATTERY AUDIT JOURNAL (WITHOUT CAGE)")
+        print("\n📊 CHRONOLOGICAL FLIGHT EVENTS & BATTERY AUDIT JOURNAL (FIXED CAGE)")
         display(HTML(df_events_table.to_html(index=False)))
         
         if rep_metrics.get('achieved_impact_angle') is not None:
@@ -216,36 +275,208 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
         print("-" * 80)
         
         # Render trajectory plot using the flight's exact dynamic column coordinates
-        output_plot_path = os.path.join(project_root, "dev_logs", "analysis", f"trajectory_{label.lower().replace(' ', '_')}_nocage.png")
+        output_plot_path = os.path.join(project_root, "dev_logs", "analysis", f"trajectory_{label.lower().replace(' ', '_')}_fixed_cage.png")
         plot_trajectory(rep['df_mocap'], rep['wp_events'], rep['col_x_flight'], rep['col_y_flight'], 
-                        cage_diameter, column_diameter, output_path=output_plot_path, flight_name=rep['flight_name'])
+                        cage_diameter, column_diameter, output_path=output_plot_path, flight_name=rep['flight_name'],
+                        dynamic_waypoints=rep['dynamic_waypoints'], df_column=rep['df_column'])
         
         # Render velocity profile
         plot_velocity_profile(rep['df_mocap'], rep['wp_events'], rep['arming_time'], 
-                              rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage (Safe Sweep)", flight_name=rep['flight_name'])
+                              rep['takeoff_time'], rep['disarming_time'], events, label="Fixed Cage", flight_name=rep['flight_name'],
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'])
         
         # Render tangential acceleration / deceleration profile
         plot_tangential_accel(rep['df_mocap'], rep['wp_events'], rep['arming_time'],
-                              rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage (Safe Sweep)", flight_name=rep['flight_name'])
+                              rep['takeoff_time'], rep['disarming_time'], events, label="Fixed Cage", flight_name=rep['flight_name'],
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'))
         
         # Render battery profile
-        plot_battery_sag(rep['df_bat'], rep['takeoff_time'], label="Rotating Cage (Safe Sweep)", flight_name=rep['flight_name'])
+        plot_battery_sag(rep['df_bat'], rep['takeoff_time'], rep['wp_events'], rep['arming_time'], label="Fixed Cage", flight_name=rep['flight_name'],
+                         achieved_angle=rep_metrics.get('achieved_impact_angle'))
  
         # Render physical IMU Dynamics & raw components (XYZ-RGB standard)
         plot_imu_dynamics(rep['df_imu'], rep['wp_events'], rep['arming_time'],
-                          rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage (Safe Sweep)", flight_name=rep['flight_name'])
+                          rep['takeoff_time'], rep['disarming_time'], events, label="Fixed Cage", flight_name=rep['flight_name'],
+                          achieved_angle=rep_metrics.get('achieved_impact_angle'))
         
         plot_imu_xyz_components(rep['df_imu'], rep['wp_events'], rep['arming_time'],
-                                rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage (Safe Sweep)", flight_name=rep['flight_name'])
+                                rep['takeoff_time'], rep['disarming_time'], events, label="Fixed Cage", flight_name=rep['flight_name'],
+                                achieved_angle=rep_metrics.get('achieved_impact_angle'))
         print("\n" + "="*80 + "\n")
 
     # Render side-by-side comparative boxplots
-    if metrics_cage or metrics_nocage:
-        plot_angle_boxplots(metrics_cage, metrics_nocage, label=label)
+    if metrics_rotating or metrics_fixed:
+        plot_angle_boxplots(metrics_rotating, metrics_fixed, label=label)
+
+    # Output consolidated thesis experiments summary from SQLite database
+    print("\n" + "="*80)
+    print("📚 CONSOLIDATED MASTER THESIS COLLISION EXPERIMENTS DATABASE SUMMARY")
+    print("="*80)
+    print(get_database_summary_markdown())
+    print("="*80 + "\n")
 
     return {
         'label': label,
         'angle_deg': angle_deg,
-        'metrics_cage': metrics_cage,
-        'metrics_no_cage': metrics_nocage
+        'metrics_rotating_cage': metrics_rotating,
+        'metrics_fixed_cage': metrics_fixed
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Standalone DB population mode
+# Run as:  python3 -m dev_logs.analysis.experiments_analysis.exa_pipeline
+#
+# Scans dev_logs/flights/ for *-passXX.mcap files (only approved flights),
+# runs analysis on each, and populates / updates the SQLite database.
+# Already-cached passes are skipped (idempotent).
+# ─────────────────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import re as _re
+    import glob as _glob
+
+    APPROVED_CUTOFF = "20260524-1904"
+
+    _current_dir = os.path.dirname(os.path.abspath(__file__))
+    _project_root = os.path.abspath(os.path.join(_current_dir, "..", "..", ".."))
+    _flights_dir  = os.path.join(_project_root, "dev_logs", "flights")
+
+    drone_tracker_name, system_config = load_drone_metadata(_project_root)
+    primary_body  = next((b for b in system_config.get("tracked_bodies", []) if b.get("role") == "primary"),  {})
+    obstacle_body = next((b for b in system_config.get("tracked_bodies", []) if b.get("role") == "obstacle"), {})
+    cage_diameter   = primary_body.get("cage_diameter_m", 0.358)
+    column_diameter = obstacle_body.get("diameter_m", 0.09)
+    cage_radius   = cage_diameter / 2.0
+    column_radius = column_diameter / 2.0
+
+    def _infer_condition(folder_name):
+        name = folder_name.lower()
+        if "rotating" in name:
+            return "Rotating Cage"
+        return "Fixed Cage"
+
+    def _flight_ts(folder_name):
+        m = _re.search(r'flight_(\d{8}-\d{4})', folder_name)
+        return m.group(1) if m else None
+
+    # Collect all approved pass files
+    all_pass_files = []
+    for folder in sorted(os.listdir(_flights_dir)):
+        ts = _flight_ts(folder)
+        if ts is None or ts < APPROVED_CUTOFF:
+            continue
+        folder_path = os.path.join(_flights_dir, folder)
+        passes = sorted(_glob.glob(os.path.join(folder_path, "*-pass*.mcap")))
+        for p in passes:
+            all_pass_files.append((folder, folder_path, p))
+
+    if not all_pass_files:
+        print("⚠️  No pass files found. Run mcap_segmenter.py first.")
+        sys.exit(0)
+
+    print(f"\n🗄️  DB Population Mode — found {len(all_pass_files)} pass file(s) across approved flights.\n")
+
+    try:
+        sys.path.insert(0, _project_root)
+        from drone_control.missions.exp_collision_75deg import ExpCollision75Deg as _M
+        sweep_speed_declared = _M().sweep_speed
+    except Exception:
+        sweep_speed_declared = None
+
+    populated, skipped, errors = 0, 0, 0
+
+    for folder_name, folder_path, pass_path in all_pass_files:
+        pass_basename = os.path.basename(pass_path)
+        # pass_name matches the DB primary key: "<folder_name> - Pass-XX"
+        m = _re.search(r'-pass(\d+)\.mcap$', pass_basename)
+        if not m:
+            continue
+        pass_idx  = int(m.group(1))
+        pass_name = f"{folder_name} - Pass-{pass_idx:02d}"
+
+        if is_already_cached(pass_name):
+            print(f"⏭️  Skipping (already cached): {pass_name}")
+            skipped += 1
+            continue
+
+        print(f"\n🔄 Processing: {pass_name}")
+        try:
+            # Load the self-contained pass MCAP
+            from mcap_ros2.reader import read_ros2_messages as _read_msgs
+            topic_data = {}
+            for msg in _read_msgs(pass_path):
+                t = msg.channel.topic
+                if t not in topic_data:
+                    topic_data[t] = []
+                topic_data[t].append(msg)
+
+            if not topic_data:
+                print(f"   ⚠️  Empty MCAP, skipping.")
+                errors += 1
+                continue
+
+            bag_start_ns = min(m.log_time_ns for msgs in topic_data.values() for m in msgs)
+            dfs = build_dataframes(topic_data, drone_tracker_name, bag_start_ns)
+
+            df_mocap  = dfs['mocap']
+            df_bat    = dfs['battery']
+            df_column = dfs.get('column', pd.DataFrame())
+            arming_time       = dfs['arming_time']
+            dynamic_waypoints = dfs.get('dynamic_waypoints', [])
+
+            if df_mocap.empty:
+                print(f"   ⚠️  No MoCap data, skipping.")
+                errors += 1
+                continue
+
+            df_mocap = compute_velocity(df_mocap)
+
+            takeoff_mask = df_mocap['z'] > 0.15
+            takeoff_time = df_mocap.loc[takeoff_mask, 't'].iloc[0] if takeoff_mask.any() else arming_time + 2.0
+
+            col_x, col_y = (df_column['x'].head(50).mean(), df_column['y'].head(50).mean()) \
+                if (df_column is not None and not df_column.empty) else (0.408, 0.358)
+
+            wp_events_list = find_waypoint_events(
+                df_mocap, takeoff_time, label=pass_name,
+                column_x=col_x, column_y=col_y,
+                column_radius=column_radius, cage_radius=cage_radius,
+                return_all=True, dynamic_waypoints=dynamic_waypoints
+            )
+
+            if not wp_events_list:
+                print(f"   ⚠️  No waypoint events found, skipping.")
+                errors += 1
+                continue
+
+            wp_events = wp_events_list[0]  # Pass file contains exactly one pass
+
+            metrics = calculate_metrics(df_mocap, wp_events, col_x, col_y, column_radius, cage_radius)
+            metrics['sweep_speed'] = sweep_speed_declared
+
+            # Battery % at Exp. Start-point
+            t_exp_start = wp_events.get('WP1') or wp_events.get('WP2')
+            if t_exp_start is not None and not df_bat.empty:
+                from dev_logs.analysis.experiments_analysis.exa_kinematics import query_battery as _qb
+                bat_pct_str, _ = _qb(df_bat, t_exp_start)
+                try:
+                    metrics['battery_at_start'] = float(bat_pct_str.replace('%', ''))
+                except (ValueError, AttributeError):
+                    metrics['battery_at_start'] = None
+            else:
+                metrics['battery_at_start'] = None
+
+            condition = _infer_condition(folder_name)
+            insert_or_replace_flight(pass_name, condition, metrics)
+            populated += 1
+
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
+            import traceback; traceback.print_exc()
+            errors += 1
+
+    print(f"\n{'='*80}")
+    print(f"✅ DB population complete: {populated} inserted, {skipped} skipped, {errors} errors.")
+    print(f"{'='*80}\n")
+    print(get_database_summary_markdown())
+

@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -5,7 +6,54 @@ C_MOCAP = '#1F77B4'      # Steel Blue (Actual Ground Truth)
 C_CMD = '#D62728'        # Crimson Red (Commanded Setpoint)
 C_BAT = '#9467BD'        # Muted Purple (Battery Voltage)
 
-def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, ax=None, label="", flight_name=None):
+def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False, achieved_angle=None):
+    """Draws perfectly aligned, standard timeline event markers on the given axis (General Plot Rule 6)."""
+    y_min, y_max = y_lims
+    y_pos = y_min + (y_max - y_min) * 0.88
+    
+    t_start = wp_events.get('WP1')
+    t_impact = wp_events.get('Column Impact')
+    t_end = wp_events.get('WP4')
+    t_passed = wp_events.get('Column Passed')
+    
+    events = []
+    if t_start is not None:
+        events.append(('Exp. Start-point', t_start, '#9467BD', ':', 1.8, '#444444'))
+    if t_passed is not None:
+        events.append(('Column Center Passed', t_passed, '#2CA02C', '--', 1.8, '#1E5E1E'))
+    if t_impact is not None:
+        angle_str = f" ({achieved_angle:.1f}°)" if achieved_angle is not None else ""
+        events.append((f'💥 Impact{angle_str}', t_impact, '#D62728', '-.', 2.5, '#7F0000'))
+    if t_end is not None:
+        events.append(('Exp. End-point', t_end, '#9467BD', ':', 1.8, '#444444'))
+        
+    for idx, (name, t_abs, color, style, width, text_color) in enumerate(events):
+        t_val = t_abs if is_absolute else (t_abs - arming_time)
+        ax.axvline(x=t_val, color=color, linestyle=style, linewidth=width, alpha=0.95, zorder=5)
+        # Prevents label text collision by alternating offsets and height positions
+        h_fraction = 0.88 - 0.20 * (idx % 3)
+        h_pos = y_min + (y_max - y_min) * h_fraction
+        ax.text(t_val + 0.12, h_pos, name, rotation=90, va='top', fontsize=8, fontweight='bold',
+                color=text_color, bbox=dict(facecolor='white', alpha=0.90, edgecolor=color, pad=1.5), zorder=6)
+
+def get_timeline_limits(wp_events, arming_time, df_t, is_absolute=False):
+    """Calculates the [T_start - 5s, T_end + 5s] display limits (General Plot Rule 3)."""
+    t_start = wp_events.get('WP1')
+    t_end = wp_events.get('WP4')
+    
+    if is_absolute:
+        t_min = df_t.min() if not df_t.empty else 0.0
+        t_max = df_t.max() if not df_t.empty else 20.0
+        crop_min = max(t_min, t_start - 5.0) if t_start is not None else t_min
+        crop_max = min(t_max, t_end + 5.0) if t_end is not None else t_max
+    else:
+        t_max_rel = (df_t.max() - arming_time) if not df_t.empty else 20.0
+        crop_min = max(0.0, (t_start - arming_time) - 5.0) if t_start is not None else 0.0
+        crop_max = (t_end - arming_time) + 5.0 if t_end is not None else t_max_rel
+        
+    return crop_min, crop_max
+
+def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, ax=None, label="", flight_name=None, achieved_angle=None, mocap_rate=240.0):
     """Plots a continuous Savitzky-Golay velocity profile with chronological event markers
     and horizontal segment average speed indicators, and a dual-subplot for the /poses publishing rate.
     """
@@ -57,67 +105,22 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         ax_vel.hlines(y=avg_v, xmin=t_p, xmax=t_c, colors='#2CA02C', linestyles='--', linewidth=2.0, label=lbl)
         has_avg_legend = True
 
-    # Draw vertical event lines
-    plot_events = []
-    if arming_time is not None:
-        plot_events.append(("Armed", 0.0))
-    if takeoff_time is not None:
-        plot_events.append(("Takeoff", takeoff_time - arming_time))
-    
-    # Sort chronologically by timestamp
-    for wp in sorted(wp_events.keys(), key=lambda k: wp_events[k]):
-        plot_events.append((wp, wp_events[wp] - arming_time))
-        
-    if disarming_time is not None:
-        plot_events.append(("Landed", disarming_time - arming_time))
-
     y_max = df_plot['speed'].max() if not df_plot.empty else 1.0
     if np.isnan(y_max) or y_max <= 0:
         y_max = 1.0
 
-    for idx, (evt_name, t_evt) in enumerate(plot_events):
-        evt_label = evt_name
-        if evt_name == "Column Passed":
-            line_color = '#2CA02C'
-            line_style = '--'
-            line_width = 2.2
-            alpha = 0.95
-            text_color = '#1E5E1E'
-            edge_color = '#2CA02C'
-        elif evt_name == "Column Impact":
-            line_color = '#D62728'
-            line_style = '-.'
-            line_width = 2.5
-            alpha = 1.0
-            text_color = '#7F0000'
-            edge_color = '#D62728'
-            if events_log:
-                for item in events_log:
-                    if "Column Impact" in item.get('Event Name', ''):
-                        evt_label = item['Event Name'].replace("💥 ", "")
-                        break
-        else:
-            line_color = '#9467BD'
-            line_style = ':'
-            line_width = 1.5
-            alpha = 0.8
-            text_color = '#444444'
-            edge_color = '#DDDDDD'
-
-        ax_vel.axvline(x=t_evt, color=line_color, linestyle=line_style, alpha=alpha, linewidth=line_width)
-        if ax_rate is not None:
-            ax_rate.axvline(x=t_evt, color=line_color, linestyle=line_style, alpha=alpha, linewidth=line_width)
-        
-        # Prevent visual overlap by varying label heights
-        y_pos = y_max * (0.80 - 0.15 * (idx % 3))
-        ax_vel.text(t_evt + 0.4, y_pos, evt_label, rotation=0, fontsize=9, fontweight='bold', color=text_color,
-                 bbox=dict(facecolor='white', alpha=0.9, edgecolor=edge_color, boxstyle='round,pad=0.2'))
+    # Draw standard timeline markers
+    draw_timeline_markers(ax_vel, wp_events, arming_time, (-0.05, y_max * 1.15), is_absolute=False, achieved_angle=achieved_angle)
 
     ax_vel.set_title(f'⚡ Thesis Flight Kinetic Profile: SG Velocity & Event Timeline ({label})', pad=15)
     ax_vel.set_ylabel('Velocity Magnitude (m/s)')
     ax_vel.set_ylim(-0.05, y_max * 1.15)
     ax_vel.legend(loc='upper right', frameon=True, facecolor='white', edgecolor='#EAEAEA')
     ax_vel.grid(True)
+
+    # Set timeline limits (General Plot Rule 3: [T_start - 5s, T_end + 5s])
+    t_min_crop, t_max_crop = get_timeline_limits(wp_events, arming_time, df_plot['t'], is_absolute=False)
+    ax_vel.set_xlim(t_min_crop, t_max_crop)
 
     if flight_name:
         ax_vel.text(0.98, 0.02, f"{flight_name}", transform=ax_vel.transAxes,
@@ -126,10 +129,8 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
 
     # Plot /poses rate on the second subplot
     if ax_rate is not None:
-        # Calculate instantaneous rate (1 / dt)
         dt = df_plot['t'].diff()
         rate = 1.0 / dt
-        # Clip rates to reasonable limits (e.g. 0 to 450Hz) to prevent infinite values or spikes from scaling the plot
         rate = rate.clip(0, 450)
         
         # Color coding: Green for healthy, Red for dropouts (< 30Hz)
@@ -138,9 +139,9 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         ax_rate.scatter(t_rel, rate, c=colors, s=12, alpha=0.8, label='/poses Publish Rate')
         ax_rate.plot(t_rel, rate, color='#888888', linewidth=0.5, alpha=0.3)
         
-        # Draw threshold lines
+        # Draw threshold lines (General Plot Rule 2: Nominal rate is extracted dynamically)
         ax_rate.axhline(30.0, color='#D62728', linestyle='--', linewidth=1.2, label='Min Failsafe Rate (30 Hz)')
-        ax_rate.axhline(240.0, color='#2CA02C', linestyle=':', linewidth=1.2, label='Nominal Motive Rate (240 Hz)')
+        ax_rate.axhline(mocap_rate, color='#2CA02C', linestyle=':', linewidth=1.2, label=f'Nominal Motive Rate ({mocap_rate:.1f} Hz)')
         
         ax_rate.set_ylabel('Mocap Rate (Hz)')
         ax_rate.set_xlabel('Time Since Arming (seconds)')
@@ -148,7 +149,9 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         ax_rate.grid(True)
         ax_rate.legend(loc='upper right', frameon=True, facecolor='white', edgecolor='#EAEAEA', fontsize=8)
         
-        # Calculate and print stats
+        # Draw standard timeline markers on the rate subplot as well
+        draw_timeline_markers(ax_rate, wp_events, arming_time, (-10, 480), is_absolute=False, achieved_angle=achieved_angle)
+        
         avg_rate = rate.dropna().mean()
         min_rate = rate.dropna().min()
         print(f"📊 MoCap Stream Transmission Diagnostics ({label}):")
@@ -157,24 +160,17 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         total_dropouts = (rate < 30.0).sum()
         print(f"   - Critical Tracking Degradation Events: {total_dropouts} frames below 30Hz failsafe limit")
 
-    ax_vel.set_xlim(0, t_rel.max() if not t_rel.empty else 10)
-
     if show_plot:
         plt.tight_layout()
         plt.show()
 
-def plot_battery_sag(df_bat, takeoff_time, ax=None, label="", flight_name=None):
+def plot_battery_sag(df_bat, takeoff_time, wp_events, arming_time, label="", flight_name=None, achieved_angle=None):
     """Plots a double Y-axis LiPo dynamic battery depletion and voltage sag profile."""
     if df_bat is None or df_bat.empty:
         print("[WARN] Empty battery DataFrame, skipping battery plot.")
         return None
 
-    if ax is None:
-        fig, ax1 = plt.subplots(figsize=(12, 5))
-        show_plot = True
-    else:
-        ax1 = ax
-        show_plot = False
+    fig, ax1 = plt.subplots(figsize=(12, 5))
 
     # Plot Voltage on left axis
     ax1.plot(df_bat['t'], df_bat['voltage'], color=C_BAT, linewidth=2.0, label='Voltage Under Load')
@@ -201,17 +197,20 @@ def plot_battery_sag(df_bat, takeoff_time, ax=None, label="", flight_name=None):
     ax1.set_title(f'🔋 6S LiPo Dynamic Battery Depletion & Motor Load Sag Profile ({label})')
     ax1.grid(True)
 
+    # Draw standard timeline markers on Battery plot (absolute time)
+    draw_timeline_markers(ax1, wp_events, arming_time, (19.0, 26.0), is_absolute=True, achieved_angle=achieved_angle)
+
     if flight_name:
         ax1.text(0.98, 0.02, f"{flight_name}", transform=ax1.transAxes,
                  ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
                  bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA', boxstyle='round,pad=0.2'))
     
-    t_start = max(0, takeoff_time - 3.0) if takeoff_time is not None else 0.0
-    ax1.set_xlim(t_start, df_bat['t'].max() if not df_bat.empty else 10.0)
+    # Set timeline limits (General Plot Rule 3: [T_start - 5s, T_end + 5s])
+    t_min_crop, t_max_crop = get_timeline_limits(wp_events, arming_time, df_bat['t'], is_absolute=True)
+    ax1.set_xlim(t_min_crop, t_max_crop)
 
-    if show_plot:
-        plt.tight_layout()
-        plt.show()
+    plt.tight_layout()
+    plt.show()
 
     # Calculate metrics
     active_flight_time_min = (df_bat['t'].max() - takeoff_time) / 60.0 if takeoff_time is not None else df_bat['t'].max() / 60.0
@@ -230,7 +229,7 @@ def plot_battery_sag(df_bat, takeoff_time, ax=None, label="", flight_name=None):
     if depletion_rate_per_min > 0:
         print(f"   - Safe Flight Ceiling (40% Cutoff):    {(60.0 / depletion_rate_per_min) * 2.4:.1f} seconds")
 
-def plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log, label="", flight_name=None):
+def plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log, label="", flight_name=None, achieved_angle=None):
     """Plots the physical IMU collision dynamics overlaid with the flight mission waypoints."""
     if df_imu is None or df_imu.empty:
         print("[WARN] Empty IMU DataFrame, skipping IMU plot.")
@@ -247,7 +246,9 @@ def plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_ti
     ax1.set_xlabel('Time Since Arming (seconds)')
     ax1.set_ylabel('Acceleration Deviation from Gravity (m/s²)', color='#D62728')
     ax1.tick_params(axis='y', labelcolor='#D62728')
-    ax1.set_ylim(-1.0, max(15.0, df_imu['a_deviation'].max() * 1.1) if not df_imu.empty else 15.0)
+    
+    y_max = max(15.0, df_imu['a_deviation'].max() * 1.1) if not df_imu.empty else 15.0
+    ax1.set_ylim(-1.0, y_max)
     
     # Plot Gyro Surge on right axis
     ax2 = ax1.twinx()
@@ -256,33 +257,6 @@ def plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_ti
     ax2.tick_params(axis='y', labelcolor='#1F77B4')
     ax2.set_ylim(0, max(10.0, df_imu['g_mag'].max() * 1.1) if not df_imu.empty else 10.0)
     
-    # Plot Waypoints (exact same as kinematics to perfectly align timeframes)
-    t_min = takeoff_time - 2.0 if takeoff_time is not None else 0.0
-    t_max = disarming_time + 5.0 if disarming_time is not None else df_imu['t'].max()
-
-    y_pos_text = ax1.get_ylim()[1] * 0.9
-    for name in sorted(wp_events.keys(), key=lambda k: wp_events[k]):
-        t = wp_events[name]
-        if t_min <= t <= t_max:
-            if name == "Column Passed":
-                ax1.axvline(x=t, color='#2CA02C', linestyle='--', alpha=0.9, linewidth=2.2)
-                ax1.text(t + 0.1, y_pos_text, name, rotation=90, va='top', fontsize=9, fontweight='bold',
-                         color='#1E5E1E', bbox=dict(facecolor='white', alpha=0.9, edgecolor='#2CA02C', pad=1.5))
-            elif name == "Column Impact":
-                evt_label = name
-                if events_log:
-                    for item in events_log:
-                        if "Column Impact" in item.get('Event Name', ''):
-                            evt_label = item['Event Name'].replace("💥 ", "")
-                            break
-                ax1.axvline(x=t, color='#D62728', linestyle='-.', alpha=1.0, linewidth=2.5)
-                ax1.text(t + 0.1, y_pos_text * 0.95, evt_label, rotation=90, va='top', fontsize=9, fontweight='bold',
-                         color='#7F0000', bbox=dict(facecolor='white', alpha=0.9, edgecolor='#D62728', pad=1.5))
-            else:
-                ax1.axvline(x=t, color='black', linestyle=':', alpha=0.5, linewidth=1.5)
-                ax1.text(t + 0.1, y_pos_text, name, rotation=90, va='top', fontsize=9, 
-                         bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
-            
     # Combine legends
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
@@ -291,74 +265,63 @@ def plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_ti
     ax1.set_title(f'💥 Physical IMU Collision Dynamics ({label})')
     ax1.grid(True)
 
+    # Draw standard timeline markers
+    draw_timeline_markers(ax1, wp_events, arming_time, (-1.0, y_max), is_absolute=True, achieved_angle=achieved_angle)
+
     if flight_name:
         ax1.text(0.98, 0.02, f"{flight_name}", transform=ax1.transAxes,
                  ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
                  bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA', boxstyle='round,pad=0.2'))
-    ax1.set_xlim(t_min, t_max)
+    
+    # Set timeline limits (General Plot Rule 3: [T_start - 5s, T_end + 5s])
+    t_min_crop, t_max_crop = get_timeline_limits(wp_events, arming_time, df_imu['t'], is_absolute=True)
+    ax1.set_xlim(t_min_crop, t_max_crop)
     
     plt.tight_layout()
     plt.show()
 
-def plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log, label="", flight_name=None):
-    """Plots the raw X, Y, Z components of the IMU acceleration and gyroscope."""
+def plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log, label="", flight_name=None, achieved_angle=None):
+    """Plots the raw X, Y, Z components of the IMU acceleration and gyroscope.
+    Axis labels are professionally annotated to define the physical meaning on the Pixhawk 6C body frame.
+    """
     if df_imu is None or df_imu.empty:
         print("[WARN] Empty IMU DataFrame, skipping IMU XYZ plot.")
         return
 
     fig, axs = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
     
-    t_min = takeoff_time - 2.0 if takeoff_time is not None else 0.0
-    t_max = disarming_time + 5.0 if disarming_time is not None else df_imu['t'].max()
-
     # Classic RGB standard: Red = X, Green = Y, Blue = Z
-    # We use a solid primary color for acceleration, and a distinct dashed style for the corresponding gyroscope
+    # Mappings from SSoT:
+    # X = Lateral / Roll (side-to-side drift)
+    # Y = Longitudinal / Pitch (main transit vector)
+    # Z = Vertical / Yaw / Heave (altitude/rotation)
     components = [
-        ('X-Axis', 'ax', 'gx', '#d62728', '#fc8d59'),  # Crimson Red Accel & Soft Orange/Red Gyro
-        ('Y-Axis', 'ay', 'gy', '#2ca02c', '#a6d96a'),  # Forest Green Accel & Muted Lime Green Gyro
-        ('Z-Axis', 'az', 'gz', '#1f77b4', '#9ecae1')   # Deep Blue Accel & Light Blue Gyro
+        ('X-Axis (Lateral / Roll)', 'ax', 'gx', '#d62728', '#fc8d59', 'Roll Rate\n(rad/s)'),  
+        ('Y-Axis (Longitudinal / Pitch)', 'ay', 'gy', '#2ca02c', '#a6d96a', 'Pitch Rate\n(rad/s)'),  
+        ('Z-Axis (Vertical / Yaw/Heave)', 'az', 'gz', '#1f77b4', '#9ecae1', 'Yaw Rate\n(rad/s)')   
     ]
 
-    for i, (name, a_col, g_col, c_acc, c_gyr) in enumerate(components):
+    for i, (name, a_col, g_col, c_acc, c_gyr, gyro_lbl) in enumerate(components):
         ax = axs[i]
         
         # Acceleration
         line1 = ax.plot(df_imu['t'], df_imu[a_col], color=c_acc, linewidth=1.5, label=f'Accel {name} (m/s²)')
-        ax.set_ylabel(f'Accel (m/s²)', color=c_acc)
+        ax.set_ylabel(f'Accel {name.split()[0]} (m/s²)', color=c_acc)
         ax.tick_params(axis='y', labelcolor=c_acc)
         
+        y_min, y_max = df_imu[a_col].min() - 2.0, df_imu[a_col].max() + 2.0
+        ax.set_ylim(y_min, y_max)
+
         # Gyro
         ax_gyr = ax.twinx()
         line2 = ax_gyr.plot(df_imu['t'], df_imu[g_col], color=c_gyr, linestyle='-.', alpha=0.8, label=f'Gyro {name} (rad/s)')
-        ax_gyr.set_ylabel(f'Gyro (rad/s)', color=c_gyr)
+        ax_gyr.set_ylabel(gyro_lbl, color=c_gyr)
         ax_gyr.tick_params(axis='y', labelcolor=c_gyr)
         
-        # Waypoints
-        y_pos_text = ax.get_ylim()[1] * 0.8
-        for wp_name in sorted(wp_events.keys(), key=lambda k: wp_events[k]):
-            t = wp_events[wp_name]
-            if t_min <= t <= t_max:
-                if wp_name == "Column Passed":
-                    ax.axvline(x=t, color='#2CA02C', linestyle='--', alpha=0.9, linewidth=2.2)
-                    if i == 0:  # Only label on the top plot
-                        ax.text(t + 0.1, y_pos_text, wp_name, rotation=90, va='top', fontsize=8, fontweight='bold',
-                                color='#1E5E1E', bbox=dict(facecolor='white', alpha=0.9, edgecolor='#2CA02C', pad=1))
-                elif wp_name == "Column Impact":
-                    evt_label = wp_name
-                    if events_log:
-                        for item in events_log:
-                            if "Column Impact" in item.get('Event Name', ''):
-                                evt_label = item['Event Name'].replace("💥 ", "")
-                                break
-                    ax.axvline(x=t, color='#D62728', linestyle='-.', alpha=1.0, linewidth=2.5)
-                    if i == 0:  # Only label on the top plot
-                        ax.text(t + 0.1, y_pos_text * 0.95, evt_label, rotation=90, va='top', fontsize=8, fontweight='bold',
-                                color='#7F0000', bbox=dict(facecolor='white', alpha=0.9, edgecolor='#D62728', pad=1))
-                else:
-                    ax.axvline(x=t, color='black', linestyle=':', alpha=0.5, linewidth=1.0)
-                    if i == 0:  # Only label on the top plot
-                        ax.text(t + 0.1, y_pos_text, wp_name, rotation=90, va='top', fontsize=8, 
-                                bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
+        ax_gyr.set_ylim(df_imu[g_col].min() - 0.5, df_imu[g_col].max() + 0.5)
+
+        # Draw standard timeline markers
+        draw_timeline_markers(ax, wp_events, arming_time, (y_min, y_max), is_absolute=True, achieved_angle=achieved_angle)
         
         ax.grid(True)
         
@@ -367,24 +330,26 @@ def plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarm
         labels = [l.get_label() for l in lines]
         ax.legend(lines, labels, loc='upper right', fontsize=8)
 
-    axs[-1].set_xlabel('Time Since Arming (seconds)')
-    axs[-1].set_xlim(t_min, t_max)
+    axs[-1].set_xlabel('Flight Time (seconds)')
+    
+    # Set timeline limits (General Plot Rule 3: [T_start - 5s, T_end + 5s])
+    t_min_crop, t_max_crop = get_timeline_limits(wp_events, arming_time, df_imu['t'], is_absolute=True)
+    axs[-1].set_xlim(t_min_crop, t_max_crop)
 
     if flight_name:
         axs[-1].text(0.98, 0.02, f"{flight_name}", transform=axs[-1].transAxes,
                      ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
                      bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA', boxstyle='round,pad=0.2'))
     
-    fig.suptitle(f'📐 Raw IMU X/Y/Z Components ({label})', fontsize=14, y=0.98)
+    fig.suptitle(f'📐 Raw IMU X/Y/Z Components ({label})\n[X = Lateral/Roll, Y = Longitudinal/Pitch, Z = Vertical/Yaw]', fontsize=14, y=0.98)
     
     plt.tight_layout()
     plt.show()
 
-def plot_tangential_accel(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, label="", flight_name=None):
+def plot_tangential_accel(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, label="", flight_name=None, achieved_angle=None):
     """Plots the Savitzky-Golay tangential acceleration profile over time.
     Positive values = acceleration, negative = deceleration.
     A bold zero line marks the boundary between the two states.
-    Vertical event markers match the standard experiment plot convention.
     """
     if df_mocap.empty or 'accel' not in df_mocap.columns:
         print("[WARN] No tangential acceleration data available. Run compute_velocity() first.")
@@ -415,45 +380,23 @@ def plot_tangential_accel(df_mocap, wp_events, arming_time, takeoff_time, disarm
     a_abs_max = max(1.5, df_plot['accel'].abs().quantile(0.99) * 1.2)
     ax.set_ylim(-a_abs_max, a_abs_max)
 
-    # --- Event markers (same convention as other experiment plots) ---
-    t_min = t_rel.min() if not t_rel.empty else 0
-    t_max = t_rel.max() if not t_rel.empty else 10
-    y_pos_text = a_abs_max * 0.88
+    # Shade a 0.4s window around impact if impact occurred
+    t_impact = wp_events.get('Column Impact')
+    if t_impact is not None:
+        t_rel_wp = t_impact - arming_time
+        ax.axvspan(t_rel_wp - 0.05, t_rel_wp + 0.35, color='#D62728', alpha=0.10, zorder=3)
 
-    plot_events = []
-    if arming_time is not None:
-        plot_events.append(("Armed", 0.0))
-    if takeoff_time is not None:
-        plot_events.append(("Takeoff", takeoff_time - arming_time))
-
-    for wp_name, t_abs in sorted(wp_events.items(), key=lambda kv: kv[1]):
-        t_rel_wp = t_abs - arming_time
-        is_impact = 'Impact' in wp_name
-        if is_impact:
-            # Shade a 0.4s window around impact
-            ax.axvspan(t_rel_wp - 0.05, t_rel_wp + 0.35,
-                       color='#D62728', alpha=0.10, zorder=3)
-            ax.axvline(x=t_rel_wp, color='#D62728', linestyle='-.', alpha=1.0,
-                       linewidth=2.5)
-            ax.text(t_rel_wp + 0.1, y_pos_text * 0.88, wp_name.replace('💥 ', ''),
-                    rotation=90, va='top', fontsize=8, fontweight='bold',
-                    color='#7F0000',
-                    bbox=dict(facecolor='white', alpha=0.9, edgecolor='#D62728', pad=1))
-        else:
-            ax.axvline(x=t_rel_wp, color='black', linestyle=':', alpha=0.5, linewidth=1.0)
-            ax.text(t_rel_wp + 0.1, y_pos_text, wp_name,
-                    rotation=90, va='top', fontsize=8,
-                    bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
-
-    for label_name, t_rel_val in plot_events:
-        ax.axvline(x=t_rel_val, color='grey', linestyle='--', alpha=0.6, linewidth=1.0)
-        ax.text(t_rel_val + 0.1, -y_pos_text, label_name,
-                rotation=90, va='bottom', fontsize=8, color='grey')
+    # Draw standard timeline markers
+    draw_timeline_markers(ax, wp_events, arming_time, (-a_abs_max, a_abs_max), is_absolute=False, achieved_angle=achieved_angle)
 
     ax.set_xlabel('Time Since Arming (seconds)')
     ax.set_ylabel('Tangential Acceleration (m/s²)\n← Deceleration | Acceleration →')
     ax.set_title(f'⚡ Tangential Acceleration / Deceleration Profile ({label})')
-    ax.set_xlim(t_min, t_max)
+    
+    # Set timeline limits (General Plot Rule 3: [T_start - 5s, T_end + 5s])
+    t_min_crop, t_max_crop = get_timeline_limits(wp_events, arming_time, df_plot['t'], is_absolute=False)
+    ax.set_xlim(t_min_crop, t_max_crop)
+    
     ax.legend(loc='upper right', frameon=True, facecolor='white', edgecolor='#EAEAEA')
     ax.grid(True, alpha=0.5)
 

@@ -93,41 +93,42 @@ These links represent the different dimensions of the project. Reference them wh
 - **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
-## Current Session Status (Last Update: 2026-05-24 19:30 UTC)
+## Current Session Status (Last Update: 2026-05-25 20:50 Local Time)
 
 ### 🎯 Mission Status
-- **`ExpCollision75Deg` mission:** ✅ STABLE & READY. Symmetrized waypoint logic, hardcoded safety speeds (1.0 m/s transit, variable sweep). Geometry is locked at X=–0.186m offset (CAD-verified). Autolooping enabled. Expect to gather first 75° dataset tomorrow.
-- **`experiments_analysis` pipeline:** ✅ FUNCTIONAL. Data ingestion → Savitzky-Golay filtering → event isolation → perpendicular error + closest-approach metrics → side-by-side box plots. Ready for flight processing.
-- **Startup & diagnostics:** ✅ HARDENED. Configuration-driven (drone_config.json SSoT), multicast socket glitch fixed, health checks automated.
-- **Velocity feedforward:** ✅ ENABLED. Smooth trajectory profiles active; no more jerky position hunting.
+- **`ExpCollision75Deg` mission:** ✅ STABLE, HARDENED & TESTED.
+  - Implemented **WP_stage** (U-turn pass-through at X=0.186, Y=1.200) to reverse northward approach to southward sweep. Drone arrives at the gate already heading south—**yaw-spinning/lateral drift issues resolved**.
+  - Pulled **WP1 Gate** south to Y=0.950m, combined with lowering default transit speed to **0.30 m/s**, allowing a generous 450mm braking buffer. **Geofence overshoot breaches completely resolved**.
+  - Restored **WP0** takeoff climb & hold (10cm, pause) for safe one-time launch. Subsequent loop resets skip WP0 and return straight to index 1 (WP_stage).
+  - Configured **custom per-waypoint precision thresholds** inline: WP1 (Gate) is set to 5cm (high precision sweep entry); all other points use standard 15cm.
+  - Removed pause on recovery WP3 so it auto-loops without operator input; only **one pause/ENTER prompt remains per loop at the WP1 gate**.
+  - Prompts for human interaction in the terminal now print in bright **blue** (`\033[94m`).
+- **`experiments_analysis` pipeline:** ✅ AUTOMATED, SELF-HEALING & DATABASE DRIVEN.
+  - Added new **Low-Level MCAP Auto-Repair Engine** (`repair_mcap`) capable of sequentially scanning corrupted bags to bypass invalid opcodes, recovering **150,905 raw messages** from `flight_20260525-1706`.
+  - Added **Dynamic ROS 2 Schema Registration** inside the segmenter to prevent reader deserialization `KeyError` crashes.
+  - Created a robust direct terminal populator block to launch the pipeline globally and cache metrics idempotently in SQLite:
+    ```bash
+    python3 -m dev_logs.analysis.experiments_analysis.exa_pipeline
+    ```
+- **Flight Recorder (`record_flight_bag.sh`):** ✅ HARDENED.
+  - Added direct motor commands `/fmu/in/actuator_motors` and active ROS 2 event logs `/rosout` to the recorded ROS 2 bag topic list to log motor saturation, recoveries, and state sequences (`ARM`/`DISARM`/`LAND`).
 
-### ⚠️ CRITICAL BLOCKER FOR TOMORROW
-**Bagfile Corruption:** Flight `flight_20260524-1904_75°_column_collision_loop_fixed_cage` reports:
-```
-[ERROR] Failed processing flight: unknown (opcode 0) record has length 7696581394432 that exceeds limit 4294967296
-```
-This is a **7.6 TB record claim**—almost certainly a file corruption during recording or a malformed ROS 2 bagfile header. 
-**Action for tomorrow:**
-1. Check bagfile integrity: `ros2 bag info /path/to/flight_20260524-1904_75°_column_collision_loop_fixed_cage` (may hang if corrupt)
-2. If stuck, kill the process; bagfile is likely unrecoverable
-3. Re-record the flight (it was "pretty good" per user, so worth repeating)
-4. Add file-size sanity check to `record_flight_bag.sh` to catch corruption early in future runs
+### ⚠️ KNOWN LIMITATIONS & RESEARCH NOTES
+- **Bagfile size checks:** Flight bags should be sanity checked after recording to avoid MCAP indexing/header corruption.
+- **Heavy drone inertia:** The heavy 1.2kg 4-inch quadcopter has high linear inertia; keeping transit speeds at `0.30 m/s - 0.35 m/s` near geofence boundaries is mandatory.
 
-### ✅ Completed This Session (2026-05-24)
-- Engineered `experiments_analysis` package (6 modules + Jupyter notebook)
-- Implemented symmetrical 75° collision loop with safety hardening
-- Configuration-driven startup pipeline (IP/multicast dynamic binding)
-- Fixed trajectory visualization (equal aspect ratio, 0.5m grid, drone SVG icons)
-- Enabled velocity feedforward for smooth offboard control
-- Created comprehensive end-of-day journal documenting all changes
+### ✅ Completed This Session (2026-05-25)
+- Engineered a low-level MCAP recovery engine to bypass corrupted opcodes and safely write properly formatted ROS 2 profile magic headers.
+- Implemented dynamic ROS 2 message schema registration using `register_msgdef()` during pass slicing.
+- Upgraded the database schema with migrations for `sweep_speed` and `battery_at_start` columns.
+- Built a direct terminal-based launcher for the pipeline module with duplicate-skipping database caching.
+- Consolidated and cached 9 verified sweep passes in `collision_experiments.db` spanning flights `1904`, `1706`, and `1716`.
 
-### 📋 Tomorrow's Priority Order
-1. **Verify startup end-to-end:** `./startup-sequence.sh` → check mocap streaming in Motive GUI
-2. **Diagnose bagfile corruption:** Determine if `flight_20260524-1904_*` is recoverable
-3. **Execute fresh 75° collision run:** Record new clean bagfile to `/dev_logs/`
-4. **Process through pipeline:** Load into `experiments_analysis.ipynb`, verify tracking metrics (expect 0.1–0.3 m error)
-5. **Build first comparative plot:** If time permits, run 3× with-cage / 3× without-cage at 75°
-6. **Iterate angle series:** Begin 60°, 45°, 30°, 0° variants (if 75° yields good data)
+### 📋 Next Priority Order
+1. **Verify Startup End-to-End:** Run `./startup-sequence.sh` and ensure MoCap rigid body tracking is actively streaming in Motive GUI.
+2. **Execute Rotating Cage Loops:** Perform comparative 75° collision runs with the `Rotating Cage` configuration.
+3. **Generate Comparative Boxplots:** Populate the remaining rotating cage datasets in the database and compile 2x2 comparison plots.
+4. **Iterate Angle Series:** Begin 60°, 45°, 30°, 0° variants once 75° sweeps yield comparative rotating vs. fixed cage data.
 
 ## Tutoring Mode: Socratic Learning Style (Default)
 
@@ -177,7 +178,7 @@ At the end of each session:
 
 ### What Was Completed
 - **Core Experimental Analysis Pipeline (20-30% Thesis Milestone):** Conceived and engineered the core mathematical and statistical data pipeline (`experiments_analysis` package) to automatically clean raw high-frequency telemetry using Savitzky-Golay filtering, isolate active sweep events, calculate perpendicular tracking errors and closest approach clearances, and compile 2x2 side-by-side comparative boxplots (With vs. Without Cage) and multi-angle progression trends.
-- **Symmetrical 75° Collision Loop Optimization:** Refactored `exp_collision_75deg.py` into a robust `ExpCollision75Deg` loop class. Symmetrized the waypoint logic to fly a straight-line vertical sweep at a constant offset of $X = -0.186$ m, matching your CAD sketch and `/poses` column offset. Hardcoded explicit `1.0 m/s` transit/recovery speeds to protect the drone, keeping `sweep_speed` strictly limited to the active `WP2 -> WP3` segment.
+- **Symmetrical 75° Collision Loop Optimization:** Refactored `exp_collision_75deg.py` into a robust `ExpCollision75Deg` loop class. Symmetrized the waypoint logic to fly a straight-line vertical sweep at a constant offset of $X = 0.186$ m, matching your CAD sketch and `/poses` column offset. Hardcoded explicit `0.50 m/s` transit speed to protect the drone, keeping `sweep_speed` strictly limited to the active `WP1 -> WP2` segment.
 - **MoCap Recovery & Diagnostics:** Debugged startup failures after the OptiTrack PC power outage reboot. Replaced all hardcoded IP references in `startup-sequence.sh` with configuration-driven queries from `config/drone_config.json`, fixed the multicast node tracking join timeout pattern, and introduced custom health diagnostics for Companion-to-FC connectivity checking.
 - **Physical Safety Aspect Ratio & Grid Restoration:** Fixed the spatial trajectory plot in `exa_plot_trajectory.py` to enforce a strictly equal aspect ratio and 0.5m grid normalization squares, restoring the CAD drone top vector illustrations at WP2, WP3, and closest approach.
 - **Offboard Heartbeat Velocity Fix:** Enabled `hb.velocity = True` inside [flight_director.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_director.py) to activate PX4 offboard velocity feedforward. Resolves jerky speed profiles and position hunting.

@@ -27,9 +27,9 @@ The thesis is at ~20–30% completion: core autonomous flight (takeoff, hover, o
 ### 2. Symmetrical 75° Collision Loop (`exp_collision_75deg.py`)
 
 **What:** Refactored the collision test harness into a robust `ExpCollision75Deg` loop class:
-- Fixed waypoint logic to fly a **vertical sweep** at constant X offset of **–0.186 m** (matches CAD sketch), not diagonal
-- Hardcoded explicit `1.0 m/s` transit/recovery speeds to protect the drone during setup
-- Locked `sweep_speed` to active `WP2 → WP3` segment only—no unintended high-speed transits
+- Fixed waypoint logic to fly a **vertical sweep** at constant X offset of **+0.186 m** (matches CAD sketch), not diagonal
+- Hardcoded explicit `0.50 m/s` transit and `0.40 m/s` climb speeds to protect the drone during setup
+- Locked `sweep_speed` to active `WP1 → WP2` segment only—no unintended high-speed transits
 - Integrated soft failsafe: if mocap tracking is lost, auto-trigger Land mode
 - Added loop counter + telemetry logging to track repetition number
 
@@ -40,7 +40,7 @@ The thesis is at ~20–30% completion: core autonomous flight (takeoff, hover, o
 - New: `ExpCollision75Deg` is a dedicated, purpose-built class with hardcoded physical constraints
 - Benefit: Each 75° run is bit-identical; data is directly comparable
 
-**Hurdle:** The offset **X = –0.186 m** is specific to the OptiTrack capture volume and must match the Motive rigid body pivot orientation. If the drone's rigid body X-axis in Motive is not aligned with the physical nose, the sweep will miss the column by ~0.3 m.
+**Hurdle:** The offset **X = +0.186 m** is specific to the OptiTrack capture volume and must match the Motive rigid body pivot orientation. If the drone's rigid body X-axis in Motive is not aligned with the physical nose, the sweep will miss the column by ~0.3 m.
 
 ### 3. MoCap Recovery & Diagnostics
 
