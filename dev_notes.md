@@ -82,6 +82,11 @@ git push
 Use `git add .` when you want your normal repo changes plus the allowed flight bags.
 Use the helper when you only want to stage the flight MCAP backups and skip everything else.
 
+## Quick backup command
+```bash
+cd /home/ws && git add . && git commit -m "backup flight data" && git push
+```
+
 ## PX4 <-> ROS 2 (micro-ROS agent) workflow
 
 ### 1) Build workspace 
