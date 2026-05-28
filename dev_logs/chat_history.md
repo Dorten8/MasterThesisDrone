@@ -54,4 +54,20 @@
 - Fully cached 9 verified sweep passes in `collision_experiments.db`, successfully updating metrics for battery capacity, sweep speed, impact speed, acceleration, and perpendicular rebound deviations.
 - Full technical breakdown in: [dev_logs/session_journals/2026-05-25-telemetry-pipeline-upgrades-and-mcap-repair.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-25-telemetry-pipeline-upgrades-and-mcap-repair.md)
 
+## Session: 2026-05-27 (Waypoint Event Slicing & Database Web Inspector)
+- Implemented `/flight_director/active_waypoint` event publisher inside the Flight Director to log control state machine events deterministically.
+- Updated `record_flight_bag.sh` to record the new event topic.
+- Created `mcap_event_segmenter.py` using state-machine-driven parser logic to cleanly slice multi-loop bags into individual micro-bags.
+- Integrated SQLite database updates tracking cage physical conditions (`condition`) and actual `collision` outcome indicators.
+- Created a standalone HTML SQLite web inspector `db_inspector.html` in dark glassmorphism.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-27-mcap-event-slicing-and-database-hardening.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-27-mcap-event-slicing-and-database-hardening.md)
+
+## Session: 2026-05-28 (Robust Kinematics & Self-Healing Pipeline)
+- Resolved Jupyter notebook `IndexError` by fixing trajectory setpoint classification and waypoint extraction edge-cases.
+- Hardened V1 vs V2 mission detection (`detect_mission_class`) using stable pause-duration checks (counting coordinate matches near `Y=0.950` vs `1.100` for $>10$ messages) instead of transient interpolation.
+- Added self-healing waypoint pass reconstruction inside `exa_kinematics.py` for aborted/crashed flights where WP1 (Stage) and WP2 (Sweep Entry) were reached, estimating WP3/WP4 from telemetry boundaries.
+- Verified end-to-end notebook execution via headless `nbconvert` and successfully restored clean unstaged repository state.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-28-robust-kinematics-and-self-healing-pipeline.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-28-robust-kinematics-and-self-healing-pipeline.md)
+
+
 

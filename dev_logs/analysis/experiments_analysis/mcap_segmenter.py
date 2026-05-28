@@ -228,6 +228,7 @@ def segment_flight_mcap(flight_path, padding_sec=2.0):
         return
 
     df_mocap          = dfs['mocap']
+    df_setpoint       = dfs.get('setpoint', pd.DataFrame())
     df_column         = dfs.get('column', pd.DataFrame())
     arming_time       = dfs['arming_time']
     dynamic_waypoints = dfs.get('dynamic_waypoints', [])
@@ -247,7 +248,7 @@ def segment_flight_mcap(flight_path, padding_sec=2.0):
         col_x, col_y = 0.408, 0.358
 
     wp_events_list = find_waypoint_events(
-        df_mocap, takeoff_time, label=folder_name,
+        df_mocap, df_setpoint, takeoff_time, label=folder_name,
         column_x=col_x, column_y=col_y,
         column_radius=column_radius, cage_radius=cage_radius,
         return_all=True, dynamic_waypoints=dynamic_waypoints

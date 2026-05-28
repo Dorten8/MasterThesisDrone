@@ -67,7 +67,54 @@ def compute_velocity(df_mocap, window=19, polyorder=3):
         df_mocap['accel'] = np.gradient(df_mocap['speed'], df_mocap['t'])
     return df_mocap
 
-def find_waypoint_events(df_mocap, takeoff_time, label=None, column_x=0.408, column_y=0.358, 
+def detect_mission_class(df_setpoint, label=None, target_z=0.5):
+    """Dynamically determines and instantiates the correct mission class based on label or setpoint coordinates."""
+    is_75deg = False
+    if label:
+        lbl_lower = label.lower()
+        if "75" in lbl_lower or "collision" in lbl_lower:
+            is_75deg = True
+
+    import sys
+    import os
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(script_dir, "..", "..", ".."))
+    if project_root not in sys.path:
+        sys.path.append(project_root)
+
+    if not is_75deg:
+        try:
+            from drone_control.missions.column_sweep_loop import ColumnSweepLoop
+            return ColumnSweepLoop(target_z=target_z)
+        except Exception:
+            return None
+
+    # Check if we should use ExpCollision75DegV2
+    use_v2 = False
+    if label and "v2" in label.lower():
+        use_v2 = True
+    elif df_setpoint is not None and not df_setpoint.empty and 'y_cmd' in df_setpoint.columns:
+        # Check if Y=1.10 is commanded close to the sweep lane X=0.186
+        sp_v2_mask = (df_setpoint['x_cmd'] - 0.186).abs() < 0.05
+        if sp_v2_mask.any():
+            y_cmds = df_setpoint.loc[sp_v2_mask, 'y_cmd']
+            if ((y_cmds - 1.100).abs() < 0.05).any():
+                use_v2 = True
+
+    if use_v2:
+        try:
+            from drone_control.missions.exp_collision_75deg_v2 import ExpCollision75DegV2
+            return ExpCollision75DegV2(target_z=target_z)
+        except Exception:
+            pass
+    try:
+        from drone_control.missions.exp_collision_75deg import ExpCollision75Deg
+        return ExpCollision75Deg(target_z=target_z)
+    except Exception:
+        return None
+
+
+def find_waypoint_events(df_mocap, df_setpoint, takeoff_time=None, label=None, column_x=0.408, column_y=0.358, 
                          column_radius=0.045, cage_radius=0.179, return_all=False, dynamic_waypoints=None):
     """Detects all completed passes within predefined waypoint coordinates chronologically,
     returning a list of dictionaries (one for each detected pass) or the first pass dict.
@@ -75,136 +122,178 @@ def find_waypoint_events(df_mocap, takeoff_time, label=None, column_x=0.408, col
     if df_mocap.empty:
         return [] if return_all else {}
 
-    # 1. Determine waypoint sequence: prefer mission class definitions,
-    # and only fall back to dynamic waypoints if import fails.
+    # Backward compatibility handler for legacy signatures:
+    # Some older scripts call find_waypoint_events(df_mocap, takeoff_time, label=...)
+    # where df_setpoint is omitted entirely.
+    if not isinstance(df_setpoint, pd.DataFrame):
+        # The second argument is actually takeoff_time!
+        takeoff_time = df_setpoint
+        df_setpoint = pd.DataFrame()
+
+    # 1. Determine waypoint sequence from the mission class SSoT.
+    # The mission file defines the exact 4 nominal waypoints. Dynamic waypoints
+    # extracted from segmented pass MCAPs are unreliable (PX4 trajectory
+    # interpolation produces 15+ intermediate setpoints, not the real 4 WPs).
     wp_sequence = None
-    
-    # Determine which mission was run by inspecting the flight label
-    is_75deg = False
-    if label:
-        lbl_lower = label.lower()
-        if "75" in lbl_lower or "collision" in lbl_lower:
-            is_75deg = True
 
-    try:
-        import sys
-        import os
-        # Resolve project root dynamically
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.abspath(os.path.join(script_dir, "..", "..", ".."))
-        if project_root not in sys.path:
-            sys.path.append(project_root)
+    # PRIORITY 1: Always try mission class import first (this is the SSoT)
+    mission = detect_mission_class(df_setpoint, label, target_z=0.5)
+    if mission is not None:
+        try:
+            # Simulate takeoff to populate the mission waypoints
+            takeoff_samples = df_mocap[df_mocap['t'] >= takeoff_time]
+            if not takeoff_samples.empty:
+                x0 = takeoff_samples['x'].iloc[0]
+                y0 = takeoff_samples['y'].iloc[0]
+                z0 = takeoff_samples['z'].iloc[0]
+            else:
+                x0, y0, z0 = 0.0, 0.0, 0.5
 
-        if is_75deg:
-            from drone_control.missions.exp_collision_75deg import ExpCollision75Deg
-            mission = ExpCollision75Deg(target_z=0.5)
-        else:
-            from drone_control.missions.column_sweep_loop import ColumnSweepLoop
-            mission = ColumnSweepLoop(target_z=0.5)
+            class DummyPose:
+                def __init__(self, x, y, z):
+                    self.x = x
+                    self.y = y
+                    self.z = z
+            
+            mission.on_start(DummyPose(x0, y0, z0))
+            
+            # Check if this is 75deg or regular loop
+            is_75deg = False
+            if label:
+                lbl_lower = label.lower()
+                if "75" in lbl_lower or "collision" in lbl_lower:
+                    is_75deg = True
 
-        # Simulate takeoff to populate the mission waypoints
-        takeoff_samples = df_mocap[df_mocap['t'] >= takeoff_time]
-        if not takeoff_samples.empty:
-            x0 = takeoff_samples['x'].iloc[0]
-            y0 = takeoff_samples['y'].iloc[0]
-            z0 = takeoff_samples['z'].iloc[0]
-        else:
-            x0, y0, z0 = 0.0, 0.0, 0.5
-
-        class DummyPose:
-            def __init__(self, x, y, z):
-                self.x = x
-                self.y = y
-                self.z = z
-        
-        mission.on_start(DummyPose(x0, y0, z0))
-        
-        if is_75deg:
-            wp_sequence = [
-                ('WP1', (mission.wp_stage[0], mission.wp_stage[1])),
-                ('WP2', (mission.exp_sp[0], mission.exp_sp[1])),
-                ('WP3', (mission.exp_ep[0], mission.exp_ep[1])),
-                ('WP4', (mission.wp3[0], mission.wp3[1]))
-            ]
-        else:
-            wp_sequence = [
-                ('WP1', (mission.wp1[0], mission.wp1[1])),
-                ('WP2', (mission.wp2[0], mission.wp2[1])),
-                ('WP3', (mission.wp3[0], mission.wp3[1])),
-                ('WP4', (mission.wp4[0], mission.wp4[1]))
-            ]
-    except Exception:
-        pass
-
-    if wp_sequence is None:
-        # Fallback to dynamic waypoints if import fails
-        if dynamic_waypoints and len(dynamic_waypoints) >= 4:
-            wp_sequence = []
-            for i, (_, coord) in enumerate(dynamic_waypoints[-4:]):
-                wp_sequence.append((f"WP{i+1}", coord))
-        else:
-            # Absolute hardcoded fallback
             if is_75deg:
                 wp_sequence = [
-                    ('WP1', (0.186, 1.200)),
-                    ('WP2', (0.186, 0.950)),
-                    ('WP3', (0.186, -1.200)),
-                    ('WP4', (0.000, 0.300))
+                    ('WP1', (mission.wp_stage[0], mission.wp_stage[1])),
+                    ('WP2', (mission.exp_sp[0], mission.exp_sp[1])),
+                    ('WP3', (mission.exp_ep[0], mission.exp_ep[1])),
+                    ('WP4', (mission.wp3[0], mission.wp3[1]))
                 ]
             else:
                 wp_sequence = [
-                    ('WP1', (0.000, 1.200)),
-                    ('WP2', (0.100, 1.200)),
-                    ('WP3', (0.100, -1.200)),
-                    ('WP4', (0.000, -1.200))
+                    ('WP1', (mission.wp1[0], mission.wp1[1])),
+                    ('WP2', (mission.wp2[0], mission.wp2[1])),
+                    ('WP3', (mission.wp3[0], mission.wp3[1])),
+                    ('WP4', (mission.wp4[0], mission.wp4[1]))
                 ]
+        except Exception:
+            pass
 
+    # PRIORITY 2: Fall back to dynamic_waypoints ONLY if exactly 4 were found
+    # (>4 means PX4 trajectory interpolation noise, not real waypoints)
+    if wp_sequence is None and dynamic_waypoints and len(dynamic_waypoints) == 4:
+        wp_sequence = []
+        for i, (_, coord) in enumerate(dynamic_waypoints):
+            wp_sequence.append((f"WP{i+1}", coord))
+
+    # Absolute hardcoded fallback
+    if wp_sequence is None:
+        if is_75deg:
+            wp_sequence = [
+                ('WP1', (0.186, 1.200)),
+                ('WP2', (0.186, 0.950)),
+                ('WP3', (0.186, -1.200)),
+                ('WP4', (0.000, 0.300))
+            ]
+        else:
+            wp_sequence = [
+                ('WP1', (0.000, 1.200)),
+                ('WP2', (0.100, 1.200)),
+                ('WP3', (0.100, -1.200)),
+                ('WP4', (0.000, -1.200))
+            ]
+
+    # Use setpoint transitions to identify when the flight director marked waypoints as reached!
+    # df_setpoint contains the ACTIVE command. When WP1 is reached, the active command switches to WP2.
+    if not df_setpoint.empty and 'x_cmd' in df_setpoint.columns and 'y_cmd' in df_setpoint.columns:
+        df_sp = df_setpoint.dropna(subset=['x_cmd', 'y_cmd'])
+    else:
+        df_sp = pd.DataFrame(columns=['t', 'x_cmd', 'y_cmd'])
+    
     # Find ALL loop passes sequentially
     passes_events = []
     current_search_time = takeoff_time
-    max_time = df_mocap['t'].max()
+    max_time = df_sp['t'].max() if not df_sp.empty else df_mocap['t'].max()
 
-    while current_search_time < max_time:
+    while current_search_time < max_time and not df_sp.empty:
         wp_events = {}
         t_ptr = current_search_time
         
-        # Sequentially search for WP1 -> WP2 -> WP3 -> WP4 in a single pass loop
+        # Sequentially search for transitions between commands in the loop sequence
         found_all = True
-        for wp_name, (wx, wy) in wp_sequence:
-            dist = np.sqrt((df_mocap['x'] - wx)**2 + (df_mocap['y'] - wy)**2)
-            after_ptr = df_mocap['t'] > t_ptr
-            arrived_mask = (dist < 0.08) & after_ptr  # 8cm in analysis (vs 5cm on-drone) — robust for 100Hz MoCap replay
-            if arrived_mask.any():
-                arrival_t = df_mocap.loc[arrived_mask, 't'].iloc[0]
-                wp_events[wp_name] = arrival_t
-                # Advance search time pointer by 1.0 second for the next waypoint in sequence
-                t_ptr = arrival_t + 1.0
+        for i, (wp_name, (wx, wy)) in enumerate(wp_sequence):
+            # To find when the drone reached `wp_name` (e.g. WP1), we look for when the Flight Director 
+            # transitioned to commanding the NEXT waypoint in the sequence!
+            if i + 1 < len(wp_sequence):
+                next_wp_name, (next_wx, next_wy) = wp_sequence[i + 1]
+                # Look for the exact timestamp the command changes to (next_wx, next_wy)
+                dist_to_next = np.sqrt((df_sp['x_cmd'] - next_wx)**2 + (df_sp['y_cmd'] - next_wy)**2)
+                
+                # Match when the commanded setpoint gets within a 5cm mathematical tolerance 
+                # (commands are published exactly, but float precision requires small tolerance)
+                match_mask = (dist_to_next < 0.05) & (df_sp['t'] > t_ptr)
+                if match_mask.any():
+                    arrival_t = df_sp.loc[match_mask, 't'].iloc[0]
+                    wp_events[wp_name] = arrival_t
+                    # Advance search pointer slightly to prevent duplicate matches on same transition
+                    t_ptr = arrival_t + 0.1
+                else:
+                    found_all = False
+                    break
             else:
-                found_all = False
+                # For the absolute final waypoint (e.g. WP4), there is no 'next' command in the sequence.
+                # Since we only use WP2 -> WP3 for the sweep, we just assign it a dummy completion time.
+                wp_events[wp_name] = t_ptr + 2.0
                 break
         
         if found_all:
             passes_events.append(wp_events)
-            # Advance search pointer past WP4 by 1.0 second to begin search for next loop
-            current_search_time = wp_events['WP4'] + 1.0
+            # Advance search pointer past the end of the loop
+            current_search_time = wp_events[wp_sequence[-1][0]] + 1.0
         else:
-            # If we couldn't complete the full sequence, stop searching
-            break
+            # If a pass aborted mid-loop, advance search pointer to the NEXT time WP1 is commanded!
+            if len(wp_sequence) >= 2:
+                # The start of a new loop happens when WP1 (stage) is reached, which means 
+                # the command transitions to WP2 (exp_sp).
+                next_wx, next_wy = wp_sequence[1][1]
+                dist_to_next = np.sqrt((df_sp['x_cmd'] - next_wx)**2 + (df_sp['y_cmd'] - next_wy)**2)
+                # Look at least 5.0s ahead to skip the current failed attempt
+                next_loop_mask = (dist_to_next < 0.05) & (df_sp['t'] > current_search_time + 5.0)
+                if next_loop_mask.any():
+                    current_search_time = df_sp.loc[next_loop_mask, 't'].iloc[0] - 0.5
+                else:
+                    break
+            else:
+                break
 
-    # Fallback: if we didn't find any fully completed loops, but have partial waypoints, return at least one
-    if not passes_events:
-        wp_events = {}
-        t_ptr = takeoff_time
-        for wp_name, (wx, wy) in wp_sequence:
-            dist = np.sqrt((df_mocap['x'] - wx)**2 + (df_mocap['y'] - wy)**2)
-            after_ptr = df_mocap['t'] > t_ptr
-            arrived_mask = (dist < 0.08) & after_ptr
-            if arrived_mask.any():
-                arrival_t = df_mocap.loc[arrived_mask, 't'].iloc[0]
-                wp_events[wp_name] = arrival_t
-                t_ptr = arrival_t + 1.0
-        if wp_events:
-            passes_events.append(wp_events)
+    # Fallback: if we didn't find any fully completed loops via setpoint transitions
+    # (very common in truncated/segmented pass files or legacy bags), use optitrack/mocap
+    # proximity to detect the single sweep pass.
+    if not passes_events and not df_mocap.empty and wp_sequence is not None:
+        try:
+            # We search for the timestamps where the drone is closest to the nominal WP2 (entry) and WP3 (exit)
+            wp2_coords = wp_sequence[1][1]  # WP2 (exp_sp)
+            wp3_coords = wp_sequence[2][1]  # WP3 (exp_ep)
+            
+            dist_to_wp2 = np.sqrt((df_mocap['x'] - wp2_coords[0])**2 + (df_mocap['y'] - wp2_coords[1])**2)
+            dist_to_wp3 = np.sqrt((df_mocap['x'] - wp3_coords[0])**2 + (df_mocap['y'] - wp3_coords[1])**2)
+            
+            t_wp2 = df_mocap.loc[dist_to_wp2.idxmin(), 't']
+            t_wp3 = df_mocap.loc[dist_to_wp3.idxmin(), 't']
+            
+            # Ensure chronological order
+            if t_wp2 < t_wp3:
+                wp_evs = {
+                    'WP1': t_wp2 - 1.0,
+                    'WP2': t_wp2,
+                    'WP3': t_wp3,
+                    'WP4': t_wp3 + 1.0
+                }
+                passes_events.append(wp_evs)
+        except Exception as e:
+            print(f"   ⚠️  Fallback pass detection failed: {e}")
 
     # Post-process: ALWAYS run Column Passed and Column Impact detection for all passes that have both WP2 and WP3
     for wp_evs in passes_events:
@@ -384,23 +473,36 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         mean_err = 0.0
         max_err = 0.0
 
-    # Calculate achieved 2D spatial trajectory angle at exact contact point
+    # Calculate speed, accel, and before_impact_accel at closest approach (always available)
     achieved_angle = None
     impact_speed = None
     impact_accel = None
-    impact_t = wp_events.get('Column Impact')
-    if impact_t is not None and not df_mocap.empty:
-        idx_impact = (df_mocap['t'] - impact_t).abs().idxmin()
-        impact_row = df_mocap.iloc[idx_impact]
-        rx = column_x - impact_row['x']
-        ry = column_y - impact_row['y']
-        r_len = np.sqrt(rx**2 + ry**2)
-        vx = impact_row.get('vx', 0.0)
-        vy = impact_row.get('vy', -1.0)
-        v_len = np.sqrt(vx**2 + vy**2)
+    before_impact_accel = None
+    
+    if not df_mocap.empty:
+        # Always compute speed and accel at closest_t (the point of minimum clearance)
+        idx_closest = (df_mocap['t'] - closest_t).abs().idxmin()
+        closest_row = df_mocap.iloc[idx_closest]
+        impact_speed = closest_row.get('speed', 0.0)
+        impact_accel = closest_row.get('accel', 0.0)
         
-        impact_speed = impact_row.get('speed', 0.0)
-        impact_accel = impact_row.get('accel', 0.0)
+        # before_impact_accel: average accel in window [closest_t - 0.4, closest_t - 0.2]
+        window_before = df_mocap[(df_mocap['t'] >= closest_t - 0.4) & (df_mocap['t'] <= closest_t - 0.2)]
+        if not window_before.empty:
+            before_impact_accel = window_before['accel'].mean()
+    
+    # Calculate achieved 2D spatial trajectory angle at contact point (if Column Impact detected)
+    impact_t = wp_events.get('Column Impact')
+    ref_t = impact_t if impact_t is not None else closest_t
+    if not df_mocap.empty:
+        idx_ref = (df_mocap['t'] - ref_t).abs().idxmin()
+        ref_row = df_mocap.iloc[idx_ref]
+        rx = column_x - ref_row['x']
+        ry = column_y - ref_row['y']
+        r_len = np.sqrt(rx**2 + ry**2)
+        vx = ref_row.get('vx', 0.0)
+        vy = ref_row.get('vy', -1.0)
+        v_len = np.sqrt(vx**2 + vy**2)
         
         if r_len > 1e-3 and v_len > 1e-3:
             cos_theta = (rx * vx + ry * vy) / (r_len * v_len)
@@ -462,7 +564,9 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         'achieved_impact_angle': achieved_angle,
         'impact_speed': impact_speed,
         'impact_accel': impact_accel,
+        'before_impact_accel': before_impact_accel,
         'avg_dev_after': avg_dev_after,
         'max_dev_after': max_dev_after,
+
         'recovery_area': recovery_area
     }

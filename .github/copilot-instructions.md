@@ -93,36 +93,31 @@ These links represent the different dimensions of the project. Reference them wh
 - **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
-## Current Session Status (Last Update: 2026-05-25 20:50 Local Time)
+## Current Session Status (Last Update: 2026-05-28 15:55 Local Time)
 
 ### 🎯 Mission Status
-- **`ExpCollision75Deg` mission:** ✅ STABLE, HARDENED & TESTED.
+- **`ExpCollision75Deg` and `ExpCollision75DegV2` missions:** ✅ STABLE, HARDENED & TESTED.
   - Implemented **WP_stage** (U-turn pass-through at X=0.186, Y=1.200) to reverse northward approach to southward sweep. Drone arrives at the gate already heading south—**yaw-spinning/lateral drift issues resolved**.
-  - Pulled **WP1 Gate** south to Y=0.950m, combined with lowering default transit speed to **0.30 m/s**, allowing a generous 450mm braking buffer. **Geofence overshoot breaches completely resolved**.
-  - Restored **WP0** takeoff climb & hold (10cm, pause) for safe one-time launch. Subsequent loop resets skip WP0 and return straight to index 1 (WP_stage).
-  - Configured **custom per-waypoint precision thresholds** inline: WP1 (Gate) is set to 5cm (high precision sweep entry); all other points use standard 15cm.
-  - Removed pause on recovery WP3 so it auto-loops without operator input; only **one pause/ENTER prompt remains per loop at the WP1 gate**.
-  - Prompts for human interaction in the terminal now print in bright **blue** (`\033[94m`).
-- **`experiments_analysis` pipeline:** ✅ AUTOMATED, SELF-HEALING & DATABASE DRIVEN.
-  - Added new **Low-Level MCAP Auto-Repair Engine** (`repair_mcap`) capable of sequentially scanning corrupted bags to bypass invalid opcodes, recovering **150,905 raw messages** from `flight_20260525-1706`.
-  - Added **Dynamic ROS 2 Schema Registration** inside the segmenter to prevent reader deserialization `KeyError` crashes.
-  - Created a robust direct terminal populator block to launch the pipeline globally and cache metrics idempotently in SQLite:
-    ```bash
-    python3 -m dev_logs.analysis.experiments_analysis.exa_pipeline
-    ```
+  - Pulled **WP1 Gate** south to Y=0.950m (V1) or Y=1.100m (V2), combined with lowering default transit speed to **0.30 m/s**, allowing a generous 450mm braking buffer. **Geofence overshoot breaches completely resolved**.
+  - Prompts for human interaction in the terminal print in bright **blue** (`\033[94m`).
+  - Added dedicated waypoint transition status publisher `/flight_director/active_waypoint` to track active loop phases deterministically.
+- **`experiments_analysis` pipeline:** ✅ AUTOMATED, STABLE & SELF-HEALING.
+  - Integrated **V1 vs V2 Classifier Fallback** based on stable pause coordinate durations (counting $>10$ messages near `Y=0.950` or `1.100`) rather than transient takeoff trajectory setpoints.
+  - Added **Self-Healing WP1+WP2 Recovery** for crashed or aborted loops, reconstructing waypoint transitions WP3/WP4 automatically from telemetry boundary times to avoid `IndexError` in the notebook.
+  - Slices passes flawlessly and deterministically using state-driven `mcap_event_segmenter.py`.
+  - Conceived and generated the dark glassmorphic database web inspector [db_inspector.html](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/db_inspector.html) powered by `generate_db_html.py`.
 - **Flight Recorder (`record_flight_bag.sh`):** ✅ HARDENED.
-  - Added direct motor commands `/fmu/in/actuator_motors` and active ROS 2 event logs `/rosout` to the recorded ROS 2 bag topic list to log motor saturation, recoveries, and state sequences (`ARM`/`DISARM`/`LAND`).
+  - Added direct motor commands `/fmu/in/actuator_motors`, active ROS 2 event logs `/rosout`, and Flight Director waypoint status `/flight_director/active_waypoint` to the recorded ROS 2 bag topic list to log motor saturation, recoveries, and state sequences.
 
 ### ⚠️ KNOWN LIMITATIONS & RESEARCH NOTES
 - **Bagfile size checks:** Flight bags should be sanity checked after recording to avoid MCAP indexing/header corruption.
 - **Heavy drone inertia:** The heavy 1.2kg 4-inch quadcopter has high linear inertia; keeping transit speeds at `0.30 m/s - 0.35 m/s` near geofence boundaries is mandatory.
+- **MicroXRCEAgent Stale Connection:** Do not kill the agent once it connects; doing so freezes the Flight Controller and requires a battery reboot.
 
-### ✅ Completed This Session (2026-05-25)
-- Engineered a low-level MCAP recovery engine to bypass corrupted opcodes and safely write properly formatted ROS 2 profile magic headers.
-- Implemented dynamic ROS 2 message schema registration using `register_msgdef()` during pass slicing.
-- Upgraded the database schema with migrations for `sweep_speed` and `battery_at_start` columns.
-- Built a direct terminal-based launcher for the pipeline module with duplicate-skipping database caching.
-- Consolidated and cached 9 verified sweep passes in `collision_experiments.db` spanning flights `1904`, `1706`, and `1716`.
+### ✅ Completed This Session (2026-05-28)
+- Overhauled and resolved `IndexError` in analysis notebooks by implementing a pause-duration-based V1 vs V2 classifier and a self-healing pass event recovery mechanism.
+- Staged and verified end-to-end headless compilation of `experiments_analysis.ipynb`.
+- Created session journals and appended chat transcripts following the project's strict end-of-day routine.
 
 ### 📋 Next Priority Order
 1. **Verify Startup End-to-End:** Run `./startup-sequence.sh` and ensure MoCap rigid body tracking is actively streaming in Motive GUI.

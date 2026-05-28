@@ -45,6 +45,7 @@ echo "  - /poses                            (Raw Mocap data from OptiTrack)"
 echo "  - /tf                               (Coordinate transform tree - live 3D visualization)"
 echo "  - /tf_static                        (Static coordinate transforms)"
 echo "  - /rosout                           (ROS 2 logs for state events)"
+echo "  - /flight_director/active_waypoint  (Flight Director semantic state events)"
 echo ""
 echo "Recording... Press Ctrl+C to stop."
 echo ""
@@ -128,7 +129,8 @@ ros2 bag record \
   /poses \
   /rosout \
   /tf \
-  /tf_static &
+  /tf_static \
+  /flight_director/active_waypoint &
 
 BAG_PID=$!
 

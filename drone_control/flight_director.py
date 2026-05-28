@@ -5,6 +5,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus, BatteryStatus
 from motion_capture_tracking_interfaces.msg import NamedPoseArray
+from std_msgs.msg import String
 
 import sys
 import json
@@ -62,6 +63,9 @@ class FlightDirector(Node):
         self.offboard_mode_pub = self.create_publisher(OffboardControlMode, '/fmu/in/offboard_control_mode', command_qos)
         self.trajectory_pub = self.create_publisher(TrajectorySetpoint, '/fmu/in/trajectory_setpoint', command_qos)
         self.vehicle_command_pub = self.create_publisher(VehicleCommand, '/fmu/in/vehicle_command', command_qos)
+        
+        # Event publisher for automated loop pass segmentation
+        self.waypoint_status_pub = self.create_publisher(String, '/flight_director/active_waypoint', 10)
 
         # Subscribers
         self.ekf_pos_sub = self.create_subscription(VehicleLocalPosition, '/fmu/out/vehicle_local_position', self._ekf_cb, sensor_qos)
@@ -251,6 +255,7 @@ class FlightDirector(Node):
     def command_land(self):
         self.get_logger().warn("Commanding Controlled Offboard LAND...")
         self.state = "LANDING"
+        self._publish_active_waypoint("LANDING")
         
         # Initialize offboard landing coordinates at current target or actual position
         if self.smoothed_target_enu is not None:
@@ -438,6 +443,7 @@ class FlightDirector(Node):
 
         if self.state == "MISSION":
             if self.mission.is_finished:
+                self._publish_active_waypoint("FINISHED")
                 self.command_land()
                 return
 
@@ -446,7 +452,35 @@ class FlightDirector(Node):
                 self._send_mocap_setpoint(*self.smoothed_target_enu)
                 return
 
+            # Keep track of previous state to publish transitions
+            prev_wp_idx = self.mission.current_wp_idx
+            prev_loop = self.mission.loop_counter
+
             sp = self.mission.get_next_setpoint(self.mocap_pos, dt)
+
+            # Check if waypoint index or loop counter changed
+            curr_wp_idx = self.mission.current_wp_idx
+            curr_loop = self.mission.loop_counter
+
+            # Dynamic label assignment based on active mission coordinates
+            if curr_wp_idx < len(self.mission.waypoints):
+                target = self.mission.waypoints[curr_wp_idx]
+                target_x, target_y = target[0], target[1]
+                
+                if hasattr(self.mission, 'exp_sp') and abs(target_x - self.mission.exp_sp[0]) < 0.01 and abs(target_y - self.mission.exp_sp[1]) < 0.01:
+                    label = "EXP_START_POINT"
+                elif hasattr(self.mission, 'exp_ep') and abs(target_x - self.mission.exp_ep[0]) < 0.01 and abs(target_y - self.mission.exp_ep[1]) < 0.01:
+                    label = "EXP_END_POINT"
+                else:
+                    label = "OTHER"
+            else:
+                label = "FINISHED"
+
+            if curr_wp_idx != prev_wp_idx or curr_loop != prev_loop or not hasattr(self, '_last_published_wp') or self._last_published_wp != (curr_loop, label):
+                event_str = f"LOOP_{curr_loop}_{label}"
+                self._publish_active_waypoint(event_str)
+                self._last_published_wp = (curr_loop, label)
+
             if sp:
                 # sp format: (x, y, z, face_forward_bool, [speed_mps])
                 target_x, target_y, target_z, face_forward = sp[0], sp[1], sp[2], sp[3]
@@ -543,6 +577,12 @@ class FlightDirector(Node):
     def destroy_node(self):
         self.recorder.stop_recording()
         super().destroy_node()
+
+    def _publish_active_waypoint(self, status_str):
+        msg = String()
+        msg.data = status_str
+        self.waypoint_status_pub.publish(msg)
+        self.get_logger().info(f"[EVENT] Active Waypoint status: {status_str}")
 
 # --- Keyboard Thread ---
 def getch():

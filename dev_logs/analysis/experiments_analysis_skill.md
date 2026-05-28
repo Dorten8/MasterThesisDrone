@@ -115,10 +115,10 @@ The following architectural, kinematics, and visual features have been fully imp
     $$y_{cmd} = -(\text{position}[1] - \text{offset}_y)$$
     This cleanly resolves the coordinate double-swap bug and aligns setpoint commands perfectly with flight tracking!
 
-### 2. Prioritized Mission-Class Waypoint Mapping (`exa_kinematics.py`)
--   **Mission SSoT Waypoints:** The pipeline now simulates the active flight mission class (`ExpCollision75Deg` or `ColumnSweepLoop`) in post-processing by reading the drone's actual takeoff coordinate ($x_0, y_0, z_0$) from the MoCap stream.
--   **Target Extraction:** Obtains discrete, clean target waypoints directly from the initialized mission class, completely eliminating intermediate steps caused by trajectory setpoint smoothing.
--   **Robust Fallbacks:** Dynamically falls back to standard dynamic setpoint clustering or absolute coordinate defaults if mission classes cannot be imported.
+### 2. Mission-Class Waypoint Mapping — Absolute SSoT (`exa_kinematics.py`)
+-   **Mission SSoT Waypoints:** The pipeline reads the 4 nominal waypoints directly from the active mission class (`ExpCollision75Deg` or `ColumnSweepLoop`). This is the **absolute first priority** — the mission file defines the exact geometry.
+-   **Why not dynamic extraction?** Segmented pass `.mcap` files contain PX4 trajectory interpolation commands (15+ intermediate setpoints every ~150mm), not the real 4 mission waypoints. Using these produces completely wrong sweep boundaries and cascading clearance/impact errors.
+-   **Fallback chain:** Mission class → `dynamic_waypoints` (only if exactly 4 found) → hardcoded defaults.
 
 ### 3. Integrated Cage & Flight Conditions Terminology
 -   **Standardized Naming:** All notebooks, pipelines, and plotting scripts strictly map parameters and data structures using `flights_rotating_cage`, `flights_fixed_cage`, `representative_rotating_cage`, and `representative_fixed_cage`.
@@ -138,7 +138,9 @@ The following high-quality flight recordings are approved and registered as the 
 
 | Flight Date/Time | Angle | Condition | Representative? | Flight Bag Folder Name | Key Analytical Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **2026-05-24 19:04** | 75° | Rotating Cage | **Yes** (Primary Dataset) | `flight_20260524-1904_75°_column_collision_loop_fixed_cage` | **The single usable flight recording.** Completed full sweep collision loop with excellent grazing alignment. |
+| **2026-05-24 19:04** | 75° | Fixed Cage | **Yes** (Fixed Primary) | `flight_20260524-1904_75°_column_collision_loop_fixed_cage` | **The primary fixed cage flight recording.** Completed full sweep collision loop with excellent grazing alignment. |
+| **2026-05-27 14:02** | 75° | Rotating Cage | **Yes** (V1 Rotating) | `flight_20260527-1402_75°_column_collision_loop_rotating_cage` | **V1 Sweep Gate.** Completed full rotating cage collision sweep. |
+| **2026-05-27 14:08** | 75° | Rotating Cage | **Yes** (V2 Rotating) | `flight_20260527-1408_75°_column_collision_loop_v2_rotating_cage` | **V2 Sweep Gate.** Shortened staging U-turn runway, stabilizing the entrance trajectory perfectly. |
 
 ---
 
@@ -165,18 +167,40 @@ A ~3-second offset has been noted in some plots between the MoCap-calculated clo
 
 To enable rigorous statistical comparison and thesis compilation, all processed flight passes automatically cache their calculated physical metrics inside a shared SQLite database located at `dev_logs/analysis/collision_experiments.db` (resolved dynamically relative to the package, never hardcoded).
 
+### Purpose: What the Database Tracks and How
+
+The collision experiments database acts as the central, unified repository of all quantitative kinematics and dynamics telemetry extracted from live physical flight experiments. It is designed to track three major facets of drone dynamics during safety cage contacts:
+
+1. **Experimental Control Conditions & Energy States:**
+   - Standardizes the physical configurations (`Rotating Cage` vs. `Fixed Cage`), the commanded reference velocity (`sweep_speed`), and the current electrical state of the vehicle (`battery_at_start`) to account for changes in thrust-to-weight and voltage sag during high-energy sweeps.
+2. **Impact & Bypass Kinematics:**
+   - Captures the exact vehicle velocities (`impact_speed`), contact angles normal to the column's surface (`impact_angle`), and acceleration/deceleration rates (`before_impact_accel`, `impact_accel`) at the moment of closest spatial approach. 
+   - Tracks spatial clearance boundaries (`closest_clearance`) in centimeters where negative values reflect physical penetration and cage compression, automatically classifying structural contact sweeps (`impact_detected = 1`).
+3. **Flight Trajectory Deviation & Controller Recovery:**
+   - Tracks spatial deviation along the recovery path (`avg_dev_after`, `max_dev_after`, `recovery_area`) representing the Spatial Integral of Absolute Error recovery envelope.
+   - Saves side-by-side coordinate pairs of both the mathematical commanded coordinates (**Nominal** targets defined by the mission SSoT) and the physically captured coordinates (**Actual** 3D positions logged by OptiTrack at pass start and end bounds).
+
 ### Table Schema: `flights_summary`
+
 | Column Name | Data Type | Units / Range | Description |
 | :--- | :--- | :--- | :--- |
 | **`flight_name`** | TEXT (Primary Key) | String | Consolidated pass name: `<flight_folder_name> - Pass-<Index>` |
 | **`condition`** | TEXT | `'Rotating Cage'` or `'Fixed Cage'` | Safety cage rotational configuration condition. |
-| **`impact_speed`** | REAL | $\text{m/s}$ | Linear speed magnitude at exact moment of obstacle contact. |
-| **`impact_accel`** | REAL | $\text{m/s}^2$ | Tangential acceleration rate at exact moment of contact. |
+| **`sweep_speed`** | REAL | $\text{m/s}$ | Declared sweep speed from mission SSoT. |
+| **`battery_at_start`** | REAL | $\%$ | Battery remaining percentage at experiment start. |
+| **`impact_speed`** | REAL | $\text{m/s}$ | Linear speed magnitude at closest approach to obstacle. |
+| **`before_impact_accel`** | REAL | $\text{m/s}^2$ | Average tangential acceleration in window $[t_{closest} - 0.4s, t_{closest} - 0.2s]$. |
+| **`impact_accel`** | REAL | $\text{m/s}^2$ | Tangential acceleration rate at closest approach. |
 | **`impact_angle`** | REAL | degrees ($0^\circ - 90^\circ$) | 2D spatial contact angle normal to the column surface. |
 | **`avg_dev_after`** | REAL | $\text{mm}$ | Mean perpendicular trajectory deviation along recovery segment. |
 | **`max_dev_after`** | REAL | $\text{mm}$ | Peak perpendicular trajectory deviation along recovery segment. |
 | **`recovery_area`** | REAL | $\text{cm}^2$ | Integrated Spatial Integral of Absolute Error (SIAE) recovery envelope. |
-| **`closest_clearance`** | REAL | $\text{cm}$ | Minimum spatial clearance between outer cage surface and column. |
+| **`closest_clearance`** | REAL | $\text{cm}$ | Minimum spatial clearance between outer cage surface and column. Negative = physical contact. |
+| **`impact_detected`** | INTEGER | `0` or `1` | Impact classification: `1` if `closest_clearance < 0` (cage penetrated column boundary). |
+| **`nom_sp_x/y/z`** | REAL | $\text{m}$ | Command/Target nominal experiment start-point coordinates from mission SSoT. |
+| **`act_sp_x/y/z`** | REAL | $\text{m}$ | Actual physical vehicle coordinates from OptiTrack at experiment entry timestamp. |
+| **`nom_ep_x/y/z`** | REAL | $\text{m}$ | Command/Target nominal experiment end-point coordinates from mission SSoT. |
+| **`act_ep_x/y/z`** | REAL | $\text{m}$ | Actual physical vehicle coordinates from OptiTrack at experiment exit timestamp. |
 | **`timestamp`** | TEXT | `YYYY-MM-DD HH:MM:SS` | Caching timestamp. |
 
 ### Accessing & Exporting the Data

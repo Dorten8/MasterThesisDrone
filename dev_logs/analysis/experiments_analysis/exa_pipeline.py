@@ -58,21 +58,51 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
         metrics_list = []
         details_list = []
         
-        for idx, f_name in enumerate(flight_folder_names):
-            flight_path = os.path.join(flights_dir, f_name)
-            if not os.path.exists(flight_path):
-                flight_path = os.path.join(project_root, f_name)
-                
-            if not os.path.exists(flight_path):
-                print(f"[WARN] Flight directory not found: {f_name}, skipping.")
-                continue
+        import glob
+        import re
 
+        pass_files_to_process = []
+        for f_name in flight_folder_names:
+            m_pass = re.search(r'^(.*?) - Pass-(\d+)$', f_name)
+            if m_pass:
+                base_folder = m_pass.group(1)
+                pass_idx = int(m_pass.group(2))
+                
+                dir_path = os.path.join(flights_dir, base_folder)
+                if not os.path.exists(dir_path):
+                    dir_path = os.path.join(project_root, base_folder)
+                
+                pattern = os.path.join(dir_path, f"*-pass{pass_idx:02d}.mcap")
+                matches = glob.glob(pattern)
+                if matches:
+                    pass_files_to_process.append((base_folder, pass_idx, matches[0]))
+                else:
+                    print(f"[WARN] Pass file not found for: {f_name}")
+            else:
+                base_folder = f_name
+                dir_path = os.path.join(flights_dir, base_folder)
+                if not os.path.exists(dir_path):
+                    dir_path = os.path.join(project_root, base_folder)
+                
+                pattern = os.path.join(dir_path, "*-pass*.mcap")
+                matches = sorted(glob.glob(pattern))
+                if matches:
+                    for m_path in matches:
+                        m = re.search(r'-pass(\d+)\.mcap$', os.path.basename(m_path))
+                        if m:
+                            p_idx = int(m.group(1))
+                            pass_files_to_process.append((base_folder, p_idx, m_path))
+                else:
+                    print(f"[WARN] No pass files found in directory: {f_name}")
+
+        for base_folder, pass_idx, pass_path in pass_files_to_process:
             try:
                 # Load and process MCAP
-                topic_data, bag_start_ns = load_mcap(flight_path)
+                topic_data, bag_start_ns = load_mcap(pass_path)
                 dfs = build_dataframes(topic_data, drone_tracker_name, bag_start_ns)
                 
                 df_mocap = dfs['mocap']
+                df_setpoint = dfs.get('setpoint', pd.DataFrame())
                 df_bat = dfs['battery']
                 df_imu = dfs.get('imu', pd.DataFrame())
                 df_column = dfs.get('column', pd.DataFrame())
@@ -88,11 +118,11 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                 if df_column is not None and not df_column.empty:
                     col_x_flight = df_column['x'].head(50).mean()
                     col_y_flight = df_column['y'].head(50).mean()
-                    print(f"📍 [{f_name}] Detected Live Column Position: ({col_x_flight:.3f}, {col_y_flight:.3f})")
+                    print(f"📍 [{base_folder}] Detected Live Column Position: ({col_x_flight:.3f}, {col_y_flight:.3f})")
                 else:
                     col_x_flight = column_x
                     col_y_flight = column_y
-                    print(f"📍 [{f_name}] Column not found in poses. Falling back to default: ({col_x_flight:.3f}, {col_y_flight:.3f})")
+                    print(f"📍 [{base_folder}] Column not found in poses. Falling back to default: ({col_x_flight:.3f}, {col_y_flight:.3f})")
                 
                 # Detect Takeoff Trigger (using MoCap Z height crossing 0.15m)
                 takeoff_mask = df_mocap['z'] > 0.15 if not df_mocap.empty else pd.Series(dtype=bool)
@@ -100,7 +130,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                 
                 # Detect waypoint events with dynamic column Y coordinate and impact detection (get ALL passes)
                 wp_events_list = find_waypoint_events(
-                    df_mocap, takeoff_time, label=f_name, 
+                    df_mocap, df_setpoint, takeoff_time, label=f"{base_folder} - Pass-{pass_idx:02d}", 
                     column_x=col_x_flight, column_y=col_y_flight, 
                     column_radius=column_radius, cage_radius=cage_radius,
                     return_all=True, dynamic_waypoints=dynamic_waypoints
@@ -108,20 +138,19 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                 
                 if not wp_events_list:
                     wp_events_list = [{}]
-
+ 
                 # --- Resolve declared sweep_speed from the mission class ---
                 sweep_speed = None
                 try:
-                    sys.path.insert(0, project_root)
-                    from drone_control.missions.exp_collision_75deg import ExpCollision75Deg
-                    _m = ExpCollision75Deg()
+                    from .exa_kinematics import detect_mission_class
+                    _m = detect_mission_class(df_setpoint, label=base_folder)
                     sweep_speed = _m.sweep_speed  # e.g. 0.3 m/s
                 except Exception:
                     pass  # Not critical — falls back to None in the DB
-
+ 
                 for p_idx, wp_events in enumerate(wp_events_list):
-                    pass_name = f"{f_name} - Pass-{p_idx+1:02d}"
-
+                    pass_name = f"{base_folder} - Pass-{pass_idx:02d}"
+ 
                     # Only write a complete pass (WP1 + WP2 + WP3 all detected)
                     has_full_pass = ('WP1' in wp_events or 'WP2' in wp_events) and 'WP3' in wp_events
                     if not has_full_pass:
@@ -132,6 +161,28 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
 
                     # Calculate physical metrics with dynamic column coordinates
                     metrics = calculate_metrics(df_mocap, wp_events, col_x_flight, col_y_flight, column_radius, cage_radius)
+
+                    # Read declared nominal waypoints from mission SSoT
+                    try:
+                        from .exa_kinematics import detect_mission_class
+                        _m_dyn = detect_mission_class(df_setpoint, label=base_folder)
+                        nom_sp = (_m_dyn.exp_sp[0], _m_dyn.exp_sp[1], _m_dyn.exp_sp[2])
+                        nom_ep = (_m_dyn.exp_ep[0], _m_dyn.exp_ep[1], _m_dyn.exp_ep[2])
+                    except Exception:
+                        nom_sp = (0.186, 0.950, 0.500)
+                        nom_ep = (0.186, -1.200, 0.500)
+                    metrics['nom_sp'] = nom_sp
+                    metrics['nom_ep'] = nom_ep
+
+                    # Compute actual physical start/end points using MoCap trajectory at wp_events timestamps
+                    def _get_mocap_coords(df, t):
+                        if df.empty or t is None or np.isnan(t):
+                            return (None, None, None)
+                        idx = (df['t'] - t).abs().idxmin()
+                        return (float(df.loc[idx, 'x']), float(df.loc[idx, 'y']), float(df.loc[idx, 'z']))
+
+                    metrics['act_sp'] = _get_mocap_coords(df_mocap, wp_events.get('WP2') or wp_events.get('WP1'))
+                    metrics['act_ep'] = _get_mocap_coords(df_mocap, wp_events.get('WP3'))
 
                     # Attach declared sweep speed to metrics
                     metrics['sweep_speed'] = sweep_speed
@@ -148,8 +199,8 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     else:
                         metrics['battery_at_start'] = None
 
-                    # Skip if already cached in the database (idempotent runs)
-                    if is_already_cached(pass_name):
+                    # Skip if already cached in the database (idempotent runs, force-recompute if missing schema columns)
+                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel']):
                         print(f"⏭️  '{pass_name}' already in database, skipping insert.")
                     else:
                         insert_or_replace_flight(pass_name, condition_label, metrics)
@@ -394,7 +445,7 @@ if __name__ == "__main__":
         pass_idx  = int(m.group(1))
         pass_name = f"{folder_name} - Pass-{pass_idx:02d}"
 
-        if is_already_cached(pass_name):
+        if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel']):
             print(f"⏭️  Skipping (already cached): {pass_name}")
             skipped += 1
             continue
@@ -419,6 +470,7 @@ if __name__ == "__main__":
             dfs = build_dataframes(topic_data, drone_tracker_name, bag_start_ns)
 
             df_mocap  = dfs['mocap']
+            df_setpoint = dfs.get('setpoint', pd.DataFrame())
             df_bat    = dfs['battery']
             df_column = dfs.get('column', pd.DataFrame())
             arming_time       = dfs['arming_time']
@@ -438,7 +490,7 @@ if __name__ == "__main__":
                 if (df_column is not None and not df_column.empty) else (0.408, 0.358)
 
             wp_events_list = find_waypoint_events(
-                df_mocap, takeoff_time, label=pass_name,
+                df_mocap, df_setpoint, takeoff_time, label=pass_name,
                 column_x=col_x, column_y=col_y,
                 column_radius=column_radius, cage_radius=cage_radius,
                 return_all=True, dynamic_waypoints=dynamic_waypoints
@@ -452,7 +504,31 @@ if __name__ == "__main__":
             wp_events = wp_events_list[0]  # Pass file contains exactly one pass
 
             metrics = calculate_metrics(df_mocap, wp_events, col_x, col_y, column_radius, cage_radius)
-            metrics['sweep_speed'] = sweep_speed_declared
+
+            # Read declared nominal waypoints from mission SSoT
+            _m = None
+            try:
+                from dev_logs.analysis.experiments_analysis.exa_kinematics import detect_mission_class
+                _m = detect_mission_class(df_setpoint, label=pass_name)
+                nom_sp = (_m.exp_sp[0], _m.exp_sp[1], _m.exp_sp[2])
+                nom_ep = (_m.exp_ep[0], _m.exp_ep[1], _m.exp_ep[2])
+            except Exception:
+                nom_sp = (0.186, 0.950, 0.500)
+                nom_ep = (0.186, -1.200, 0.500)
+            metrics['nom_sp'] = nom_sp
+            metrics['nom_ep'] = nom_ep
+
+            # Compute actual physical start/end points using MoCap trajectory at wp_events timestamps
+            def _get_mocap_coords(df, t):
+                if df.empty or t is None or np.isnan(t):
+                    return (None, None, None)
+                idx = (df['t'] - t).abs().idxmin()
+                return (float(df.loc[idx, 'x']), float(df.loc[idx, 'y']), float(df.loc[idx, 'z']))
+
+            metrics['act_sp'] = _get_mocap_coords(df_mocap, wp_events.get('WP2') or wp_events.get('WP1'))
+            metrics['act_ep'] = _get_mocap_coords(df_mocap, wp_events.get('WP3'))
+
+            metrics['sweep_speed'] = _m.sweep_speed if _m is not None else sweep_speed_declared
 
             # Battery % at Exp. Start-point
             t_exp_start = wp_events.get('WP1') or wp_events.get('WP2')

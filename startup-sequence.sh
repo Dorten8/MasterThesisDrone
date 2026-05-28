@@ -170,16 +170,23 @@ fi
 # Step 2: motion_capture_tracking_node
 # Read Mocap server IP from drone_config.json (SSoT)
 MOCAP_SERVER=$(python3 -c "import json; print(json.load(open('/home/ws/config/drone_config.json'))['optitrack_server_ip'])" 2>/dev/null)
+PI_IP=$(python3 -c "import json; print(json.load(open('/home/ws/config/drone_config.json'))['pi_ip'])" 2>/dev/null)
 if [ -z "$MOCAP_SERVER" ]; then
     MOCAP_SERVER="192.168.74.3" # Fallback
     echo -e "${YELLOW}Could not read Mocap server IP from config. Defaulting to: $MOCAP_SERVER${NC}"
 else
     echo -e "${GREEN}Loaded Mocap server IP '$MOCAP_SERVER' from drone_config.json${NC}"
 fi
+if [ -z "$PI_IP" ]; then
+    PI_IP="192.168.74.8" # Fallback
+    echo -e "${YELLOW}Could not read Pi IP from config. Defaulting to: $PI_IP${NC}"
+else
+    echo -e "${GREEN}Loaded Pi IP '$PI_IP' from drone_config.json${NC}"
+fi
 
 if run_with_monitor \
     "motion_capture_tracking_node" \
-    "ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=$MOCAP_SERVER" \
+    "ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=$MOCAP_SERVER -p interface_ip:=$PI_IP" \
     "logClouds\|Joined multicast" \
     "motion_capture_tracking_node Running" \
     "motion_capture_tracking_node"; then
@@ -228,8 +235,14 @@ else
 fi
 
 if [ "$POSES_TOPIC" -eq 1 ]; then
-    echo -e "${GREEN}✓ Motion capture tracking is working (/poses topic exists)${NC}"
-    RESULTS+=("${GREEN}✓${NC} Motion Capture System")
+    if timeout 5s ros2 topic echo --qos-reliability best_effort -n 1 /poses >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Motion capture tracking is publishing fresh /poses messages${NC}"
+        RESULTS+=("${GREEN}✓${NC} Motion Capture System")
+    else
+        echo -e "${RED}✗ /poses exists but no fresh mocap message arrived within 5s${NC}"
+        echo -e "${RED}  → If Motive was restarted, restart motion_capture_tracking_node too${NC}"
+        RESULTS+=("${RED}✗${NC} Motion Capture System (stale)")
+    fi
 else
     echo -e "${RED}✗ Motion capture tracking not working (no /poses topic)${NC}"
     RESULTS+=("${RED}✗${NC} Motion Capture System")

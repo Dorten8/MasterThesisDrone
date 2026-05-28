@@ -21,11 +21,14 @@ def load_drone_metadata(project_root):
     return "jake_drone_frame_01", {}
 
 def load_mcap(flight_path):
-    """Finds and parses the first .mcap file inside flight_path, returning a topic_data dict and bag_start_ns."""
-    mcap_files = [f for f in glob.glob(os.path.join(flight_path, "*.mcap")) if "-pass" not in os.path.basename(f)]
-    if not mcap_files:
-        raise FileNotFoundError(f"No .mcap files discovered in: {flight_path}")
-    mcap_path = mcap_files[0]
+    """Finds and parses the first .mcap file inside flight_path (if directory), or parses the file directly."""
+    if os.path.isfile(flight_path):
+        mcap_path = flight_path
+    else:
+        mcap_files = [f for f in glob.glob(os.path.join(flight_path, "*.mcap")) if "-pass" not in os.path.basename(f)]
+        if not mcap_files:
+            raise FileNotFoundError(f"No .mcap files discovered in: {flight_path}")
+        mcap_path = mcap_files[0]
     
     topic_data = {}
     msg_count = 0

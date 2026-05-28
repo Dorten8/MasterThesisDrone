@@ -322,5 +322,7 @@ bash -lc 'source /opt/ros/humble/setup.bash && rviz2'
 To slice a new flight (after landing on the Pi):
 # 1. After landing — slice passes from raw bag:
 python3 dev_logs/analysis/experiments_analysis/mcap_segmenter.py
+python3 dev_logs/analysis/experiments_analysis/mcap_event_segmenter.py
+
 # 2. Re-run analysis — new passes auto-populate DB, old ones are skipped:
 python3 -m dev_logs.analysis.experiments_analysis.exa_pipeline
