@@ -70,9 +70,12 @@ def compute_velocity(df_mocap, window=19, polyorder=3):
 def detect_mission_class(df_setpoint, label=None, target_z=0.5):
     """Dynamically determines and instantiates the correct mission class based on label or setpoint coordinates."""
     is_75deg = False
+    is_45deg = False
     if label:
         lbl_lower = label.lower()
-        if "75" in lbl_lower or "collision" in lbl_lower:
+        if "45" in lbl_lower:
+            is_45deg = True
+        elif "75" in lbl_lower or "collision" in lbl_lower:
             is_75deg = True
 
     import sys
@@ -82,7 +85,14 @@ def detect_mission_class(df_setpoint, label=None, target_z=0.5):
     if project_root not in sys.path:
         sys.path.append(project_root)
 
-    if not is_75deg:
+    if is_45deg:
+        try:
+            from drone_control.missions.exp_collision_45deg import ExpCollision45Deg
+            return ExpCollision45Deg(target_z=target_z)
+        except Exception:
+            pass
+
+    if not is_75deg and not is_45deg:
         try:
             from drone_control.missions.column_sweep_loop import ColumnSweepLoop
             return ColumnSweepLoop(target_z=target_z)
@@ -157,14 +167,14 @@ def find_waypoint_events(df_mocap, df_setpoint, takeoff_time=None, label=None, c
             
             mission.on_start(DummyPose(x0, y0, z0))
             
-            # Check if this is 75deg or regular loop
-            is_75deg = False
+            # Check if this is a collision loop or regular loop
+            is_collision = False
             if label:
                 lbl_lower = label.lower()
-                if "75" in lbl_lower or "collision" in lbl_lower:
-                    is_75deg = True
+                if "collision" in lbl_lower or "75" in lbl_lower or "45" in lbl_lower:
+                    is_collision = True
 
-            if is_75deg:
+            if is_collision:
                 wp_sequence = [
                     ('WP1', (mission.wp_stage[0], mission.wp_stage[1])),
                     ('WP2', (mission.exp_sp[0], mission.exp_sp[1])),
@@ -190,11 +200,14 @@ def find_waypoint_events(df_mocap, df_setpoint, takeoff_time=None, label=None, c
 
     # Absolute hardcoded fallback
     if wp_sequence is None:
-        if is_75deg:
+        if is_collision:
+            # Detect which angle from label
+            is_45 = label and "45" in label.lower()
+            x_lane = 0.248 if is_45 else 0.186
             wp_sequence = [
-                ('WP1', (0.186, 1.200)),
-                ('WP2', (0.186, 0.950)),
-                ('WP3', (0.186, -1.200)),
+                ('WP1', (x_lane, 1.200)),
+                ('WP2', (x_lane, 0.950)),
+                ('WP3', (x_lane, -1.200)),
                 ('WP4', (0.000, 0.300))
             ]
         else:

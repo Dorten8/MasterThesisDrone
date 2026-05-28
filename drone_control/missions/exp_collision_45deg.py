@@ -6,11 +6,11 @@ from .base_mission import BaseMission
 _BLUE  = "\033[94m"
 _RESET = "\033[0m"
 
-class ExpCollision75Deg(BaseMission):
-    MISSION_NAME = "75° Column Collision Loop"
+class ExpCollision45Deg(BaseMission):
+    MISSION_NAME = "45° Column Collision Loop"
     MISSION_DESCRIPTION = (
         "Transit to WP_stage (U-turn), arrive at WP1 heading south, "
-        "sweep at 75° angle (WP1→WP2), recover to WP3, auto-loop."
+        "sweep at 45° angle (WP1→WP2), recover to WP3, auto-loop."
     )
 
     # Enforce safety geofence checking
@@ -19,7 +19,7 @@ class ExpCollision75Deg(BaseMission):
     def __init__(self, target_z=0.5, transit_speed=0.3, sweep_speed=0.3, climb_speed=0.4, face_forward=True):
         super().__init__()
         # ── Geometry ─────────────────────────────────────────────────────────────
-        # Column at (0.408, 0.358). Sweep lane: X=0.186.
+        # Column at (0.408, 0.358). Sweep lane: X=0.248.
         # Impact geometry unchanged regardless of where WP1 starts.
         #
         # WP_stage: pass-through U-turn point north of the gate.
@@ -33,9 +33,9 @@ class ExpCollision75Deg(BaseMission):
         # exp_ep: sweep end post-column.
         # WP3: short recovery point, loops straight back to WP_stage.
         # ─────────────────────────────────────────────────────────────────────────
-        self.wp_stage = (0.186, 1.200, target_z)  # U-turn staging  (pass-through, no stop)
-        self.exp_sp   = (0.186, 0.950, target_z)  # Sweep gate      (PAUSE, 5cm, arrives heading south)
-        self.exp_ep   = (0.186, -1.200, target_z) # Sweep end       (post-column exit)
+        self.wp_stage = (0.248, 1.200, target_z)  # U-turn staging  (pass-through, no stop)
+        self.exp_sp   = (0.248, 0.950, target_z)  # Sweep gate      (PAUSE, 5cm, arrives heading south)
+        self.exp_ep   = (0.248, -1.200, target_z) # Sweep end       (post-column exit)
         self.wp3      = (0.000, 0.300, target_z)  # Recovery        (auto-loops to WP_stage)
 
         self.target_z      = target_z
@@ -65,7 +65,7 @@ class ExpCollision75Deg(BaseMission):
             (x0, y0, self.target_z, False, cs, True,  0.10),  # WP0:     Takeoff climb & hold — ONE-TIME, 10cm, PAUSE
             (*self.wp_stage, ff, ts, False, 0.15),             # WP_stage: U-turn pass-through, 15cm
             (*self.exp_sp,      ff, ts, True,  0.05),             # WP1:      Gate, PAUSE, 5cm tight
-            (*self.exp_ep,      ff, ss, False, 0.15),             # WP2:      75° sweep, 15cm
+            (*self.exp_ep,      ff, ss, False, 0.15),             # WP2:      45° sweep, 15cm
             (*self.wp3,      ff, ts, False, 0.15),             # WP3:      Recovery, auto-loop, 15cm
         ]
 
@@ -74,14 +74,14 @@ class ExpCollision75Deg(BaseMission):
         w2 = self.exp_ep
         w3 = self.wp3
         print(f"\n=============================================")
-        print(f"🎯 MISSION: 75° COLUMN COLLISION LOOP")
+        print(f"🎯 MISSION: 45° COLUMN COLLISION LOOP")
         print(f"=============================================")
         print(f"  🏁 Takeoff Pad : X={x0:.3f}m | Y={y0:.3f}m | Z={z0:.3f}m")
         print(f"  -------------------------------------------")
         print(f"  📍 WP0 (Takeoff)      : X={x0:.3f},  Y={y0:.3f},  Z={self.target_z:.3f}  [ONE-TIME CLIMB · PAUSE]")
         print(f"  📍 WP_stage (U-turn)  : X={g[0]:.3f},  Y={g[1]:.3f},  Z={g[2]:.3f}  [PASS-THROUGH · 15cm]")
         print(f"  📍 WP1 (Gate)         : X={w1[0]:.3f}, Y={w1[1]:.3f}, Z={w1[2]:.3f}  [PAUSE · 5cm]")
-        print(f"  📍 WP2 (Sweep)        : X={w2[0]:.3f}, Y={w2[1]:.3f}, Z={w2[2]:.3f}  [75° IMPACT · 15cm]")
+        print(f"  📍 WP2 (Sweep)        : X={w2[0]:.3f}, Y={w2[1]:.3f}, Z={w2[2]:.3f}  [45° IMPACT · 15cm]")
         print(f"  📍 WP3 (Recovery)     : X={w3[0]:.3f}, Y={w3[1]:.3f}, Z={w3[2]:.3f}  [AUTO-LOOP · 15cm]")
         print(f"  -------------------------------------------")
         print(f"  ⚡ Climb speed  : {cs:.2f} m/s")

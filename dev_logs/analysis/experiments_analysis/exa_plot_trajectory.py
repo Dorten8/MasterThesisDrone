@@ -68,7 +68,9 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
         idx_wp2 = min(max(0, idx_wp2), len(df_mocap) - 1)
         wp2_x, wp2_y = df_mocap['x'].iloc[idx_wp2], df_mocap['y'].iloc[idx_wp2]
     else:
-        wp2_x, wp2_y = 0.186, 0.950
+        is_45 = flight_name and "45" in flight_name.lower()
+        x_lane = 0.248 if is_45 else 0.186
+        wp2_x, wp2_y = x_lane, 0.950
 
     # Query exact registered MoCap coordinates at Exp. End-point (WP3)
     if wp3_t is not None:
@@ -76,7 +78,9 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
         idx_wp3 = min(max(0, idx_wp3), len(df_mocap) - 1)
         wp3_x, wp3_y = df_mocap['x'].iloc[idx_wp3], df_mocap['y'].iloc[idx_wp3]
     else:
-        wp3_x, wp3_y = 0.186, -1.200
+        is_45 = flight_name and "45" in flight_name.lower()
+        x_lane = 0.248 if is_45 else 0.186
+        wp3_x, wp3_y = x_lane, -1.200
 
     # Calculate minimum spatial distance to column center during active sweep
     dist_to_col_center = np.sqrt((df_mocap_sweep['x'] - column_x)**2 + (df_mocap_sweep['y'] - column_y)**2)
@@ -196,13 +200,18 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
     if dynamic_waypoints and len(dynamic_waypoints) == 4:
         wps = np.array([dynamic_waypoints[1][1], dynamic_waypoints[2][1]])
     else:
-        is_75deg = False
+        is_collision = False
+        is_45 = False
         if flight_name:
             fn_lower = flight_name.lower()
-            if "75" in fn_lower or "collision" in fn_lower:
-                is_75deg = True
-        if is_75deg:
-            wps = np.array([[0.186, 0.950], [0.186, -1.200]])
+            if "collision" in fn_lower or "75" in fn_lower or "45" in fn_lower:
+                is_collision = True
+            if "45" in fn_lower:
+                is_45 = True
+        
+        if is_collision:
+            x_lane = 0.248 if is_45 else 0.186
+            wps = np.array([[x_lane, 0.950], [x_lane, -1.200]])
         else:
             wps = np.array([[0.100, 1.200], [0.100, -1.200]])
 

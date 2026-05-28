@@ -169,8 +169,10 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                         nom_sp = (_m_dyn.exp_sp[0], _m_dyn.exp_sp[1], _m_dyn.exp_sp[2])
                         nom_ep = (_m_dyn.exp_ep[0], _m_dyn.exp_ep[1], _m_dyn.exp_ep[2])
                     except Exception:
-                        nom_sp = (0.186, 0.950, 0.500)
-                        nom_ep = (0.186, -1.200, 0.500)
+                        is_45 = base_folder and "45" in base_folder.lower()
+                        x_lane = 0.248 if is_45 else 0.186
+                        nom_sp = (x_lane, 0.950, 0.500)
+                        nom_ep = (x_lane, -1.200, 0.500)
                     metrics['nom_sp'] = nom_sp
                     metrics['nom_ep'] = nom_ep
 
@@ -513,8 +515,10 @@ if __name__ == "__main__":
                 nom_sp = (_m.exp_sp[0], _m.exp_sp[1], _m.exp_sp[2])
                 nom_ep = (_m.exp_ep[0], _m.exp_ep[1], _m.exp_ep[2])
             except Exception:
-                nom_sp = (0.186, 0.950, 0.500)
-                nom_ep = (0.186, -1.200, 0.500)
+                is_45 = pass_name and "45" in pass_name.lower()
+                x_lane = 0.248 if is_45 else 0.186
+                nom_sp = (x_lane, 0.950, 0.500)
+                nom_ep = (x_lane, -1.200, 0.500)
             metrics['nom_sp'] = nom_sp
             metrics['nom_ep'] = nom_ep
 
