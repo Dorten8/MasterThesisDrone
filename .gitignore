@@ -6,9 +6,6 @@ build/
 install/
 log/
 tmp/
-dev_logs/flights/
-!dev_logs/flights/
-dev_logs/flights/*
-!dev_logs/flights/*/
-!dev_logs/flights/*/*_0.mcap
-!dev_logs/flights/*/*-pass*.mcap
+dev_logs/flights/**
+!dev_logs/flights/**/
+!dev_logs/flights/**/*pass*.mcap
