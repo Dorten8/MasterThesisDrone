@@ -69,5 +69,15 @@
 - Verified end-to-end notebook execution via headless `nbconvert` and successfully restored clean unstaged repository state.
 - Full technical breakdown in: [dev_logs/session_journals/2026-05-28-robust-kinematics-and-self-healing-pipeline.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-28-robust-kinematics-and-self-healing-pipeline.md)
 
+## Session: 2026-05-29 (Stabilization Trendlines, Overlay, and Dashboard Finalization)
+- Designed and built the unified Jupyter dashboard `experiments_analysis_summary.ipynb` utilizing 100% pure Matplotlib to avoid dependency issues.
+- Implemented 18+ client-side pre-sliced Pandas DataFrames in the notebook split by nominal angles, cages, and measured impact angle ranges.
+- Configured Step 7 & 8 Battery Bin Trendlines color-coded to each start LiPo battery state, with overlaid colored linear regressions for each bin.
+- Created Step 9 Comparative Stabilization Overlay plotting exactly 8 battery-colored trendlines overlaid on top of each other (dashed for Rotating Cage, solid for Fixed Cage).
+- Hardcoded Y-axis scaling strictly from 0 to 15 cm across all plots, correcting a major database metric conversion error (scaling mm to cm by dividing by 10.0 instead of multiplying by 100).
+- Simplified all X-axis labels to `'Impact Angle (deg)'` and removed Emojis from titles to resolve system font rendering problems.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-29-stabilization-trendlines-and-overlay.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-29-stabilization-trendlines-and-overlay.md)
+
+
 
 

@@ -137,6 +137,59 @@ Below is the definitive visual and physical specification for the five core plot
   * Three vertical timeline event lines marking: `Exp. Start-point`, `Impact`, and `Exp. End-point` (per General Plot Rule 7).
 * **Associated Script:** [kin_plot_kinematics.py](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/kinematics/kin_plot_kinematics.py)
 
+### 6. Post-Impact Stabilisation Deviation (Rotating Cage Only)
+* **Purpose:** Correlates nominal transit speed with average tracking error after collision to quantify vehicle stability under different translational kinetic energies.
+* **What it Shows:**
+  * Sourced strictly from rotating cage flights with confirmed impacts (`df_rot`).
+  * X-Axis: Nominal sweep speed ($m/s$).
+  * Y-Axis: Average perpendicular trajectory deviation after contact, scaled to centimeters ($cm$) via:
+    $$\text{dev}_{\text{cm}} = \text{avg\_dev\_after} / 10.0$$
+  * Dash-dotted regression trendline: Overlay of a linear best-fit line showing the drift scaling rate, with the exact mathematical slope ($m$) displayed in the legend.
+* **Associated Script/Notebook:** [experiments_analysis_summary.ipynb](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/experiments_analysis_summary.ipynb)
+
+### 7. Deviation vs. Measured Impact Angle (Rotating Cage)
+* **Purpose:** Analyzes how the actual geometric angle of contact influences post-collision drift, while mapping start LiPo voltage states to isolate power system correlation.
+* **What it Shows:**
+  * Sourced strictly from rotating cage flights with confirmed impacts (`df_rot`).
+  * X-Axis: `'Impact Angle'`, scaling strictly from $0^\circ$ to $90^\circ$ (`xlim(0, 90)`).
+  * Y-Axis: Average post-impact deviation scaled to centimeters ($cm$), hardcoded strictly from $0$ to $15$ cm (`ylim(0, 15)`).
+  * 4-bin LiPo Battery State Color-Gradient:
+    * $[0\%, 40\%]$ $\rightarrow$ **Red** (`#D62728`)
+    * $(40\%, 60\%]$ $\rightarrow$ **Orange** (`#FF7F0E`)
+    * $(60\%, 80\%]$ $\rightarrow$ **Yellow-Green** (`#BCBD22`)
+    * $(80\%, 100\%]$ $\rightarrow$ **Green** (`#2CA02C`)
+  * **Statistical Overlays (Linear Trend Lines):** Linear regression best-fit lines matching each bin's color (plotted for battery states with $n > 1$) demonstrating performance trends across impact angles.
+  * **Enhanced Legend Metadata:**
+    * Compact, table-like layout: Percentage ranges and occurrence counts `(n = x)` are vertically aligned in columns. Emojis and verbose description parenthesis are omitted.
+    * Cumulative total: Features a clear total label `Total Flights (N = XX)` positioned at the very top of the legend above all entries.
+* **Associated Script/Notebook:** [experiments_analysis_summary.ipynb](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/experiments_analysis_summary.ipynb)
+
+### 8. Deviation vs. Measured Impact Angle (Fixed Cage)
+* **Purpose:** Analyzes how the actual geometric angle of contact influences post-collision drift for the rigidly Fixed Cage safety configuration across start LiPo battery states.
+* **What it Shows:**
+  * Sourced strictly from fixed cage flights with confirmed impacts (`df_fix`).
+  * X-Axis: `'Impact Angle'`, scaling strictly from $0^\circ$ to $90^\circ$ (`xlim(0, 90)`).
+  * Y-Axis: Average post-impact deviation scaled to centimeters ($cm$), hardcoded strictly from $0$ to $15$ cm (`ylim(0, 15)`).
+  * 4-bin LiPo Battery State Color-Gradient:
+    * $[0\%, 40\%]$ $\rightarrow$ **Red** (`#D62728`)
+    * $(40\%, 60\%]$ $\rightarrow$ **Orange** (`#FF7F0E`)
+    * $(60\%, 80\%]$ $\rightarrow$ **Yellow-Green** (`#BCBD22`)
+    * $(80\%, 100\%]$ $\rightarrow$ **Green** (`#2CA02C`)
+* **Associated Script/Notebook:** [experiments_analysis_summary.ipynb](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/experiments_analysis_summary.ipynb)
+
+### 9. Comparative Stabilization Overlay (Rotating vs. Fixed Cage)
+* **Purpose:** Direct thesis comparison of recovery deflection performance across all impact angles, mathematically isolating the stabilization efficacy of the Rotating Cage safety design against the Fixed Cage baseline.
+* **What it Shows:**
+  * Overlays both Rotating Cage (`df_rot`) and Fixed Cage (`df_fix`) impact-only flights.
+  * X-Axis: `'Impact Angle'`, scaling strictly from $0^\circ$ to $90^\circ$ (`xlim(0, 90)`).
+  * Y-Axis: Average post-impact deviation scaled to centimeters ($cm$), hardcoded strictly from $0$ to $15$ cm (`ylim(0, 15)`).
+  * Scatter points: actual flight passes drawn lightly in the background (`alpha=0.25`) using matching battery colors to preserve line focus.
+  * Overlaid 8x Mathematical trendlines (linear regression):
+    * **Rotating Cage Trends:** **Dashed Lines** (`linestyle='--'`) in matching colors for each of the 4 battery bins.
+    * **Fixed Cage Trends:** **Solid / Full Lines** (`linestyle='-'`) in matching colors for each of the 4 battery bins.
+    * Legend dynamically displays the exact mathematical slopes ($m$) for immediate comparative validation.
+* **Associated Script/Notebook:** [experiments_analysis_summary.ipynb](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/experiments_analysis_summary.ipynb)
+
 ---
 
 # Fully Implemented & Validated Features
@@ -193,9 +246,42 @@ Because we develop remotely over network mounts (SSHFS), POSIX advisory file loc
 | **`act_ep_x/y/z`** | REAL | $\text{m}$ | Actual physical vehicle coordinates from OptiTrack at experiment exit timestamp. |
 | **`timestamp`** | TEXT | `YYYY-MM-DD HH:MM:SS` | Caching timestamp. |
 
+# 📊 Comparative Summary Dashboard: `experiments_analysis_summary.ipynb`
+
+The summary dashboard provides a centralized, publication-ready analytical environment for comparative experimental studies between Rotating and Fixed cage configurations. It is designed to be lightweight, zero-dependency (using 100% pure Matplotlib), and robust to SSHFS mount network latencies.
+
+**Dashboard Location:** [`dev_logs/analysis/experiments_analysis_summary.ipynb`](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/experiments_analysis_summary.ipynb)
+
+### 1. Zero-Dependency & Resilient Architecture
+* **Path Resiliency Header:** The notebook begins with a dynamic traversal path injection header to guarantee execution from any arbitrary terminal working directory:
+  ```python
+  import sys, os
+  project_root = os.path.abspath(os.path.join(os.path.abspath(''), "../../"))
+  if project_root not in sys.path:
+      sys.path.insert(0, project_root)
+  ```
+* **No Seaborn Dependency:** To ensure flawless runtime execution on minimal system environments, all plotting codes are written using pure standard Matplotlib rather than importing Seaborn.
+
+### 2. Client-Side Pandas Filtering (SSoT Loader Chain)
+To prevent SQLite file lock loops over SSHFS, the dashboard enforces **Option A: Client-Side Pandas Filtering**. It loads the entire database into memory once and splits the segments using Pandas query strings:
+1. **Raw Database Ingestion:** Loads all telemetry: `df_all = get_database_df()`.
+2. **Baseline Impact Filter:** Discards all non-impact flights: `df_impacts = df_all.query("impact_detected == 1")`.
+3. **Sub-Dataset Splits (Pre-Filtered by Impact):**
+   * **Global Cage Groups:** `df_rot` (Rotating Cage only), `df_fix` (Fixed Cage only).
+   * **Nominal Geometry Bins:** `df_75` (75° nominal sweeps), `df_45` (45° nominal sweeps).
+   * **Measured Angle Ranges:** `df_range_30_40` to `df_range_80_90` (6x custom 10-degree bins based on actual tangential contact angle).
+   * **Measured Ranges sub-split by Cage:** `df_range_50_60_rot` / `df_range_50_60_fix` etc.
+
+### 3. Dynamic Plot Swapping
+All thesis-quality scatter and box plots inside the dashboard are designed for rapid iteration. To update the underlying data of a plot instantly, simply redefine the local `plot_data` variable at the top of the cell:
+```python
+# SWAP THIS variable to any pre-filtered loader to plot instantly!
+plot_data = df_range_50_60_rot
+```
+
 ---
 
-# 🚀 Programmatic Notebook Querying: `get_database_df()`
+## 🚀 Programmatic Notebook Querying: `get_database_df()`
 
 You should **never** open a raw `.db` file in an external database explorer over SSHFS, as this causes metadata page corruption and locking loops. Instead, **query the database directly inside your Jupyter Notebooks as a standard pandas DataFrame**!
 

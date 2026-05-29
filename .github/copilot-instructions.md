@@ -93,7 +93,7 @@ These links represent the different dimensions of the project. Reference them wh
 - **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
-## Current Session Status (Last Update: 2026-05-28 15:55 Local Time)
+## Current Session Status (Last Update: 2026-05-29 16:50 Local Time)
 
 ### 🎯 Mission Status
 - **`ExpCollision75Deg` and `ExpCollision75DegV2` missions:** ✅ STABLE, HARDENED & TESTED.
@@ -114,16 +114,18 @@ These links represent the different dimensions of the project. Reference them wh
 - **Heavy drone inertia:** The heavy 1.2kg 4-inch quadcopter has high linear inertia; keeping transit speeds at `0.30 m/s - 0.35 m/s` near geofence boundaries is mandatory.
 - **MicroXRCEAgent Stale Connection:** Do not kill the agent once it connects; doing so freezes the Flight Controller and requires a battery reboot.
 
-### ✅ Completed This Session (2026-05-28)
-- Overhauled and resolved `IndexError` in analysis notebooks by implementing a pause-duration-based V1 vs V2 classifier and a self-healing pass event recovery mechanism.
-- Staged and verified end-to-end headless compilation of `experiments_analysis.ipynb`.
-- Created session journals and appended chat transcripts following the project's strict end-of-day routine.
+### ✅ Completed This Session (2026-05-29)
+- Built pure Matplotlib-based summary notebook `experiments_analysis_summary.ipynb` containing 18+ client-side pre-sliced Pandas DataFrames.
+- Overlaid 4-bin LiPo starting battery capacity trendlines matching each bin color inside Plot 7 (Rotating) and Plot 8 (Fixed).
+- Created Step 9 Comparative Enclosure Overlay plotting exactly 8 battery-colored trendlines simultaneously (dashed for Rotating Cage, solid for Fixed Cage).
+- Hardcoded Y-axis scales strictly to `ylim(0, 15)` and corrected a critical unit scaling conversion from millimeters to centimeters.
+- Purged all Emojis from plot titles and simplified X-axis labels strictly to `'Impact Angle (deg)'`.
+- Added detailed 10-degree bin count overview printout inside the summary loading cell.
 
 ### 📋 Next Priority Order
 1. **Verify Startup End-to-End:** Run `./startup-sequence.sh` and ensure MoCap rigid body tracking is actively streaming in Motive GUI.
-2. **Execute Rotating Cage Loops:** Perform comparative 75° collision runs with the `Rotating Cage` configuration.
-3. **Generate Comparative Boxplots:** Populate the remaining rotating cage datasets in the database and compile 2x2 comparison plots.
-4. **Iterate Angle Series:** Begin 60°, 45°, 30°, 0° variants once 75° sweeps yield comparative rotating vs. fixed cage data.
+2. **Execute Fresh Sweeps:** Run collision sweep flight passes using `ExpCollision75DegV2` and `ExpCollision45Deg` loops to build the database.
+3. **Execute Summary Dashboard:** Clear and execute all cells in `experiments_analysis_summary.ipynb` to output pristine graphics.
 
 ## Tutoring Mode: Socratic Learning Style (Default)
 
@@ -169,24 +171,7 @@ At the end of each session:
 - `## Learning Summary` (numbered lists for key concepts)
 - `## Next Steps` (numbered priority list)
 
-### Current Session Status (Last Update: 2026-05-23)
-
-### What Was Completed
-- **Core Experimental Analysis Pipeline (20-30% Thesis Milestone):** Conceived and engineered the core mathematical and statistical data pipeline (`experiments_analysis` package) to automatically clean raw high-frequency telemetry using Savitzky-Golay filtering, isolate active sweep events, calculate perpendicular tracking errors and closest approach clearances, and compile 2x2 side-by-side comparative boxplots (With vs. Without Cage) and multi-angle progression trends.
-- **Symmetrical 75° Collision Loop Optimization:** Refactored `exp_collision_75deg.py` into a robust `ExpCollision75Deg` loop class. Symmetrized the waypoint logic to fly a straight-line vertical sweep at a constant offset of $X = 0.186$ m, matching your CAD sketch and `/poses` column offset. Hardcoded explicit `0.50 m/s` transit speed to protect the drone, keeping `sweep_speed` strictly limited to the active `WP1 -> WP2` segment.
-- **MoCap Recovery & Diagnostics:** Debugged startup failures after the OptiTrack PC power outage reboot. Replaced all hardcoded IP references in `startup-sequence.sh` with configuration-driven queries from `config/drone_config.json`, fixed the multicast node tracking join timeout pattern, and introduced custom health diagnostics for Companion-to-FC connectivity checking.
-- **Physical Safety Aspect Ratio & Grid Restoration:** Fixed the spatial trajectory plot in `exa_plot_trajectory.py` to enforce a strictly equal aspect ratio and 0.5m grid normalization squares, restoring the CAD drone top vector illustrations at WP2, WP3, and closest approach.
-- **Offboard Heartbeat Velocity Fix:** Enabled `hb.velocity = True` inside [flight_director.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_director.py) to activate PX4 offboard velocity feedforward. Resolves jerky speed profiles and position hunting.
-
-### Next Steps (Priority Order — Tomorrow 2026-05-25)
-1. **Verify Startup End-to-End:** Run `./startup-sequence.sh` and ensure MoCap rigid body tracking is actively streaming in Motive GUI (expect ~980 B/frame rate, <1 mm residual).
-2. **Diagnose Bagfile Corruption:** Investigate `flight_20260524-1904_75°_column_collision_loop_fixed_cage` — check if recoverable with `ros2 bag info`. If corrupt, re-record the flight (it was good data worth repeating).
-3. **Execute Fresh 75° Collision Run:** Use `ExpCollision75Deg` mission to record clean bagfile to `/dev_logs/` (expect 2–3 loops per flight).
-4. **Process Through Pipeline:** Load bagfile into `experiments_analysis.ipynb`, verify Savitzky-Golay filtering is working, check perpendicular error metrics (expect 0.1–0.3 m).
-5. **Build First Comparative Plot:** If single 75° run validates well, execute 2–3 more runs (with & without cage) and generate box plots.
-6. **Iterate Angle Series:** Begin 60°, 45°, 30°, 0° collision angles (if 75° yields consistent data).
-7. **Implement Deceleration Ramping (Future):** Smooth velocity step-changes when transitioning between waypoints.
-8. **Add Automatic Battery Failsafe (Future):** Voltage-based auto-Land when capacity < 40%.
+## Redundant Legacy Section Purged
 
 ### Known Blockers
 - **Bagfile Corruption (NEW — 2026-05-24):** Flight `flight_20260524-1904_75°_column_collision_loop_fixed_cage` fails to process with "unknown (opcode 0) record has length 7696581394432 exceeds limit 4294967296". This is a 7.6 TB record claim—file corruption during recording likely. Action: Inspect with `ros2 bag info` (may hang if corrupt); if unrecoverable, re-record. Add file-size sanity check to `record_flight_bag.sh` to catch corruption early.
