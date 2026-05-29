@@ -271,7 +271,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
         
         # Render trajectory plot using the flight's exact dynamic column coordinates
         clean_label = label.lower().replace(' ', '_').replace('°', 'deg')
-        output_plot_path = os.path.join(project_root, "dev_logs", "analysis", f"trajectory_{clean_label}_rotating_cage.png")
+        output_plot_path = os.path.join(project_root, "dev_logs", "analysis", "graphics", f"trajectory_{clean_label}_rotating_cage.png")
         plot_trajectory(rep['df_mocap'], rep['wp_events'], rep['col_x_flight'], rep['col_y_flight'], 
                         cage_diameter, column_diameter, output_path=output_plot_path, flight_name=rep['flight_name'],
                         dynamic_waypoints=rep['dynamic_waypoints'], df_column=rep['df_column'])
@@ -331,7 +331,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
         
         # Render trajectory plot using the flight's exact dynamic column coordinates
         clean_label = label.lower().replace(' ', '_').replace('°', 'deg')
-        output_plot_path = os.path.join(project_root, "dev_logs", "analysis", f"trajectory_{clean_label}_fixed_cage.png")
+        output_plot_path = os.path.join(project_root, "dev_logs", "analysis", "graphics", f"trajectory_{clean_label}_fixed_cage.png")
         plot_trajectory(rep['df_mocap'], rep['wp_events'], rep['col_x_flight'], rep['col_y_flight'], 
                         cage_diameter, column_diameter, output_path=output_plot_path, flight_name=rep['flight_name'],
                         dynamic_waypoints=rep['dynamic_waypoints'], df_column=rep['df_column'])

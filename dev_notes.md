@@ -255,7 +255,6 @@ bash -lc '
   rosdep install --from-paths /home/ws/src --ignore-src -r -y
   sudo chown -R $(whoami) /home/ws/
   colcon build --symlink-install
-  pip install -e /home/ws/src/object-tracking-
   bash /home/ws/src/PX4-Autopilot/Tools/setup/ubuntu.sh
   cd /home/ws/src/PX4-Autopilot/
   make px4_sitl

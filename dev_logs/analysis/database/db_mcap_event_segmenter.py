@@ -1,32 +1,33 @@
 #!/usr/bin/env python3
 """
-MCAP Event-Based Pass Segmenter
-================================
+MCAP Unified Pass Segmenter
+===========================
 Post-flight utility that physically slices a full raw flight recording into
-separate, self-contained pass-level .mcap files based strictly on 
-`/flight_director/active_waypoint` ROS 2 state transition event messages.
+separate, self-contained pass-level .mcap files.
 
-Rules:
-- Only processes flights recorded ON OR AFTER the approved cutoff date
-  (flight_20260524-1904, i.e. 2026-05-24 19:04).
-- Automatically repairs corrupted MCAP files before slicing (re-writes
-  a clean copy from recovered records; original is preserved).
-- Uses the `/flight_director/active_waypoint` topic to slice passes.
-- Padded by ±2s around the detected EXP_END_POINT transition window.
+Features:
+- Dual Slicing Modes: Supports both robust event-driven and legacy coordinate-based segmentation.
+- Automated Fallback: Defaults to scanning for `/flight_director/active_waypoint` transition events,
+  but automatically falls back to MoCap coordinate-based bounding if no event topics are found.
+- MCAP Self-Healing: Unlimited record-size StreamReader recovery for interrupted SSHFS streams.
+- Approved Cutoff Enforcement: Safely skips legacy test files from before 2026-05-24.
 
 Usage:
-    python3 mcap_event_segmenter.py                          # process all approved flights
-    python3 mcap_event_segmenter.py <path_to_flight_folder>  # process one specific folder
+    python3 -m dev_logs.analysis.database.db_mcap_event_segmenter                           # Auto-process all approved flights
+    python3 -m dev_logs.analysis.database.db_mcap_event_segmenter <path_to_flight_folder>    # Auto-process specific folder
+    python3 -m dev_logs.analysis.database.db_mcap_event_segmenter --mode legacy              # Enforce legacy coordinate mode
+    python3 -m dev_logs.analysis.database.db_mcap_event_segmenter --mode event               # Enforce event-driven mode
 """
 import os
 import sys
 import glob
 import re
+import argparse
 import pandas as pd
 from mcap_ros2.reader import read_ros2_messages
 from mcap_ros2.writer import Writer
 
-# Resolve package directory and inject into python path
+# ── Dynamic Self-Healing Path Boilerplate ────────────────────────────────────
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
 if project_root not in sys.path:
@@ -34,7 +35,8 @@ if project_root not in sys.path:
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from dev_logs.analysis.database.db_loader import load_mcap
+from dev_logs.analysis.database.db_loader import load_drone_metadata, load_mcap, build_dataframes
+from dev_logs.analysis.kinematics.kin_calculator import compute_velocity, find_waypoint_events
 
 # ── Approved flight cutoff ────────────────────────────────────────────────────
 # Only flights with a timestamp >= this value (YYYYMMDD-HHMM) are eligible.
@@ -162,12 +164,11 @@ def try_load_mcap(flight_path):
     try:
         from mcap_ros2.decoder import DecoderFactory as ROS2DecoderFactory
     except ImportError:
-        from mcap_ros2.reader import read_ros2_messages as _rr
         ROS2DecoderFactory = None
 
     topic_data = {}
     with open(repaired, "rb") as f:
-        reader = make_reader(f, decoder_factories=[ROS2DecoderFactory()])
+        reader = make_reader(f, decoder_factories=[ROS2DecoderFactory()] if ROS2DecoderFactory else [])
         for schema, channel, message, ros_msg in reader.iter_decoded_messages():
             t = channel.topic
             if t not in topic_data:
@@ -213,16 +214,15 @@ def has_active_waypoint_topic(flight_path):
                 if channel.topic == '/flight_director/active_waypoint':
                     return True
     except Exception:
-        # If index read fails (corrupted file), let the try_load_mcap flow run its repair
+        # If index read fails, let try_load_mcap run its repair later
         return True
     return False
 
 
-def segment_flight_mcap(flight_path, padding_sec=2.0):
+def segment_flight_mcap(flight_path, mode="auto", padding_sec=2.0):
     """
     Parses the MCAP inside flight_path, detects all sweeping passes using
-    published `/flight_director/active_waypoint` transition events,
-    and slices the original messages into standalone pass-specific MCAP files.
+    either state-events or kinematics, and slices them into standalone MCAP files.
     """
     folder_name = os.path.basename(flight_path)
 
@@ -237,91 +237,161 @@ def segment_flight_mcap(flight_path, padding_sec=2.0):
         print(f"✅ Already segmented ({len(existing_passes)} pass file(s) found): {folder_name}")
         return
 
-    # ── Gate 3: contains active waypoint topic? (Ultra-fast check) ────────────
-    if not has_active_waypoint_topic(flight_path):
-        print(f"⏭️  Skipping {folder_name!r}: no active waypoint topic found in channels list.")
-        return
+    # ── Gate 3: Choose slicing strategy dynamically ───────────────────────────
+    has_event_topic = has_active_waypoint_topic(flight_path)
+    
+    selected_mode = mode
+    if mode == "auto":
+        selected_mode = "event" if has_event_topic else "legacy"
+
+    print(f"\n=============================================")
+    print(f"⚡ PROCESSING {folder_name.upper()}")
+    print(f"   Selected Slicing Mode: {selected_mode.upper()} "
+          f"(Event topic present: {has_event_topic})")
+    print(f"=============================================")
 
     # Load topic data (will auto-repair if corrupted)
     try:
         topic_data, bag_start_ns, source_mcap_path = try_load_mcap(flight_path)
     except Exception as e:
-        print(f"⚠️  Skipping {folder_name!r}: failed to load MCAP: {e}")
+        print(f"❌ [ERROR] Failed to load/repair MCAP for {folder_name}: {e}")
         return
 
-    waypoint_topic = '/flight_director/active_waypoint'
-    if waypoint_topic not in topic_data:
-        print(f"⏭️  Skipping {folder_name!r}: no active waypoint event logs found.")
-        return
+    complete_passes = []  # List of tuples: (pass_label/index, {'start_ns': t, 'end_ns': t})
 
-    # Extract all event transitions
-    events = []
-    for msg in topic_data[waypoint_topic]:
-        events.append((msg.log_time_ns, msg.ros_msg.data))
-    
-    events.sort(key=lambda x: x[0])
+    # ──────────────────────────────────────────────────────────────────────────
+    # MODE A: Event-Driven Slicing Logic
+    # ──────────────────────────────────────────────────────────────────────────
+    if selected_mode == "event":
+        waypoint_topic = '/flight_director/active_waypoint'
+        if waypoint_topic not in topic_data:
+            print(f"⚠️  Skipping event mode: no active waypoint event logs found.")
+            return
 
-    if not events:
-        print(f"⚠️  No events recorded on {waypoint_topic} in {folder_name!r}.")
-        return
+        events = []
+        for msg in topic_data[waypoint_topic]:
+            events.append((msg.log_time_ns, msg.ros_msg.data))
+        events.sort(key=lambda x: x[0])
 
-    print(f"\n=============================================")
-    print(f"⚡ PROCESSING EVENTS FOR: {folder_name}")
-    print(f"=============================================")
+        if not events:
+            print(f"⚠️  No events recorded on {waypoint_topic} in {folder_name!r}.")
+            return
 
-    # Detect sweep passes
-    passes = {}  # loop_idx -> { 'start_ns': timestamp, 'end_ns': timestamp }
-    for t_ns, payload in events:
-        t_rel = (t_ns - bag_start_ns) / 1e9
-        print(f"   ⏱️  [{t_rel:6.2f}s] -> Event: {payload}")
-        
-        match = re.match(r'LOOP_(\d+)_(.+)', payload)
-        if match:
-            loop_idx = int(match.group(1))
-            label = match.group(2)
+        passes = {}  # loop_idx -> { 'start_ns': timestamp, 'end_ns': timestamp }
+        for t_ns, payload in events:
+            t_rel = (t_ns - bag_start_ns) / 1e9
+            print(f"   ⏱️  [{t_rel:6.2f}s] -> Event: {payload}")
             
-            if label == "EXP_END_POINT":
-                passes[loop_idx] = {'start_ns': t_ns, 'end_ns': None}
-            elif label in ["OTHER", "EXP_START_POINT"] and loop_idx in passes:
-                if passes[loop_idx]['end_ns'] is None:
-                    passes[loop_idx]['end_ns'] = t_ns
-        elif payload in ["FINISHED", "LANDING"]:
-            for loop_idx, p in passes.items():
-                if p['end_ns'] is None:
-                    p['end_ns'] = t_ns
+            match = re.match(r'LOOP_(\d+)_(.+)', payload)
+            if match:
+                loop_idx = int(match.group(1))
+                label = match.group(2)
+                
+                if label == "EXP_END_POINT":
+                    passes[loop_idx] = {'start_ns': t_ns, 'end_ns': None}
+                elif label in ["OTHER", "EXP_START_POINT"] and loop_idx in passes:
+                    if passes[loop_idx]['end_ns'] is None:
+                        passes[loop_idx]['end_ns'] = t_ns
+            elif payload in ["FINISHED", "LANDING"]:
+                for loop_idx, p in passes.items():
+                    if p['end_ns'] is None:
+                        p['end_ns'] = t_ns
 
-    # Handle unclosed sweeps (e.g. abrupt stop of bag recording) using the final msg time
-    last_msg_time_ns = max(m.log_time_ns for msgs in topic_data.values() for m in msgs) if topic_data else None
-    for loop_idx, p in passes.items():
-        if p['end_ns'] is None and last_msg_time_ns:
-            p['end_ns'] = last_msg_time_ns
+        # Handle unclosed sweeps using the final message time
+        last_msg_time_ns = max(m.log_time_ns for msgs in topic_data.values() for m in msgs) if topic_data else None
+        for loop_idx, p in passes.items():
+            if p['end_ns'] is None and last_msg_time_ns:
+                p['end_ns'] = last_msg_time_ns
 
-    complete_passes = []
-    for loop_idx in sorted(passes.keys()):
-        p = passes[loop_idx]
-        if p['start_ns'] is not None and p['end_ns'] is not None:
-            complete_passes.append((loop_idx, p))
+        for loop_idx in sorted(passes.keys()):
+            p = passes[loop_idx]
+            if p['start_ns'] is not None and p['end_ns'] is not None:
+                complete_passes.append((f"Pass-{loop_idx:02d}", p))
 
+    # ──────────────────────────────────────────────────────────────────────────
+    # MODE B: Legacy Coordinate-Based Slicing Logic
+    # ──────────────────────────────────────────────────────────────────────────
+    else:
+        # Load metadata configurations
+        drone_tracker_name, system_config = load_drone_metadata(project_root)
+        primary_body  = next((b for b in system_config.get("tracked_bodies", []) if b.get("role") == "primary"),  {})
+        obstacle_body = next((b for b in system_config.get("tracked_bodies", []) if b.get("role") == "obstacle"), {})
+        cage_radius   = primary_body.get("cage_diameter_m", 0.358) / 2.0
+        column_radius = obstacle_body.get("diameter_m", 0.09) / 2.0
+
+        try:
+            dfs = build_dataframes(topic_data, drone_tracker_name, bag_start_ns)
+        except Exception as e:
+            print(f"❌ [ERROR] Failed to build legacy coordinate dataframes: {e}")
+            return
+
+        df_mocap    = dfs['mocap']
+        df_setpoint = dfs.get('setpoint', pd.DataFrame())
+        df_column   = dfs.get('column', pd.DataFrame())
+        arming_time = dfs['arming_time']
+        dynamic_waypoints = dfs.get('dynamic_waypoints', [])
+
+        if df_mocap.empty:
+            print("❌ [ERROR] MoCap dataframe is empty. Cannot segment legacy passes.")
+            return
+
+        df_mocap = compute_velocity(df_mocap)
+
+        takeoff_mask = df_mocap['z'] > 0.15
+        takeoff_time = df_mocap.loc[takeoff_mask, 't'].iloc[0] if takeoff_mask.any() else arming_time + 2.0
+
+        if df_column is not None and not df_column.empty:
+            col_x, col_y = df_column['x'].head(50).mean(), df_column['y'].head(50).mean()
+        else:
+            col_x, col_y = 0.408, 0.358
+
+        wp_events_list = find_waypoint_events(
+            df_mocap, df_setpoint, takeoff_time, label=folder_name,
+            column_x=col_x, column_y=col_y,
+            column_radius=column_radius, cage_radius=cage_radius,
+            return_all=True, dynamic_waypoints=dynamic_waypoints
+        )
+
+        if not wp_events_list:
+            print("⚠️  No coordinate-based sweeping passes detected.")
+            return
+
+        # Map complete passes (must contain WP2/WP1 and WP3)
+        legacy_passes = [
+            (idx, evs) for idx, evs in enumerate(wp_events_list)
+            if ('WP2' in evs or 'WP1' in evs) and 'WP3' in evs
+        ]
+
+        for slice_idx, (orig_idx, wp_events) in enumerate(legacy_passes):
+            wp2_t = wp_events.get('WP2') or wp_events.get('WP1')
+            wp3_t = wp_events.get('WP3')
+            
+            t_start_ns = bag_start_ns + int((wp2_t) * 1e9)
+            t_end_ns   = bag_start_ns + int((wp3_t) * 1e9)
+            complete_passes.append((f"Pass-{slice_idx+1:02d}", {'start_ns': t_start_ns, 'end_ns': t_end_ns}))
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Message Slicing Implementation
+    # ──────────────────────────────────────────────────────────────────────────
     if not complete_passes:
-        print(f"⚠️  No valid sweep loops detected in {folder_name!r}.")
+        print(f"⚠️  No complete passes detected — no slice files created.")
         return
 
-    print(f"🎯 Found {len(complete_passes)} sweep pass(es) to slice.")
+    print(f"🎯 Slicing {len(complete_passes)} complete pass(es).")
     base_name = os.path.basename(source_mcap_path).replace(".repaired.mcap", "").replace(".mcap", "")
-
     padding_ns = int(padding_sec * 1e9)
 
-    for slice_idx, (loop_idx, p) in enumerate(complete_passes):
+    for idx, (label, p) in enumerate(complete_passes):
         t_start_ns = p['start_ns'] - padding_ns
         t_end_ns   = p['end_ns'] + padding_ns
 
         t_start_rel = max(0.0, (t_start_ns - bag_start_ns) / 1e9)
         t_end_rel   = (t_end_ns - bag_start_ns) / 1e9
 
-        output_mcap_name = f"{base_name}-pass{slice_idx+1:02d}.mcap"
+        output_mcap_name = f"{base_name}-pass{idx+1:02d}.mcap"
         output_mcap_path = os.path.join(flight_path, output_mcap_name)
 
-        print(f"🎬 Slicing Loop {loop_idx} as Pass {slice_idx+1:02d}: {t_start_rel:.2f}s → {t_end_rel:.2f}s")
+        print(f"🎬 Slicing {label} as Pass {idx+1:02d}: {t_start_rel:.2f}s → {t_end_rel:.2f}s")
         print(f"   💾 Output: {output_mcap_name}")
 
         msg_count = 0
@@ -350,8 +420,8 @@ def segment_flight_mcap(flight_path, padding_sec=2.0):
     print("=============================================\n")
 
 
-def segment_all_flights(flights_dir):
-    """Runs the event segmenter over all flight folders in flights_dir."""
+def segment_all_flights(flights_dir, mode="auto", padding_sec=2.0):
+    """Runs the segmenter over all approved flight folders in flights_dir."""
     folders = sorted([
         os.path.join(flights_dir, d)
         for d in os.listdir(flights_dir)
@@ -360,18 +430,29 @@ def segment_all_flights(flights_dir):
 
     print(f"🔍 Found {len(folders)} flight folder(s) to check.\n")
     for folder in folders:
-        segment_flight_mcap(folder)
+        segment_flight_mcap(folder, mode=mode, padding_sec=padding_sec)
 
 
 if __name__ == "__main__":
-    flights_root = os.path.join(os.path.dirname(os.path.dirname(current_dir)), "flights")
-    
-    if len(sys.argv) > 1:
-        target = sys.argv[1]
+    parser = argparse.ArgumentParser(description="Unified Telemetry MCAP Pass Segmenter")
+    parser.add_argument("flight_path", nargs="?", default=None, 
+                        help="Specific flight folder to segment. If omitted, segments all approved flights.")
+    parser.add_argument("--mode", choices=["auto", "event", "legacy"], default="auto", 
+                        help="Slicing mode. auto: scans for waypoint transitions, falls back to coordinates.")
+    parser.add_argument("--padding", type=float, default=2.0, 
+                        help="Temporal padding in seconds around the detected sweep pass window (default: 2.0s).")
+
+    args = parser.parse_args()
+
+    # If running with python -m, current_dir is inside dev_logs/analysis/database/
+    flights_root = os.path.abspath(os.path.join(current_dir, "..", "..", "flights"))
+
+    if args.flight_path:
+        target = args.flight_path
         if os.path.isdir(target):
-            segment_flight_mcap(target)
+            segment_flight_mcap(target, mode=args.mode, padding_sec=args.padding)
         else:
             print(f"Error: Target directory not found: {target}")
             sys.exit(1)
     else:
-        segment_all_flights(flights_root)
+        segment_all_flights(flights_root, mode=args.mode, padding_sec=args.padding)

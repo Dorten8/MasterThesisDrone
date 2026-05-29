@@ -249,3 +249,24 @@ The MCAP segmenter is a standalone tool that physically slices a full raw flight
 # Run on all approved flights from the repository root:
 PYTHONPATH=. python3 dev_logs/analysis/database/db_mcap_event_segmenter.py
 ```
+
+---
+
+# 📈 Core Flight & Trajectory Design Principles
+
+These fundamental design rules dictate both how the physical drone is commanded in flight and how post-flight telemetry is structured for publication-grade thesis figures.
+
+### 1. Spatial Aspect Ratio & Grid Discipline for Thesis Graphics
+* **The Visual Standard:** All top-down 2D spatial trajectory plots (specifically when generating final figures for Chapter 5/6) **MUST** enforce a strictly equal aspect ratio ($1:1$ physical meter mapping) and a normalized grid of **$0.5\text{ m}$ squares**.
+* **Why:** Default plotting axes auto-scale independently based on the data bounds. This distorts the spatial perspective, making a minor $10\text{ cm}$ lateral tracking deviation look like a massive $2\text{ m}$ overshoot, which severely undermines academic and scientific credibility. Enforcing equal mapping provides a physically truthful representation of the drone's collision deflection and recovery.
+
+### 2. PX4 Offboard Velocity Feedforward Control
+* **The Control Standard:** In all autonomous waypoint sweep loops (defined inside `drone_control/missions/`), velocity feedforward commands must be actively calculated and sent alongside position targets:
+  ```python
+  hb.velocity = True
+  hb.vx = cmd_vel[0]
+  hb.vy = cmd_vel[1]
+  hb.vz = cmd_vel[2]
+  ```
+* **Why:** Position-setpoint-only commands force the PX4 flight controller to hunt aggressively toward target coordinates, leading to highly jerky speed profiles and massive vehicle attitude oscillations upon waypoint transition. Velocity feedforward acts as an explicit control hint, informing the flight controller not just *where* to fly, but *how fast* to be traveling at each point. This produces butter-smooth sweeping transits and stable column contact approaches.
+
