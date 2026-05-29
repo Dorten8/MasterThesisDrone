@@ -33,6 +33,8 @@ rviz2b
 mkdir -p ~/pi_drone_sshfs
 ### Connect the Pi's workspace to your laptop
 sshfs dorten@dorten-pi5drone.local:/home/dorten/ws ~/pi_drone_sshfs -o auto_cache,reconnect,follow_symlinks
+### Combined command (with cache disabled to prevent SQLite/metadata page corruption over SSHFS)
+sshfs dorten@dorten-pi5drone.local:/home/dorten/ws ~/pi_drone_sshfs -o cache=no,cache_timeout=0,cache_stat_timeout=0,cache_dir_timeout=0,cache_link_timeout=0,reconnect,follow_symlinks
 ### unmount
 umount ~/pi_drone_sshfs
 ### The -u is unmount, -z is 'lazy' (cleans up the mess even if busy)
@@ -321,8 +323,7 @@ bash -lc 'source /opt/ros/humble/setup.bash && rviz2'
 
 To slice a new flight (after landing on the Pi):
 # 1. After landing — slice passes from raw bag:
-python3 dev_logs/analysis/experiments_analysis/mcap_segmenter.py
-python3 dev_logs/analysis/experiments_analysis/mcap_event_segmenter.py
+python3 dev_logs/analysis/database/db_mcap_event_segmenter.py
 
 # 2. Re-run analysis — new passes auto-populate DB, old ones are skipped:
-python3 -m dev_logs.analysis.experiments_analysis.exa_pipeline
+python3 -m dev_logs.analysis.database.db_pipeline
