@@ -40,6 +40,28 @@ umount ~/pi_drone_sshfs
 ### The -u is unmount, -z is 'lazy' (cleans up the mess even if busy)
 fusermount -u -z ~/pi_drone_sshfs
 
+# IDE Troubleshooting
+## Antigravity Webview Service Worker Crash (InvalidStateError)
+If you get `Unable to open 'experiments_analysis.ipynb'` with the error:
+`Could not initialize webview: Error: Could not register service worker: InvalidStateError: Failed to register a ServiceWorker: The document is in an invalid state.`
+
+This is an Chromium-webview cache desynchronization bug inside the IDE. Run this single block in your terminal to force-reset:
+```fish
+# 1. Force-kill all running and helper processes
+pkill -f -9 antigravity; pkill -f -9 vscodium; pkill -f -9 code
+
+# 2. Delete active lock files
+rm -f ~/.config/Antigravity/code.lock
+rm -f ~/.config/Antigravity/SingletonLock
+rm -f ~/.config/Antigravity/SingletonSocket
+
+# 3. Wipe the corrupted Service Worker and Webview caches
+rm -rf ~/.config/Antigravity/'Service Worker'
+rm -rf ~/.config/Antigravity/Cache
+rm -rf ~/.config/Antigravity/'Code Cache'
+```
+Reopen Antigravity and the notebook will render perfectly!
+
 ## MAVLINK-ROUTER
 Running it with specific config (not default in root)
 mavlink-routerd -c /home/ws/config/mavlink-router/main.conf
@@ -323,7 +345,26 @@ bash -lc 'source /opt/ros/humble/setup.bash && rviz2'
 
 To slice a new flight (after landing on the Pi):
 # 1. After landing — slice passes from raw bag:
-python3 dev_logs/analysis/database/db_mcap_event_segmenter.py
+python3 -m dev_logs.analysis.database.db_mcap_event_segmenter
 
 # 2. Re-run analysis — new passes auto-populate DB, old ones are skipped:
 python3 -m dev_logs.analysis.database.db_pipeline
+
+## Python Path Resiliency & CLI Best Practices
+
+### 🔍 The "Why": Direct Script Invocation vs. Module Execution
+When running Python scripts inside nested folders (like `dev_logs/analysis/database/`):
+* **Direct Script Run (`python3 path/to/script.py`):** Python automatically adds only the directory containing `script.py` to `sys.path`. It has no knowledge of parent folders, so `from dev_logs.analysis...` imports will raise a `ModuleNotFoundError`.
+* **Module Execution (`python3 -m dev_logs.analysis.database.script`):** By executing with the `-m` (module) flag from the repository root, Python automatically prepends the root directory (`/home/dorten/pi_drone_sshfs`) to `sys.path`, resolving all top-level package imports flawlessly.
+
+### 🛡️ The "How": Universal Self-Healing Path Boilerplate
+To make any Python script runnable from **anywhere** (both via direct script invocation and module execution), paste this standard, self-healing one-liner at the absolute top of the file before any package imports:
+
+```python
+import sys, os; sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../" if "__file__" in locals() or "__file__" in globals() else "")))
+```
+
+#### How it works:
+1. `os.path.dirname(__file__)` finds the script's own folder (e.g. `dev_logs/analysis/database/`).
+2. `os.path.join(..., "../../../")` traverses 3 directory levels up to dynamically resolve the absolute path of the repository root (`pi_drone_sshfs`).
+3. `sys.path.insert(0, ...)` prepends the root folder to Python's search path, making `dev_logs` instantly importable.
