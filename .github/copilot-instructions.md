@@ -70,6 +70,7 @@ These links represent the different dimensions of the project. Reference them wh
 
 ## Key repository conventions
 
+- **CRITICAL SSHFS & GIT RULE (CORE MEMORY)**: This workspace is a network-mounted **SSHFS location** mapped from the Legion laptop to the drone. **NEVER RUN ANY GIT COMMITS, STAGING (git add), OR RESET COMMANDS DIRECTLY IN THIS HOST-SIDE WORKSPACE!** Running git commands here locks the index (`.git/index.lock`) over the network mount and blocks the user, who runs all commits exclusively from the drone's terminal side (`dorten@dorten-pi5drone:/home/ws`). The model's job is strictly to prepare SSoT changes, write session journals, and provide the raw verbose commit message/command text in the final chat response for the user to run.
 - Read `README.md` intro first before making architectural or workflow changes.
 - Treat this repository root as the ROS workspace root (`/home/ws`), not just a source checkout.
 - Keep/expect these ROS env defaults in container sessions:

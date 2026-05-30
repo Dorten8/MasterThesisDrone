@@ -47,6 +47,33 @@ def init_db():
             timestamp        TEXT
         )
     """)
+    # Initialize raw flight battery and efficiency table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS flights_battery_efficiency (
+            flight_name                     TEXT PRIMARY KEY,
+            condition                       TEXT NOT NULL,
+            log_duration                    REAL,
+            total_armed_time                REAL,
+            total_flying_time               REAL,
+            voltage_at_arm                  REAL,
+            remaining_at_arm                REAL,
+            voltage_at_takeoff              REAL,
+            remaining_at_takeoff            REAL,
+            voltage_at_landing              REAL,
+            remaining_at_landing            REAL,
+            voltage_at_disarm               REAL,
+            remaining_at_disarm             REAL,
+            min_voltage_during_flight       REAL,
+            avg_voltage_during_flight       REAL,
+            voltage_drop_rate_armed         REAL,
+            capacity_drain_rate_armed       REAL,
+            voltage_drop_rate_flying        REAL,
+            capacity_drain_rate_flying      REAL,
+            total_capacity_consumed_pct     REAL,
+            total_voltage_dropped           REAL,
+            timestamp                       TEXT
+        )
+    """)
     # Migrate: add new columns if they don't yet exist (backwards compat with old DB)
     new_cols = [
         ("sweep_speed", "REAL"),
@@ -235,6 +262,53 @@ def get_database_df():
     conn = get_connection()
     try:
         df = pd.read_sql_query("SELECT * FROM flights_summary ORDER BY condition DESC, flight_name ASC", conn)
+    finally:
+        conn.close()
+    return df
+
+def insert_or_replace_battery_efficiency(flight_name, condition, metrics):
+    """Inserts or replaces raw flight battery and efficiency metrics in SQLite."""
+    init_db()
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT OR REPLACE INTO flights_battery_efficiency (
+            flight_name, condition, log_duration, total_armed_time, total_flying_time,
+            voltage_at_arm, remaining_at_arm,
+            voltage_at_takeoff, remaining_at_takeoff,
+            voltage_at_landing, remaining_at_landing,
+            voltage_at_disarm, remaining_at_disarm,
+            min_voltage_during_flight, avg_voltage_during_flight,
+            voltage_drop_rate_armed, capacity_drain_rate_armed,
+            voltage_drop_rate_flying, capacity_drain_rate_flying,
+            total_capacity_consumed_pct, total_voltage_dropped,
+            timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        flight_name, condition,
+        metrics.get('log_duration'), metrics.get('total_armed_time'), metrics.get('total_flying_time'),
+        metrics.get('voltage_at_arm'), metrics.get('remaining_at_arm'),
+        metrics.get('voltage_at_takeoff'), metrics.get('remaining_at_takeoff'),
+        metrics.get('voltage_at_landing'), metrics.get('remaining_at_landing'),
+        metrics.get('voltage_at_disarm'), metrics.get('remaining_at_disarm'),
+        metrics.get('min_voltage_during_flight'), metrics.get('avg_voltage_during_flight'),
+        metrics.get('voltage_drop_rate_armed'), metrics.get('capacity_drain_rate_armed'),
+        metrics.get('voltage_drop_rate_flying'), metrics.get('capacity_drain_rate_flying'),
+        metrics.get('total_capacity_consumed_pct'), metrics.get('total_voltage_dropped'),
+        timestamp
+    ))
+    conn.commit()
+    conn.close()
+    print(f"💾 Successfully cached '{flight_name}' battery efficiency metrics in SQLite.")
+
+def get_battery_efficiency_df():
+    """Queries all results from flights_battery_efficiency and returns them as a pandas DataFrame."""
+    import pandas as pd
+    init_db()
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query("SELECT * FROM flights_battery_efficiency ORDER BY condition DESC, flight_name ASC", conn)
     finally:
         conn.close()
     return df
