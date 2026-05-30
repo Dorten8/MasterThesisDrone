@@ -22,7 +22,7 @@ def perpendicular_distance(p, p1, p2):
 
 def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358, 
                     cage_diameter=0.358, column_diameter=0.09, output_path=None, flight_name=None,
-                    dynamic_waypoints=None, df_column=None):
+                    dynamic_waypoints=None, df_column=None, df_setpoint=None):
     """Plots 2D top-down spatial trajectory, showing the flight sweep, waypoints,
     safety cage, minimum clearance vector, maximum deviation, and hatched recovery area.
     """
@@ -50,6 +50,27 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
 
     cage_radius = cage_diameter / 2.0
     column_radius = column_diameter / 2.0
+
+    # Dynamic target attractor waypoint sequence (theoretical commands)
+    if dynamic_waypoints and len(dynamic_waypoints) == 4:
+        wps = np.array([dynamic_waypoints[1][1], dynamic_waypoints[2][1]])
+    else:
+        is_collision = False
+        is_45 = False
+        if flight_name:
+            fn_lower = flight_name.lower()
+            if "collision" in fn_lower or "75" in fn_lower or "45" in fn_lower:
+                is_collision = True
+            if "45" in fn_lower:
+                is_45 = True
+        
+        if is_collision:
+            x_lane = 0.248 if is_45 else 0.186
+            wps = np.array([[x_lane, 0.950], [x_lane, -1.200]])
+        else:
+            wps = np.array([[0.100, 1.200], [0.100, -1.200]])
+
+    wp3_ideal_x, wp3_ideal_y = wps[1][0], wps[1][1]
 
     # CRITICAL SPEC: Truncate sweep strictly between Exp. Start-point (WP2) and Exp. End-point (WP3)
     wp2_t = wp_events.get('WP2')
@@ -123,9 +144,9 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
     if not df_recovery.empty and len(df_recovery) >= 2:
         rot_rec_x, rot_rec_y = rotate_coords(df_recovery['x'], df_recovery['y'])
         
-        # Calculate nominal path projection to close the polygon
-        dx_line = wp3_x - wp2_x
-        dy_line = wp3_y - wp2_y
+        # Calculate nominal path projection relative to Hybrid tracking segment (Actual Start -> Ideal End)
+        dx_line = wp3_ideal_x - wp2_x
+        dy_line = wp3_ideal_y - wp2_y
         line_len_sq = dx_line**2 + dy_line**2
         if line_len_sq > 0:
             ap_x = df_recovery['x'] - wp2_x
@@ -143,7 +164,7 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
             line_len = np.sqrt(line_len_sq)
             ux, uy = dx_line / line_len, dy_line / line_len
             s_rec = ap_x * ux + ap_y * uy
-            d_rec = np.array([perpendicular_distance((row['x'], row['y']), (wp2_x, wp2_y), (wp3_x, wp3_y)) for _, row in df_recovery.iterrows()])
+            d_rec = np.array([perpendicular_distance((row['x'], row['y']), (wp2_x, wp2_y), (wp3_ideal_x, wp3_ideal_y)) for _, row in df_recovery.iterrows()])
             
             sort_idx = np.argsort(s_rec)
             s_sorted = s_rec.iloc[sort_idx]
@@ -155,20 +176,26 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
             ax.fill(poly_x, poly_y, color='purple', alpha=0.15, hatch='//', edgecolor='purple', linewidth=0.5,
                     label=f'Recovery Area ({area_cm2:.1f} cm²)', zorder=3)
 
-    # B. Calculate and Plot Perpendicular Maximum Deviation
-    dx_line = wp3_x - wp2_x
-    dy_line = wp3_y - wp2_y
+    # B. Calculate and Plot Perpendicular Maximum Deviation (strictly post-impact to isolate recovery rebound)
+    # Projected relative to the Hybrid tracking segment (Actual Start -> Ideal End)
+    dx_line = wp3_ideal_x - wp2_x
+    dy_line = wp3_ideal_y - wp2_y
     line_len_sq = dx_line**2 + dy_line**2
     if line_len_sq > 0:
-        ap_x = df_mocap_sweep['x'] - wp2_x
-        ap_y = df_mocap_sweep['y'] - wp2_y
+        # Bounded strictly to post-collision samples
+        df_dev_search = df_mocap_sweep[df_mocap_sweep['t'] >= t_collision]
+        if df_dev_search.empty:
+            df_dev_search = df_mocap_sweep
+            
+        ap_x = df_dev_search['x'] - wp2_x
+        ap_y = df_dev_search['y'] - wp2_y
         t_proj = (ap_x * dx_line + ap_y * dy_line) / line_len_sq
         proj_x = wp2_x + t_proj * dx_line
         proj_y = wp2_y + t_proj * dy_line
-        perp_dists = np.sqrt((df_mocap_sweep['x'] - proj_x)**2 + (df_mocap_sweep['y'] - proj_y)**2)
+        perp_dists = np.sqrt((df_dev_search['x'] - proj_x)**2 + (df_dev_search['y'] - proj_y)**2)
         
         max_dev_idx = np.argmax(perp_dists)
-        p_max_x, p_max_y = df_mocap_sweep['x'].iloc[max_dev_idx], df_mocap_sweep['y'].iloc[max_dev_idx]
+        p_max_x, p_max_y = df_dev_search['x'].iloc[max_dev_idx], df_dev_search['y'].iloc[max_dev_idx]
         h_max_x, h_max_y = proj_x.iloc[max_dev_idx], proj_y.iloc[max_dev_idx]
         dev_max_val = perp_dists.iloc[max_dev_idx]
         
@@ -183,7 +210,7 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
         mid_y = 0.5 * (rot_p_max_y + rot_h_max_y)
         ax.annotate(f"dev_max = {dev_max_val*1000:.0f} mm", xy=(mid_x, mid_y), xytext=(12, 0), textcoords='offset points',
                     fontsize=8, fontweight='bold', color='orange', ha='left', va='center',
-                    bbox=dict(facecolor='white', alpha=0.9, edgecolor='none'))
+                    bbox=dict(facecolor='white', alpha=0.9, edgecolor='none', pad=1.0))
 
     # 1. Plot the Central Column Obstacle (to scale, rotated)
     column_circle_outer = plt.Circle((rot_col_x, rot_col_y), column_radius, color='#FFCC00', alpha=0.3, 
@@ -196,24 +223,15 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
     # 2. Plot Drone Actual Flight Path (ONLY truncated active sweep path, rotated)
     ax.plot(rot_traj_x, rot_traj_y, color=C_MOCAP, alpha=0.8, linewidth=2.5, label='Actual Path (MoCap ENU)')
 
+    # Plot PX4 Target Setpoint Trajectory if provided
+    if df_setpoint is not None and not df_setpoint.empty and 'x_cmd' in df_setpoint.columns and 'y_cmd' in df_setpoint.columns:
+        df_sp_sweep = df_setpoint[(df_setpoint['t'] >= t_start) & (df_setpoint['t'] <= t_end)]
+        if not df_sp_sweep.empty:
+            rot_sp_x, rot_sp_y = rotate_coords(df_sp_sweep['x_cmd'], df_sp_sweep['y_cmd'])
+            ax.plot(rot_sp_x, rot_sp_y, color='#9467BD', linestyle='-.', alpha=0.8, linewidth=1.8, 
+                    label='PX4 Setpoint (Target track)', zorder=4)
+
     # 3. Draw only 2 command waypoints: Exp. Start-point (WP2) and Exp. End-point (WP3) (rotated)
-    if dynamic_waypoints and len(dynamic_waypoints) == 4:
-        wps = np.array([dynamic_waypoints[1][1], dynamic_waypoints[2][1]])
-    else:
-        is_collision = False
-        is_45 = False
-        if flight_name:
-            fn_lower = flight_name.lower()
-            if "collision" in fn_lower or "75" in fn_lower or "45" in fn_lower:
-                is_collision = True
-            if "45" in fn_lower:
-                is_45 = True
-        
-        if is_collision:
-            x_lane = 0.248 if is_45 else 0.186
-            wps = np.array([[x_lane, 0.950], [x_lane, -1.200]])
-        else:
-            wps = np.array([[0.100, 1.200], [0.100, -1.200]])
 
     rot_wps_x, rot_wps_y = rotate_coords(wps[:, 0], wps[:, 1])
     ax.scatter(rot_wps_x, rot_wps_y, color=C_CMD, s=120, facecolors='none', edgecolors=C_CMD, linewidth=2, zorder=6, label='Command Waypoints')
@@ -250,8 +268,8 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
     # 7. Unified borderless text boxes with subtle pointer lines to completely prevent overlaps
     # Exp. Start-point
     start_text = f"Exp. Start-point\nX: {wp2_x:.3f}m\nY: {wp2_y:.3f}m"
-    ax.annotate(start_text, xy=(rot_wp2_x, rot_wp2_y), xytext=(-60, 45), textcoords='offset points',
-                fontsize=8, fontweight='bold', color='#444444', ha='center', va='bottom',
+    ax.annotate(start_text, xy=(rot_wp2_x, rot_wp2_y), xytext=(-1.4, -0.25), textcoords='data',
+                fontsize=8, fontweight='bold', color='#444444', ha='left', va='center',
                 bbox=dict(facecolor='white', alpha=0.9, edgecolor='none', pad=2),
                 arrowprops=dict(arrowstyle="->", color='#888888', lw=0.8))
 
@@ -346,13 +364,17 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
                 fontsize=9, ha='center', va='center', zorder=10,
                 bbox=dict(facecolor='white', alpha=0.95, edgecolor='crimson', boxstyle='round,pad=0.15'))
 
-    ax.set_title('📐 Top-Down 2D Spatial Trajectory & Column Clearance Alignment (Rotated 90° CCW)')
+    ax.set_title('Experiment 2D horizontal visualization', fontsize=12, fontweight='bold')
 
     # Professional SSoT color coding of grid axes (X = Crimson Red, Y = Green)
-    ax.set_xlabel('Rotated Lab -Y Coordinate (ENU - South/North, meters)', color='#2CA02C', fontweight='bold')
-    ax.set_ylabel('Rotated Lab X Coordinate (ENU - East/West, meters)', color='#D62728', fontweight='bold')
+    ax.set_xlabel('Y coordinate, meters', color='#2CA02C', fontweight='bold')
+    ax.set_ylabel('X coordinate, meters', color='#D62728', fontweight='bold')
     ax.tick_params(axis='x', colors='#2CA02C')
     ax.tick_params(axis='y', colors='#D62728')
+
+    # Lower bottom corner laboratory rotation disclaimer
+    ax.text(0.02, 0.02, "X and Y axes have been rotated on this plot to strictly adhere to the physical mapping of X-Y in the motion capture system used",
+            transform=ax.transAxes, ha='left', va='bottom', fontsize=7, style='italic', alpha=0.8, zorder=10)
 
     # Strict Equal Aspect Ratio and boundary truncation
     ax.set_aspect('equal', adjustable='box')
@@ -369,7 +391,44 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
                 ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA', boxstyle='round,pad=0.2'))
 
-    ax.legend(loc='upper left')
+    # Custom table-like monospace legend
+    handles, labels = ax.get_legend_handles_labels()
+    aligned_labels = []
+    for lbl in labels:
+        if "Recovery Area" in lbl:
+            try:
+                val_str = lbl.split('(')[1].split(')')[0]
+                aligned_labels.append(f"{'Recovery Area':<18}({val_str})")
+            except Exception:
+                aligned_labels.append(lbl)
+        elif "Max Deviation" in lbl:
+            try:
+                val_str = lbl.split('(')[1].split(')')[0]
+                aligned_labels.append(f"{'Max Deviation':<18}({val_str})")
+            except Exception:
+                aligned_labels.append(lbl)
+        elif "Column Obstacle" in lbl:
+            try:
+                val_str = lbl.split('(')[1].split(')')[0]
+                aligned_labels.append(f"{'Column Obstacle':<18}({val_str})")
+            except Exception:
+                aligned_labels.append(lbl)
+        elif "Safety Cage" in lbl:
+            try:
+                val_str = lbl.split('(')[1].split(')')[0]
+                aligned_labels.append(f"{'Safety Cage':<18}({val_str})")
+            except Exception:
+                aligned_labels.append(lbl)
+        elif "Actual Path" in lbl:
+            aligned_labels.append(f"{'Actual Path':<18}(MoCap ENU)")
+        elif "PX4 Setpoint" in lbl:
+            aligned_labels.append(f"{'PX4 Setpoint':<18}(Target track)")
+        elif "Separation Vector" in lbl:
+            aligned_labels.append(f"{'Separation Vector':<18}")
+        else:
+            aligned_labels.append(lbl)
+
+    ax.legend(handles, aligned_labels, loc='upper left', prop={'family': 'monospace', 'size': 8.5})
     ax.grid(True, color='#EAEAEA')
     plt.tight_layout()
     

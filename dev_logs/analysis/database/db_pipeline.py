@@ -215,6 +215,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                         'df_bat': df_bat,
                         'df_imu': df_imu,
                         'df_column': df_column,
+                        'df_setpoint': df_setpoint,
                         'col_x_flight': col_x_flight,
                         'col_y_flight': col_y_flight,
                         'arming_time': arming_time,
@@ -274,7 +275,8 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
         output_plot_path = os.path.join(project_root, "dev_logs", "analysis", "graphics", f"trajectory_{clean_label}_rotating_cage.png")
         plot_trajectory(rep['df_mocap'], rep['wp_events'], rep['col_x_flight'], rep['col_y_flight'], 
                         cage_diameter, column_diameter, output_path=output_plot_path, flight_name=rep['flight_name'],
-                        dynamic_waypoints=rep['dynamic_waypoints'], df_column=rep['df_column'])
+                        dynamic_waypoints=rep['dynamic_waypoints'], df_column=rep['df_column'],
+                        df_setpoint=rep.get('df_setpoint'))
         
         # Render velocity profile
         plot_velocity_profile(rep['df_mocap'], rep['wp_events'], rep['arming_time'], 
@@ -334,7 +336,8 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
         output_plot_path = os.path.join(project_root, "dev_logs", "analysis", "graphics", f"trajectory_{clean_label}_fixed_cage.png")
         plot_trajectory(rep['df_mocap'], rep['wp_events'], rep['col_x_flight'], rep['col_y_flight'], 
                         cage_diameter, column_diameter, output_path=output_plot_path, flight_name=rep['flight_name'],
-                        dynamic_waypoints=rep['dynamic_waypoints'], df_column=rep['df_column'])
+                        dynamic_waypoints=rep['dynamic_waypoints'], df_column=rep['df_column'],
+                        df_setpoint=rep.get('df_setpoint'))
         
         # Render velocity profile
         plot_velocity_profile(rep['df_mocap'], rep['wp_events'], rep['arming_time'], 

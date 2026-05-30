@@ -80,13 +80,27 @@ Below is the definitive visual and physical specification for the five core plot
   * The physical dimensions (circles) of both the Column and the Protective Cage.
   * The closest physical approach separation vector.
   * Shaded drone CAD vector illustrations representing physical pose and heading.
-  * **Perpendicular Maximum Deviation ($d_{\text{max}}$):** An orange dashed line perpendicular to the nominal path line ($WP2 \rightarrow WP3$), indicating the peak rebound displacement.
+  * **Perpendicular Maximum Deviation ($d_{\text{max}}$):** An orange dashed line perpendicular to the nominal path line ($WP2 \rightarrow WP3$), indicating the peak post-impact rebound displacement. The search is strictly constrained to post-collision samples ($t \ge t_{\text{collision}}$) to isolate physical rebound from stabilization drift. The text background bounding box uses a compact `pad=1.0` padding.
   * **Hatched Recovery Envelope Area:** A light purple diagonal hatched region (`//`) between the actual recovery trajectory and the nominal commanded line segment after column contact.
 * **Visual Standard & Requirements:**
+  * **Title:** Must be changed strictly to `Experiment 2D horizontal visualization` (bold, 12pt).
+  * **Coordinate Axis Color-Coding:** Axis labels are simplified strictly to:
+    * Horizontal Axis: `Y coordinate, meters` in Green (`#2CA02C`) with green ticks.
+    * Vertical Axis: `X coordinate, meters` in Red (`#D62728`) with red ticks.
+  * **Laboratory Rotation Disclaimer:** A small italicized disclaimer must be printed in the lower-left corner: *"X and Y axes have been rotated on this plot to strictly adhere to the physical mapping of X-Y in the motion capture system used"*.
   * Must maintain a strictly equal aspect ratio ($1:1$ physical meter mapping) to prevent skewing.
   * **Eliminate Box Outlines:** All text labels MUST use borderless white background boxes (`edgecolor='none'`, `alpha=0.9`) to prevent clipping frames or text overlaps.
   * **Subtle Leader Pointer Lines:** Use light gray indicators (`arrowprops=dict(arrowstyle="->", color='#888888', lw=0.8)`) pointing from the labels directly to their coordinate targets.
-  * **Unified Multi-Line Labels:** To prevent coordinate values from overlapping headers under varying DPI settings, combine coordinates and metadata into single, multi-line strings inside a single label call.
+  * **Exp. Start-point Repositioning:** To completely prevent legend layering, the starting waypoint annotation box (`Exp. Start-point`) is permanently positioned in the lower-left of the data coordinates (`(-1.4, -0.25)`), connected via pointer arrow to the start drone outline.
+  * **Table-Like Monospace Legend:** Legend labels are aligned in monospace font with custom character padding so that metric values and parentheses align in straight vertical columns:
+    ```
+    Actual Path       (MoCap ENU)
+    Safety Cage       (D=35.8cm)
+    Separation Vector
+    Recovery Area     (829.9 cm²)
+    Max Deviation     (110 mm)
+    Column Obstacle   (D=9.0cm)
+    ```
   * **Grey shaded drones must be drawn at actual MoCap-registered positions**, not theoretical waypoints. This includes:
     1. Actual position at `Exp. Start-point` (annotated with actual MoCap $(X, Y)$ coords).
     2. Actual position at `Exp. End-point` (annotated with actual MoCap $(X, Y)$ coords).
