@@ -347,7 +347,14 @@ To slice a new flight (after landing on the Pi):
 python3 -m dev_logs.analysis.database.db_mcap_event_segmenter
 
 # 2. Re-run analysis — new passes auto-populate DB, old ones are skipped:
+# Standard/Full historical database rebuild:
 python3 -m dev_logs.analysis.database.db_pipeline
+
+# Incremental/Today-only update (highly optimized, scans only today's folders):
+python3 -m dev_logs.analysis.database.db_pipeline --today  # or -t
+
+# Custom cutoff (skip directories before specific YYYYMMDD-HHMM timestamp):
+python3 -m dev_logs.analysis.database.db_pipeline --cutoff 20260530-0000  # or -c
 
 ## Python Path Resiliency & CLI Best Practices
 

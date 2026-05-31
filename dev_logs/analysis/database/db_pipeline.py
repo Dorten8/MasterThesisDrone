@@ -393,8 +393,21 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
 if __name__ == "__main__":
     import re as _re
     import glob as _glob
+    import argparse
+    import datetime
 
-    APPROVED_CUTOFF = "20260524-1904"
+    # Dynamically resolve today's date formatted as YYYYMMDD-0000
+    _today_cutoff = datetime.date.today().strftime("%Y%m%d-0000")
+
+    parser = argparse.ArgumentParser(description="Standalone DB population pipeline")
+    parser.add_argument('--cutoff', '-c', type=str, default="20260524-1904",
+                        help="Skipping any flight directories recorded before this timestamp in YYYYMMDD-HHMM format (default: 20260524-1904)")
+    parser.add_argument('--today', '-t', action='store_true',
+                        help=f"Shortcut to process only today's flights (sets cutoff to {_today_cutoff})")
+    
+    args = parser.parse_args()
+
+    APPROVED_CUTOFF = _today_cutoff if args.today else args.cutoff
 
     _current_dir = os.path.dirname(os.path.abspath(__file__))
     _project_root = os.path.abspath(os.path.join(_current_dir, "..", "..", ".."))
