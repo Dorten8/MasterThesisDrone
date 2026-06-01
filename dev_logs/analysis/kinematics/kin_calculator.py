@@ -1,10 +1,55 @@
 import numpy as np
 import pandas as pd
 from scipy.signal import savgol_filter
+from scipy.interpolate import CubicSpline
 
-def compute_velocity(df_mocap, window=19, polyorder=3):
+def resample_and_interpolate_mocap(df_mocap, target_freq=100.0):
+    """Resamples the MoCap coordinates onto a uniform grid and interpolates using a cubic spline
+    to eliminate dropouts, packet lag, and time step compression.
+    """
+    if df_mocap.empty or len(df_mocap) < 4:
+        return df_mocap
+
+    # Ensure unique and monotonically sorted timestamps
+    df_clean = df_mocap.drop_duplicates(subset=['t']).sort_values('t').reset_index(drop=True)
+    t_start = df_clean['t'].min()
+    t_end = df_clean['t'].max()
+
+    # Generate perfectly uniform timeline
+    dt = 1.0 / target_freq
+    t_uniform = np.arange(t_start, t_end + dt/2.0, dt)
+
+    # Use CubicSpline for position channels to preserve high-fidelity smoothness and curvature
+    cs_x = CubicSpline(df_clean['t'], df_clean['x'], extrapolate=False)
+    cs_y = CubicSpline(df_clean['t'], df_clean['y'], extrapolate=False)
+    cs_z = CubicSpline(df_clean['t'], df_clean['z'], extrapolate=False)
+
+    resampled_data = {
+        't': t_uniform,
+        'x': cs_x(t_uniform),
+        'y': cs_y(t_uniform),
+        'z': cs_z(t_uniform)
+    }
+
+    # Interpolate orientation quaternions and other continuous channels linearly
+    for col in df_clean.columns:
+        if col not in ['t', 'x', 'y', 'z']:
+            try:
+                # Linearly interpolate numeric columns
+                resampled_data[col] = np.interp(t_uniform, df_clean['t'], df_clean[col])
+            except Exception:
+                # Fallback for non-numeric columns (like strings/metadata)
+                resampled_data[col] = df_clean[col].iloc[0]
+
+    df_resampled = pd.DataFrame(resampled_data)
+    # Resilient fallback for any floating point boundary NaNs
+    df_resampled = df_resampled.ffill().bfill()
+    return df_resampled
+
+def compute_velocity(df_mocap, window=19, polyorder=3, resample=True):
     """Computes velocity derivatives from position signals using Savitzky-Golay filtering.
-    Handles edge cases where df_mocap has fewer points than the requested window size.
+    If resample is True, the positions are uniformly resampled at 100Hz and cubic-spline
+    interpolated to eliminate network dropouts and derivative spikes.
     """
     if df_mocap.empty or len(df_mocap) < 3:
         df_mocap['vx'] = 0.0
@@ -12,6 +57,9 @@ def compute_velocity(df_mocap, window=19, polyorder=3):
         df_mocap['vz'] = 0.0
         df_mocap['speed'] = 0.0
         return df_mocap
+
+    if resample and len(df_mocap) >= 4:
+        df_mocap = resample_and_interpolate_mocap(df_mocap, target_freq=100.0)
 
     # Unique and monotonically sorted
     df_mocap = df_mocap.drop_duplicates(subset=['t']).sort_values('t').reset_index(drop=True)
@@ -426,7 +474,7 @@ def perpendicular_distance(p, p1, p2):
     den = np.sqrt((y2 - y1)**2 + (x2 - x1)**2)
     return num / den if den > 0 else 0.0
 
-def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, cage_radius):
+def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, cage_radius, df_imu=None):
     """Computes all key collision and trajectory performance metrics for a single flight.
     Analyzes physical clearances, velocities, and commanded tracking errors.
     """
@@ -438,7 +486,12 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
             'avg_speed_wp2_wp3': 0.0,
             'max_tracking_error': 0.0,
             'mean_tracking_error': 0.0,
-            'max_lateral_displacement': 0.0
+            'max_lateral_displacement': 0.0,
+            'imu_peak_accel': None, 'imu_peak_accel_x': None, 'imu_peak_accel_y': None, 'imu_peak_accel_z': None,
+            'imu_peak_gyro': None, 'imu_peak_gyro_x': None, 'imu_peak_gyro_y': None, 'imu_peak_gyro_z': None,
+            'imu_accel_energy': None, 'imu_accel_energy_x': None, 'imu_accel_energy_y': None, 'imu_accel_energy_z': None,
+            'imu_gyro_energy': None, 'imu_gyro_energy_x': None, 'imu_gyro_energy_y': None, 'imu_gyro_energy_z': None,
+            'imu_accel_settling': None, 'imu_gyro_settling': None
         }
 
     # Segment from WP1 to WP4 (active sweep)
@@ -528,6 +581,10 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
     t_collision = wp_events.get('Column Impact', closest_t)
     df_recovery = df_wp2_wp3[df_wp2_wp3['t'] >= t_collision]
     
+    avg_dev_after = 0.0
+    max_dev_after = 0.0
+    recovery_area = 0.0
+
     if not df_recovery.empty and len(df_recovery) >= 2:
         # Calculate perpendicular distances for each point in recovery
         d_recovery = [perpendicular_distance((row['x'], row['y']), wp2_pos, wp3_pos) for _, row in df_recovery.iterrows()]
@@ -556,15 +613,75 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
             s_sorted = s_recovery[sort_idx]
             d_sorted = d_recovery[sort_idx]
             
-            # Integrated area in m^2, then convert to cm^2 (* 10000)
-            area_m2 = np.trapz(d_sorted, s_sorted)
-            recovery_area = area_m2 * 10000.0  # cm^2
+            # Trapezoidal integration along nominal path of travel
+            recovery_area = float(np.trapz(d_sorted, s_sorted) * 1000.0)  # mm * m
+            
+    # Structural IMU kinematics & energy calculations (SSoT Section 4)
+    imu_metrics = {
+        'imu_peak_accel': None, 'imu_peak_accel_x': None, 'imu_peak_accel_y': None, 'imu_peak_accel_z': None,
+        'imu_peak_gyro': None, 'imu_peak_gyro_x': None, 'imu_peak_gyro_y': None, 'imu_peak_gyro_z': None,
+        'imu_accel_energy': None, 'imu_accel_energy_x': None, 'imu_accel_energy_y': None, 'imu_accel_energy_z': None,
+        'imu_gyro_energy': None, 'imu_gyro_energy_x': None, 'imu_gyro_energy_y': None, 'imu_gyro_energy_z': None,
+        'imu_accel_settling': None, 'imu_gyro_settling': None
+    }
+
+    if df_imu is not None and not df_imu.empty:
+        t_impact = wp_events.get('Column Impact', closest_t)
+        # 1. Slice contact window strictly to [t_impact - 0.05, t_impact + 0.35]
+        df_contact = df_imu[(df_imu['t'] >= t_impact - 0.05) & (df_imu['t'] <= t_impact + 0.35)]
+        if df_contact.empty:
+            df_contact = df_imu
+
+        # 2. Peak linear and rotational components
+        imu_metrics['imu_peak_accel'] = float(df_contact['a_deviation'].max())
+        imu_metrics['imu_peak_accel_x'] = float(df_contact['ax'].abs().max())
+        imu_metrics['imu_peak_accel_y'] = float(df_contact['ay'].abs().max())
+        imu_metrics['imu_peak_accel_z'] = float((df_contact['az'] + 9.81).abs().max())
+
+        imu_metrics['imu_peak_gyro'] = float(df_contact['g_mag'].max())
+        imu_metrics['imu_peak_gyro_x'] = float(df_contact['gx'].abs().max())
+        imu_metrics['imu_peak_gyro_y'] = float(df_contact['gy'].abs().max())
+        imu_metrics['imu_peak_gyro_z'] = float(df_contact['gz'].abs().max())
+
+        # 3. Trapezoidal integration over the contact window
+        if len(df_contact) >= 2:
+            t_vals = df_contact['t'].values
+            imu_metrics['imu_accel_energy'] = float(np.trapz(df_contact['a_deviation'].values, t_vals))
+            imu_metrics['imu_accel_energy_x'] = float(np.trapz(df_contact['ax'].abs().values, t_vals))
+            imu_metrics['imu_accel_energy_y'] = float(np.trapz(df_contact['ay'].abs().values, t_vals))
+            imu_metrics['imu_accel_energy_z'] = float(np.trapz((df_contact['az'] + 9.81).abs().values, t_vals))
+
+            imu_metrics['imu_gyro_energy'] = float(np.trapz(df_contact['g_mag'].values, t_vals))
+            imu_metrics['imu_gyro_energy_x'] = float(np.trapz(df_contact['gx'].abs().values, t_vals))
+            imu_metrics['imu_gyro_energy_y'] = float(np.trapz(df_contact['gy'].abs().values, t_vals))
+            imu_metrics['imu_gyro_energy_z'] = float(np.trapz(df_contact['gz'].abs().values, t_vals))
         else:
-            recovery_area = 0.0
-    else:
-        avg_dev_after = 0.0
-        max_dev_after = 0.0
-        recovery_area = 0.0
+            imu_metrics['imu_accel_energy'] = 0.0
+            imu_metrics['imu_accel_energy_x'] = 0.0
+            imu_metrics['imu_accel_energy_y'] = 0.0
+            imu_metrics['imu_accel_energy_z'] = 0.0
+            imu_metrics['imu_gyro_energy'] = 0.0
+            imu_metrics['imu_gyro_energy_x'] = 0.0
+            imu_metrics['imu_gyro_energy_y'] = 0.0
+            imu_metrics['imu_gyro_energy_z'] = 0.0
+
+        # 4. Settling times starting from t_impact
+        df_after = df_imu[df_imu['t'] >= t_impact]
+        if not df_after.empty:
+            high_accel_times = df_after[df_after['a_deviation'] >= 1.5]['t']
+            if not high_accel_times.empty:
+                imu_metrics['imu_accel_settling'] = float(high_accel_times.max() - t_impact)
+            else:
+                imu_metrics['imu_accel_settling'] = 0.0
+
+            high_gyro_times = df_after[df_after['g_mag'] >= 0.5]['t']
+            if not high_gyro_times.empty:
+                imu_metrics['imu_gyro_settling'] = float(high_gyro_times.max() - t_impact)
+            else:
+                imu_metrics['imu_gyro_settling'] = 0.0
+        else:
+            imu_metrics['imu_accel_settling'] = 0.0
+            imu_metrics['imu_gyro_settling'] = 0.0
 
     return {
         'closest_t': closest_t,
@@ -580,6 +697,25 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         'before_impact_accel': before_impact_accel,
         'avg_dev_after': avg_dev_after,
         'max_dev_after': max_dev_after,
+        'recovery_area': recovery_area,
 
-        'recovery_area': recovery_area
+        # 18 new IMU metrics
+        'imu_peak_accel': imu_metrics['imu_peak_accel'],
+        'imu_peak_accel_x': imu_metrics['imu_peak_accel_x'],
+        'imu_peak_accel_y': imu_metrics['imu_peak_accel_y'],
+        'imu_peak_accel_z': imu_metrics['imu_peak_accel_z'],
+        'imu_peak_gyro': imu_metrics['imu_peak_gyro'],
+        'imu_peak_gyro_x': imu_metrics['imu_peak_gyro_x'],
+        'imu_peak_gyro_y': imu_metrics['imu_peak_gyro_y'],
+        'imu_peak_gyro_z': imu_metrics['imu_peak_gyro_z'],
+        'imu_accel_energy': imu_metrics['imu_accel_energy'],
+        'imu_accel_energy_x': imu_metrics['imu_accel_energy_x'],
+        'imu_accel_energy_y': imu_metrics['imu_accel_energy_y'],
+        'imu_accel_energy_z': imu_metrics['imu_accel_energy_z'],
+        'imu_gyro_energy': imu_metrics['imu_gyro_energy'],
+        'imu_gyro_energy_x': imu_metrics['imu_gyro_energy_x'],
+        'imu_gyro_energy_y': imu_metrics['imu_gyro_energy_y'],
+        'imu_gyro_energy_z': imu_metrics['imu_gyro_energy_z'],
+        'imu_accel_settling': imu_metrics['imu_accel_settling'],
+        'imu_gyro_settling': imu_metrics['imu_gyro_settling']
     }

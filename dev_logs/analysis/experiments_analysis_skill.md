@@ -5,8 +5,8 @@ This document serves as the Single Source of Truth (SSoT) for the telemetry, kin
 ## What is the purpose of these experiments?
 These physical experiments involve flying a PX4-controlled quadcopter into a static column obstacle to study physical collision dynamics and recovery.
 * **Rotational Inertia & Stabilisation:** We analyze how the drone reacts to column contact across two principal safety cage configurations:
-  * **Rotating Cage:** The outer protective cage is free to rotate around the drone's physical Z-axis.
-  * **Fixed Cage:** The protective cage is rigidly fixed to the vehicle frame (no Z-axis rotation).
+  * **`<Rotating Cage>`:** The outer protective cage is free to rotate around the drone's physical Z-axis.
+  * **`<Fixed Cage>`:** The protective cage is rigidly fixed to the vehicle frame (no Z-axis rotation).
 * **IMU Impact Vector Estimation:** We investigate whether structural accelerometer and gyroscope signatures can reliably predict the physical contact vector compared to high-fidelity OptiTrack Motion Capture (MoCap) ground truth.
 
 ---
@@ -55,17 +55,22 @@ These rules apply universally to all visualizations within the pipeline:
 1. **SSHFS-Safe Plot Filenames:** Due to character encoding and metadata caching issues over network mounts (SSHFS), all output plot filenames **MUST NOT** contain the degree symbol `°`.
    * **Rule:** Programmatically replace `°` with `deg` when writing files (e.g., save as `trajectory_75deg_rotating_cage.png` instead of `trajectory_75°_rotating_cage.png`).
 2. **Dynamic Waypoint Ground Truth:** Waypoints MUST be dynamically extracted from the `/fmu/in/trajectory_setpoint` topic inside the `.mcap` file rather than being hardcoded. This guarantees absolute physical synchronization with what the flight controller commanded.
-3. **Dynamic MoCap Publish Rate:** The nominal tracking rate (e.g., 240 Hz vs. 120 Hz) must be dynamically computed directly from the `/poses` message frequency in the `.mcap` file, ensuring no hardcoded rates are displayed in diagnostic subplots.
-4. **Strict Data Truncation:** To keep plots clean and relevant, all flight data must be dynamically cropped to exactly **5 seconds before the "Exp. Start-point"** and **5 seconds after the "Exp. End-point"**. All telemetry outside this window should be discarded.
+3. **Dynamic MoCap Publish Rate & Telemetry Jitter:** The nominal tracking rate (e.g., 240 Hz vs. 120 Hz) must be dynamically computed directly from the `/poses` message frequency in the `.mcap` file, ensuring no hardcoded rates are displayed in diagnostic subplots.
+   * **Telemetry Dropout Artifacts:** When the publish rate collapses (specifically dropping below $50\text{Hz}$ down toward the $30\text{Hz}$ failsafe threshold), numerical derivative calculations are subject to non-physical spikes. In these periods, packet lag followed by queued bursts creates artificial coordinate "teleportation" and time step compression ($dt \rightarrow 0$), skewing tangential velocity and acceleration.
+   * **Smoothed Signal Processing Standard [Fully Implemented & Verified]:** To generate clean, publication-grade figures that ignore these dropouts, a parallel smoothed kinematic plot option is supported. This is achieved by **Uniform Grid Resampling & Spline Interpolation**—resampling the raw position coordinate tracks ($x, y, z$) onto a perfectly uniform $100\text{Hz}$ grid and interpolating across dropout gaps using a cubic spline *before* running the Savitzky-Golay derivative filter, mathematically neutralizing packet-loss spikes.
+4. **Strict Data Truncation:** To keep plots clean and relevant, all flight data must be dynamically cropped to exactly **1 second before the "Exp. Start-point"** and **1 second after the "Exp. End-point"**. All telemetry outside this window should be discarded.
 5. **Standardized Terminology SSoT:**
    * **WP1 / Entry Point** is renamed to: **`Exp. Start-point`**
    * **WP2 / WP4 / Exit Point** is renamed to: **`Exp. End-point`**
-   * **Cage Condition Labels:** Update all labels, titles, and legends to strictly read **`Rotating Cage`** vs. **`Fixed Cage`** (do not use "no_cage" or "cage vs no_cage" since all test flights are flown with a physical cage).
+   * **Cage Condition Labels:** Whenever signifying the cage configuration type (in labels, titles, legends, or indicators), strictly format them as **`<Rotating Cage>`** and **`<Fixed Cage>`** (enclosed in angle brackets `< >`).
 6. **Label Origin of Data:** All figures must have a small label in the bottom-right corner indicating the origin of the data (the exact flight pass name, e.g. `flight_20260524-1813_75deg_column_collision_loop_fixed_cage - Pass-01`).
-7. **Timeline Event Alignment:** Every plot that uses time ($t$) as the X-axis MUST display three perfectly aligned, vertical event marker lines across all subplots, denoting:
-   * **`Exp. Start-point`** (vertical dotted purple/grey line)
-   * **💥 `Impact`** (vertical dash-dotted crimson line at time of closest approach / actual impact)
-   * **`Exp. End-point`** (vertical dotted purple/grey line)
+7. **Timeline Event Alignment & Shading:** Every plot that uses time ($t$) as the X-axis (specifically, all timestamped plots) MUST display:
+   * **Three perfectly aligned vertical event lines** across all subplots, denoting:
+     * **`Exp. Start-point`** (vertical dotted purple/grey line)
+     * **💥 `Impact`** (vertical dash-dotted crimson line at time of closest approach / actual impact)
+     * **`Exp. End-point`** (vertical dotted purple/grey line)
+   * **Impact Label Non-Obscuration Rule:** The text label for the **💥 `Impact`** event MUST ALWAYS be positioned to the **left (before)** the vertical crimson marker line (e.g. at `t_val - 0.12` with horizontal alignment `ha='right'`). This ensures that the immediate post-impact rebound, decay, and stabilization telemetry curves are completely unobstructed and legible.
+   * **Shared Impact Window Shading:** A perfectly synchronized, shared light red vertical shaded region (`axvspan` spanning from $t_{\text{impact}} - 0.05\text{s}$ to $t_{\text{impact}} + 0.35\text{s}$ with `color='#D62728'` and `alpha=0.10` and `zorder=3`) representing the physical column contact window. This shared indicator allows the reader to instantly correlate speed drops, deceleration peaks, and structural shockwaves across all timestamped plots.
 
 ---
 
@@ -83,15 +88,17 @@ Below is the definitive visual and physical specification for the five core plot
   * **Perpendicular Maximum Deviation ($d_{\text{max}}$):** An orange dashed line perpendicular to the nominal path line ($WP2 \rightarrow WP3$), indicating the peak post-impact rebound displacement. The search is strictly constrained to post-collision samples ($t \ge t_{\text{collision}}$) to isolate physical rebound from stabilization drift. The text background bounding box uses a compact `pad=1.0` padding.
   * **Hatched Recovery Envelope Area:** A light purple diagonal hatched region (`//`) between the actual recovery trajectory and the nominal commanded line segment after column contact.
 * **Visual Standard & Requirements:**
-  * **Title:** Must be changed strictly to `Experiment 2D horizontal visualization` (bold, 12pt).
+  * **Title:** Must be changed strictly to `Experiment 2D horizontal visualization <Condition>` (bold, 12pt), where `<Condition>` is either `<Rotating Cage>` or `<Fixed Cage>`.
   * **Coordinate Axis Color-Coding:** Axis labels are simplified strictly to:
     * Horizontal Axis: `Y coordinate, meters` in Green (`#2CA02C`) with green ticks.
     * Vertical Axis: `X coordinate, meters` in Red (`#D62728`) with red ticks.
-  * **Laboratory Rotation Disclaimer:** A small italicized disclaimer must be printed in the lower-left corner: *"X and Y axes have been rotated on this plot to strictly adhere to the physical mapping of X-Y in the motion capture system used"*.
+  * **Laboratory Rotation Disclaimer:** Printed in the lower-left corner as a left-aligned, 3-line multiline italicized block to prevent horizontal overlapping with the bottom-right flight name stamp:
+    *"X and Y axes have been rotated on this plot\nto strictly adhere to the physical mapping of X-Y\nin the motion capture system used"*
   * Must maintain a strictly equal aspect ratio ($1:1$ physical meter mapping) to prevent skewing.
   * **Eliminate Box Outlines:** All text labels MUST use borderless white background boxes (`edgecolor='none'`, `alpha=0.9`) to prevent clipping frames or text overlaps.
   * **Subtle Leader Pointer Lines:** Use light gray indicators (`arrowprops=dict(arrowstyle="->", color='#888888', lw=0.8)`) pointing from the labels directly to their coordinate targets.
   * **Exp. Start-point Repositioning:** To completely prevent legend layering, the starting waypoint annotation box (`Exp. Start-point`) is permanently positioned in the lower-left of the data coordinates (`(-1.4, -0.25)`), connected via pointer arrow to the start drone outline.
+  * **Exp. End-point Repositioning:** The `Exp. End-point` label is positioned directly vertically above the end drone center (`xytext=(0, 50)` offset points, `ha='center'`) to completely prevent horizontal overlapping with the right y-axis plot boundary.
   * **Table-Like Monospace Legend:** Legend labels are aligned in monospace font with custom character padding so that metric values and parentheses align in straight vertical columns:
     ```
     Actual Path       (MoCap ENU)
@@ -107,25 +114,20 @@ Below is the definitive visual and physical specification for the five core plot
     3. Actual position at the moment of closest approach (annotated with minimum physical clearance value in mm, impact speed, and impact acceleration).
 * **Associated Script:** [kin_plot_trajectory.py](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/kinematics/kin_plot_trajectory.py)
 
-### 2. Tangential Acceleration / Deceleration Profile
-* **Purpose:** Displays the linear kinematics of the sweep, showing the transition from steady-state cruise speed to impact deceleration.
-* **What it Shows:** 
-  * Filtered tangential acceleration over time (computed by derivative filtering of velocity).
-  * Positive acceleration (cruise ramp) vs. negative deceleration (braking/impact).
-* **Visual Standard & Requirements:**
-  * Bold horizontal steady-state reference line at $0.0\text{ m/s}^2$.
-  * Color-filled zones: Green fill for acceleration, red fill for deceleration.
-  * Three vertical timeline event lines marking: `Exp. Start-point`, `Impact`, and `Exp. End-point` (per General Plot Rule 7).
-* **Associated Script:** [kin_plot_kinematics.py](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/kinematics/kin_plot_kinematics.py)
-
-### 3. Thesis Flight Kinetic Profile (Velocity & Timeline)
-* **Purpose:** Combines the smoothed velocity magnitude profile with live MoCap diagnostic streaming rates to correlate estimator/tracking state with flight behavior.
+### 2. Consolidated Flight Kinetic & Kinematic Profile
+* **Purpose:** Combines the smoothed velocity magnitude, linear tangential acceleration, and live MoCap tracking rates into a single 3-subplot vertical stack to align all kinematic and stream transmission diagnostics perfectly in time.
 * **What it Shows:**
-  * Top Panel: Velocity magnitude ($m/s$) with horizontal dashed lines showing average speed during active flight segments.
-  * Bottom Panel: Live frame rate ($Hz$) of the `/poses` stream with a red dashed line marking the $30\text{Hz}$ critical tracking limit.
+  * **Subplot 1 (Top):** Velocity magnitude ($m/s$) with horizontal dashed lines showing average speed during active flight segments.
+  * **Subplot 2 (Middle):** Filtered tangential acceleration ($m/s^2$) with green color-filled acceleration zones, red color-filled deceleration zones, and a bold zero-acceleration steady-state reference line.
+  * **Subplot 3 (Bottom):** Live frame rate ($Hz$) of the `/poses` stream with a red dashed line marking the $30\text{Hz}$ critical tracking limit and a green dotted line marking the dynamic nominal tracking rate.
 * **Visual Standard & Requirements:**
-  * Timeline vertical event markers for `Exp. Start-point`, `Impact`, and `Exp. End-point` must align perfectly across both subplots (per General Plot Rule 7).
-  * Nominal rate line must reflect the dynamically extracted MoCap rate (e.g. 240 Hz).
+  * **Consolidated Figure Layout:** The three subplots are vertically stacked, share the same time X-axis (`sharex=True`), and are perfectly aligned in time (display window cropped strictly to $1\text{s}$ before/after waypoint markers).
+  * **Title Requirements:**
+    * Top Subplot: `Flight Kinetic profile (Savitzky-Golay filter applied) <Condition>` (e.g. `<Rotating Cage>` or `<Fixed Cage>`)
+    * Middle Subplot: `Tangential Acceleration Profile <Condition>`
+  * **Column Center Passed Line Color:** The vertical event line marking the `Column Center Passed` (or `Column Passed`) event must be **orange** (`#FF9900`) to match the color of the column obstacle.
+  * **Synchronized Impact Window Shading:** A perfectly synchronized vertical light red shaded region (`axvspan` spanning from $t_{\text{impact}} - 0.05\text{s}$ to $t_{\text{impact}} + 0.35\text{s}$) must overlay ALL three subplots to allow immediate visual correlation.
+  * **Impact Label Non-Obscuration Rule:** The **💥 Impact** label text must be positioned to the **left (before)** the vertical crimson marker line (`t_val - 0.12` and `ha='right'`) across all subplots, keeping post-impact recovery curves completely legible.
 * **Associated Script:** [kin_plot_kinematics.py](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/kinematics/kin_plot_kinematics.py)
 
 ### 4. Physical IMU Collision Dynamics
@@ -133,10 +135,18 @@ Below is the definitive visual and physical specification for the five core plot
 * **What it Shows:**
   * **Linear Accel Deviation ($\text{m/s}^2$):** Measures the sudden peak G-forces experienced by the IMU during column contact.
   * **Gyro Rotational Surge ($\text{rad/s}$):** Displays the sudden angular velocity surge (roll/pitch/yaw perturbations) resulting from cage contact, showing the physical rebound dynamics before active FC stabilization takes over.
+  * **Core Shock & Vibration Metrics [Fully Implemented & Verified]:**
+    * **Peak G-Shock & Rotation:** Tracks peak linear acceleration deviation ($A_{\text{peak}} = \max(a_{\text{dev}})$) and peak angular rate ($\Omega_{\text{peak}} = \max(\omega_{\text{mag}})$) during the impact contact window.
+    * **Integrated Energy (Total Shock Impulse):** Calculates total cumulative shock impulse ($I_{\text{accel}} = \int a_{\text{dev}} \, dt$ in $\text{m/s}$) and rotational disturbance energy ($I_{\text{gyro}} = \int \omega_{\text{mag}} \, dt$ in $\text{rad}$) integrated strictly over the **$0.40\text{-second}$ Contact Window** ($[t_{\text{impact}} - 0.05\text{s}, t_{\text{impact}} + 0.35\text{s}]$).
+    * **Settling Time (Damping & Recovery):** Tracks linear ringing decay settling time (duration from impact until $a_{\text{dev}}$ drops and stays below $1.5\text{ m/s}^2$) and attitude stabilization settling time (duration from impact until $\omega_{\text{mag}}$ drops and stays below $0.5\text{ rad/s}$).
 * **Visual Standard & Requirements:**
-  * Dual Y-axes: Left (red) for linear acceleration deviation, Right (blue) for gyro rotational surge.
+  * **Title:** strictly `IMU Collision Dynamic <Condition>` (bold, 12pt).
+  * **Dual Y-axes:** Left (red) for linear acceleration deviation, Right (blue) for gyro rotational surge.
+  * **Left Y-axis Range & Divisions:** The left Y-axis must always have a strict range of **$-1.0\text{ m/s}^2$ to $20.0\text{ m/s}^2$** with ticks placed exactly at **$2.0\text{ m/s}^2$ intervals** (`MultipleLocator(2.0)`).
+  * **X-axis Divisions & Truncation:** The X-axis must have ticks placed exactly at **$1.0\text{s}$ intervals** (`MultipleLocator(1.0)`). The timeline display window is strictly cropped to exactly **$1\text{s}$ before the `Exp. Start-point` and $1\text{s}$ after the `Exp. End-point`**.
   * A horizontal gold dashed line marking the "Severe Impact Threshold" at $5.0\text{ m/s}^2$.
   * Three vertical timeline event lines marking: `Exp. Start-point`, `Impact`, and `Exp. End-point` (per General Plot Rule 7).
+  * **Impact Window Shading:** Includes a unified light red vertical shaded region overlaying the exact contact duration.
 * **Associated Script:** [kin_plot_kinematics.py](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/kinematics/kin_plot_kinematics.py)
 
 ### 5. RAW IMU X/Y/Z Components
@@ -144,27 +154,34 @@ Below is the definitive visual and physical specification for the five core plot
 * **What it Shows:**
   * Raw/Filtered linear acceleration ($a_x, a_y, a_z$) and rotational rates ($\omega_x, \omega_y, \omega_z$).
 * **Visual Standard & Requirements:**
-  * Axis mappings must be professionally labeled to explain Pixhawk 6C axes:
+  * **Title:** strictly `Raw IMU X / Y / Z Components <Condition>` (bold, 12pt), with subtitle `[X = Lateral/Roll, Y = Longitudinal/Pitch, Z = Vertical/Yaw]`.
+  * **Axis Mappings & Labels:** Mappings must be professionally labeled to explain Pixhawk 6C axes:
     * **X-Axis (Lateral / Roll):** Side-to-side dynamics.
     * **Y-Axis (Longitudinal / Pitch):** Fore-and-aft dynamics along the main flight vector.
     * **Z-Axis (Vertical / Yaw / Heave):** Up-and-down dynamics and heading rotations.
+  * **Proportional Subplot Heights (Equal Physical Scaling):** To keep the vertical physical scale ($1\text{ m/s}^2$ per inch) exactly identical across all three subplots for direct visual magnitude comparison, the figure subplots must use proportional GridSpec height ratios: **`gridspec_kw={'height_ratios': [26, 26, 20]}`**.
+  * **Strict Y-axis Range & Divisions:**
+    * **X-Axis Panel:** Locked strictly to range **`[-20.0, 6.0]`** `m/s²` with ticks at **`2.0 m/s²` intervals**.
+    * **Y-Axis Panel:** Locked strictly to range **`[-6.0, 20.0]`** `m/s²` with ticks at **`2.0 m/s²` intervals**.
+    * **Z-Axis Panel:** Locked strictly to range **`[-20.0, 0.0]`** `m/s²` with ticks at **`2.0 m/s²` intervals**.
+  * **X-axis Truncation:** Timeline display window is strictly cropped using the **1-second crop window** standard (1 second before `Exp. Start-point` and 1 second after `Exp. End-point`).
   * Three vertical timeline event lines marking: `Exp. Start-point`, `Impact`, and `Exp. End-point` (per General Plot Rule 7).
 * **Associated Script:** [kin_plot_kinematics.py](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/kinematics/kin_plot_kinematics.py)
 
-### 6. Post-Impact Stabilisation Deviation (Rotating Cage Only)
+### 6. Post-Impact Stabilisation Deviation (<Rotating Cage> Only)
 * **Purpose:** Correlates nominal transit speed with average tracking error after collision to quantify vehicle stability under different translational kinetic energies.
 * **What it Shows:**
-  * Sourced strictly from rotating cage flights with confirmed impacts (`df_rot`).
+  * Sourced strictly from `<Rotating Cage>` flights with confirmed impacts (`df_rot`).
   * X-Axis: Nominal sweep speed ($m/s$).
   * Y-Axis: Average perpendicular trajectory deviation after contact, scaled to centimeters ($cm$) via:
     $$\text{dev}_{\text{cm}} = \text{avg\_dev\_after} / 10.0$$
   * Dash-dotted regression trendline: Overlay of a linear best-fit line showing the drift scaling rate, with the exact mathematical slope ($m$) displayed in the legend.
 * **Associated Script/Notebook:** [experiments_analysis_summary.ipynb](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/experiments_analysis_summary.ipynb)
 
-### 7. Deviation vs. Measured Impact Angle (Rotating Cage)
+### 7. Deviation vs. Measured Impact Angle (<Rotating Cage>)
 * **Purpose:** Analyzes how the actual geometric angle of contact influences post-collision drift, while mapping start LiPo voltage states to isolate power system correlation.
 * **What it Shows:**
-  * Sourced strictly from rotating cage flights with confirmed impacts (`df_rot`).
+  * Sourced strictly from `<Rotating Cage>` flights with confirmed impacts (`df_rot`).
   * X-Axis: `'Impact Angle'`, scaling strictly from $0^\circ$ to $90^\circ$ (`xlim(0, 90)`).
   * Y-Axis: Average post-impact deviation scaled to centimeters ($cm$), hardcoded strictly from $0$ to $15$ cm (`ylim(0, 15)`).
   * 4-bin LiPo Battery State Color-Gradient:
@@ -178,10 +195,10 @@ Below is the definitive visual and physical specification for the five core plot
     * Cumulative total: Features a clear total label `Total Flights (N = XX)` positioned at the very top of the legend above all entries.
 * **Associated Script/Notebook:** [experiments_analysis_summary.ipynb](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/experiments_analysis_summary.ipynb)
 
-### 8. Deviation vs. Measured Impact Angle (Fixed Cage)
+### 8. Deviation vs. Measured Impact Angle (<Fixed Cage>)
 * **Purpose:** Analyzes how the actual geometric angle of contact influences post-collision drift for the rigidly Fixed Cage safety configuration across start LiPo battery states.
 * **What it Shows:**
-  * Sourced strictly from fixed cage flights with confirmed impacts (`df_fix`).
+  * Sourced strictly from `<Fixed Cage>` flights with confirmed impacts (`df_fix`).
   * X-Axis: `'Impact Angle'`, scaling strictly from $0^\circ$ to $90^\circ$ (`xlim(0, 90)`).
   * Y-Axis: Average post-impact deviation scaled to centimeters ($cm$), hardcoded strictly from $0$ to $15$ cm (`ylim(0, 15)`).
   * 4-bin LiPo Battery State Color-Gradient:
@@ -191,10 +208,10 @@ Below is the definitive visual and physical specification for the five core plot
     * $(80\%, 100\%]$ $\rightarrow$ **Green** (`#2CA02C`)
 * **Associated Script/Notebook:** [experiments_analysis_summary.ipynb](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/experiments_analysis_summary.ipynb)
 
-### 9. Comparative Stabilization Overlay (Rotating vs. Fixed Cage)
+### 9. Comparative Stabilization Overlay (<Rotating Cage> vs. <Fixed Cage>)
 * **Purpose:** Direct thesis comparison of recovery deflection performance across all impact angles, mathematically isolating the stabilization efficacy of the Rotating Cage safety design against the Fixed Cage baseline.
 * **What it Shows:**
-  * Overlays both Rotating Cage (`df_rot`) and Fixed Cage (`df_fix`) impact-only flights.
+  * Overlays both `<Rotating Cage>` (`df_rot`) and `<Fixed Cage>` (`df_fix`) impact-only flights.
   * X-Axis: `'Impact Angle'`, scaling strictly from $0^\circ$ to $90^\circ$ (`xlim(0, 90)`).
   * Y-Axis: Average post-impact deviation scaled to centimeters ($cm$), hardcoded strictly from $0$ to $15$ cm (`ylim(0, 15)`).
   * Scatter points: actual flight passes drawn lightly in the background (`alpha=0.25`) using matching battery colors to preserve line focus.
@@ -258,6 +275,16 @@ Because we develop remotely over network mounts (SSHFS), POSIX advisory file loc
 | **`act_sp_x/y/z`** | REAL | $\text{m}$ | Actual physical vehicle coordinates from OptiTrack at experiment entry timestamp. |
 | **`nom_ep_x/y/z`** | REAL | $\text{m}$ | Command/Target nominal experiment end-point coordinates from mission SSoT. |
 | **`act_ep_x/y/z`** | REAL | $\text{m}$ | Actual physical vehicle coordinates from OptiTrack at experiment exit timestamp. |
+| **`imu_peak_accel`** | REAL | $\text{m/s}^2$ | **[Fully Implemented & Verified]** Peak linear acceleration deviation during the $0.4\text{s}$ impact window. |
+| **`imu_peak_accel_x/y/z`** | REAL | $\text{m/s}^2$ | **[Fully Implemented & Verified]** Peak linear acceleration along individual body axes ($X$ = lateral, $Y$ = longitudinal, $Z$ = vertical) during impact. |
+| **`imu_peak_gyro`** | REAL | $\text{rad/s}$ | **[Fully Implemented & Verified]** Peak angular rate magnitude during the $0.4\text{s}$ impact window. |
+| **`imu_peak_gyro_x/y/z`** | REAL | $\text{rad/s}$ | **[Fully Implemented & Verified]** Peak angular rates (Roll $X$, Pitch $Y$, Yaw $Z$) during the $0.4\text{s}$ impact window. |
+| **`imu_accel_energy`** | REAL | $\text{m/s}$ | **[Fully Implemented & Verified]** Integrated Linear Shock Impulse over the $0.4\text{s}$ impact window. |
+| **`imu_accel_energy_x/y/z`** | REAL | $\text{m/s}$ | **[Fully Implemented & Verified]** Integrated shock impulse components along body $X$, $Y$, and $Z$ axes over the $0.4\text{s}$ contact window. |
+| **`imu_gyro_energy`** | REAL | $\text{rad}$ | **[Fully Implemented & Verified]** Integrated Rotational Disturbance Energy over the $0.4\text{s}$ impact window. |
+| **`imu_gyro_energy_x/y/z`** | REAL | $\text{rad}$ | **[Fully Implemented & Verified]** Integrated rotational disturbance energy (Roll, Pitch, Yaw) over the $0.4\text{s}$ contact window. |
+| **`imu_accel_settling`** | REAL | seconds | **[Fully Implemented & Verified]** Linear Ringing Settling Time (duration from impact until $a_{\text{dev}}$ drops and stays below $1.5\text{ m/s}^2$). |
+| **`imu_gyro_settling`** | REAL | seconds | **[Fully Implemented & Verified]** Attitude Stabilization Settling Time (duration from impact until $\omega_{\text{mag}}$ drops and stays below $0.5\text{ rad/s}$). |
 | **`timestamp`** | TEXT | `YYYY-MM-DD HH:MM:SS` | Caching timestamp. |
 
 # 📊 Comparative Summary Dashboard: `experiments_analysis_summary.ipynb`
@@ -369,4 +396,6 @@ These fundamental design rules dictate both how the physical drone is commanded 
   hb.vz = cmd_vel[2]
   ```
 * **Why:** Position-setpoint-only commands force the PX4 flight controller to hunt aggressively toward target coordinates, leading to highly jerky speed profiles and massive vehicle attitude oscillations upon waypoint transition. Velocity feedforward acts as an explicit control hint, informing the flight controller not just *where* to fly, but *how fast* to be traveling at each point. This produces butter-smooth sweeping transits and stable column contact approaches.
+
+
 

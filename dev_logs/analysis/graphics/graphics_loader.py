@@ -8,6 +8,18 @@ def load_drone_svg_elements(svg_path='/home/dorten/pi_drone_sshfs/dev_logs/analy
     Parses the drone_top.svg file and extracts all structural geometric elements
     (lines, circles, polygons) from the #drone-graphics-layer group.
     """
+    import os
+    if svg_path == '/home/dorten/pi_drone_sshfs/dev_logs/analysis/graphics/drone_top.svg' or not os.path.exists(svg_path):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        resolved_path = os.path.join(script_dir, 'drone_top.svg')
+        if os.path.exists(resolved_path):
+            svg_path = resolved_path
+        else:
+            # fallback to relative path search from workspace
+            for root, dirs, files in os.walk('/home/dorten/MasterThesisDrone'):
+                if 'drone_top.svg' in files:
+                    svg_path = os.path.join(root, 'drone_top.svg')
+                    break
     try:
         tree = ET.parse(svg_path)
     except Exception as e:

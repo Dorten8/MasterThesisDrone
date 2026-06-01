@@ -9,3 +9,6 @@ tmp/
 dev_logs/flights/**
 !dev_logs/flights/**/
 !dev_logs/flights/**/*pass*.mcap
+*.png
+.fuse_hidden*
+

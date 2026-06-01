@@ -44,6 +44,24 @@ def init_db():
             act_ep_x         REAL,
             act_ep_y         REAL,
             act_ep_z         REAL,
+            imu_peak_accel   REAL,
+            imu_peak_accel_x REAL,
+            imu_peak_accel_y REAL,
+            imu_peak_accel_z REAL,
+            imu_peak_gyro    REAL,
+            imu_peak_gyro_x  REAL,
+            imu_peak_gyro_y  REAL,
+            imu_peak_gyro_z  REAL,
+            imu_accel_energy REAL,
+            imu_accel_energy_x REAL,
+            imu_accel_energy_y REAL,
+            imu_accel_energy_z REAL,
+            imu_gyro_energy  REAL,
+            imu_gyro_energy_x REAL,
+            imu_gyro_energy_y REAL,
+            imu_gyro_energy_z REAL,
+            imu_accel_settling REAL,
+            imu_gyro_settling REAL,
             timestamp        TEXT
         )
     """)
@@ -91,7 +109,25 @@ def init_db():
         ("act_sp_z", "REAL"),
         ("act_ep_x", "REAL"),
         ("act_ep_y", "REAL"),
-        ("act_ep_z", "REAL")
+        ("act_ep_z", "REAL"),
+        ("imu_peak_accel", "REAL"),
+        ("imu_peak_accel_x", "REAL"),
+        ("imu_peak_accel_y", "REAL"),
+        ("imu_peak_accel_z", "REAL"),
+        ("imu_peak_gyro", "REAL"),
+        ("imu_peak_gyro_x", "REAL"),
+        ("imu_peak_gyro_y", "REAL"),
+        ("imu_peak_gyro_z", "REAL"),
+        ("imu_accel_energy", "REAL"),
+        ("imu_accel_energy_x", "REAL"),
+        ("imu_accel_energy_y", "REAL"),
+        ("imu_accel_energy_z", "REAL"),
+        ("imu_gyro_energy", "REAL"),
+        ("imu_gyro_energy_x", "REAL"),
+        ("imu_gyro_energy_y", "REAL"),
+        ("imu_gyro_energy_z", "REAL"),
+        ("imu_accel_settling", "REAL"),
+        ("imu_gyro_settling", "REAL")
     ]
     for col, coltype in new_cols:
         try:
@@ -144,6 +180,26 @@ def insert_or_replace_flight(flight_name, condition, metrics):
     else:
         closest_clearance_cm = None
 
+    # 18 new structural IMU metrics
+    imu_peak_accel     = metrics.get('imu_peak_accel')
+    imu_peak_accel_x   = metrics.get('imu_peak_accel_x')
+    imu_peak_accel_y   = metrics.get('imu_peak_accel_y')
+    imu_peak_accel_z   = metrics.get('imu_peak_accel_z')
+    imu_peak_gyro      = metrics.get('imu_peak_gyro')
+    imu_peak_gyro_x    = metrics.get('imu_peak_gyro_x')
+    imu_peak_gyro_y    = metrics.get('imu_peak_gyro_y')
+    imu_peak_gyro_z    = metrics.get('imu_peak_gyro_z')
+    imu_accel_energy   = metrics.get('imu_accel_energy')
+    imu_accel_energy_x = metrics.get('imu_accel_energy_x')
+    imu_accel_energy_y = metrics.get('imu_accel_energy_y')
+    imu_accel_energy_z = metrics.get('imu_accel_energy_z')
+    imu_gyro_energy    = metrics.get('imu_gyro_energy')
+    imu_gyro_energy_x  = metrics.get('imu_gyro_energy_x')
+    imu_gyro_energy_y  = metrics.get('imu_gyro_energy_y')
+    imu_gyro_energy_z  = metrics.get('imu_gyro_energy_z')
+    imu_accel_settling = metrics.get('imu_accel_settling')
+    imu_gyro_settling  = metrics.get('imu_gyro_settling')
+
     # Impact Heuristic (simplified):
     # 1. Primary: closest_clearance must be negative (cage penetrated column boundary)
     # 2. Secondary: look for a deceleration spike of magnitude ≤ -1 m/s² within ±0.6s of closest approach
@@ -172,8 +228,13 @@ def insert_or_replace_flight(flight_name, condition, metrics):
             nom_ep_x, nom_ep_y, nom_ep_z, 
             act_sp_x, act_sp_y, act_sp_z, 
             act_ep_x, act_ep_y, act_ep_z,
+            imu_peak_accel, imu_peak_accel_x, imu_peak_accel_y, imu_peak_accel_z,
+            imu_peak_gyro, imu_peak_gyro_x, imu_peak_gyro_y, imu_peak_gyro_z,
+            imu_accel_energy, imu_accel_energy_x, imu_accel_energy_y, imu_accel_energy_z,
+            imu_gyro_energy, imu_gyro_energy_x, imu_gyro_energy_y, imu_gyro_energy_z,
+            imu_accel_settling, imu_gyro_settling,
             timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         flight_name, condition, sweep_speed, battery_at_start,
         impact_speed, before_impact_accel, impact_accel, impact_angle,
@@ -183,6 +244,11 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         nom_ep[0], nom_ep[1], nom_ep[2], 
         act_sp[0], act_sp[1], act_sp[2], 
         act_ep[0], act_ep[1], act_ep[2],
+        imu_peak_accel, imu_peak_accel_x, imu_peak_accel_y, imu_peak_accel_z,
+        imu_peak_gyro, imu_peak_gyro_x, imu_peak_gyro_y, imu_peak_gyro_z,
+        imu_accel_energy, imu_accel_energy_x, imu_accel_energy_y, imu_accel_energy_z,
+        imu_gyro_energy, imu_gyro_energy_x, imu_gyro_energy_y, imu_gyro_energy_z,
+        imu_accel_settling, imu_gyro_settling,
         timestamp
     ))
     conn.commit()

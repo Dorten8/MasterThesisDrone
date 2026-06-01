@@ -363,6 +363,13 @@ When running Python scripts inside nested folders (like `dev_logs/analysis/datab
 * **Direct Script Run (`python3 path/to/script.py`):** Python automatically adds only the directory containing `script.py` to `sys.path`. It has no knowledge of parent folders, so `from dev_logs.analysis...` imports will raise a `ModuleNotFoundError`.
 * **Module Execution (`python3 -m dev_logs.analysis.database.script`):** By executing with the `-m` (module) flag from the repository root, Python automatically prepends the root directory (`/home/dorten/pi_drone_sshfs`) to `sys.path`, resolving all top-level package imports flawlessly.
 
+# Reset and run database pipeline
+```bash
+rm -f dev_logs/analysis/experiments_summary.db
+PYTHONPATH=. python3 dev_logs/analysis/database/db_pipeline.py
+```
+
+
 ### 🛡️ The "How": Universal Self-Healing Path Boilerplate
 To make any Python script runnable from **anywhere** (both via direct script invocation and module execution), paste this standard, self-healing one-liner at the absolute top of the file before any package imports:
 

@@ -22,10 +22,15 @@ def perpendicular_distance(p, p1, p2):
 
 def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358, 
                     cage_diameter=0.358, column_diameter=0.09, output_path=None, flight_name=None,
-                    dynamic_waypoints=None, df_column=None, df_setpoint=None):
+                    dynamic_waypoints=None, df_column=None, df_setpoint=None, condition=None, show_plot=True):
     """Plots 2D top-down spatial trajectory, showing the flight sweep, waypoints,
     safety cage, minimum clearance vector, maximum deviation, and hatched recovery area.
     """
+    if condition is None and flight_name:
+        if "rotating_cage" in flight_name.lower():
+            condition = "Rotating Cage"
+        elif "fixed_cage" in flight_name.lower():
+            condition = "Fixed Cage"
     if df_mocap.empty:
         print("[WARN] MoCap DataFrame is empty, skipping trajectory plot.")
         return None
@@ -221,7 +226,7 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
     ax.scatter(rot_col_x, rot_col_y, color='black', marker='+', zorder=5)
 
     # 2. Plot Drone Actual Flight Path (ONLY truncated active sweep path, rotated)
-    ax.plot(rot_traj_x, rot_traj_y, color=C_MOCAP, alpha=0.8, linewidth=2.5, label='Actual Path (MoCap ENU)')
+    ax.plot(rot_traj_x, rot_traj_y, color=C_MOCAP, alpha=0.8, linewidth=2.5, label='Actual Path [MoCap ENU]')
 
     # Plot PX4 Target Setpoint Trajectory if provided
     if df_setpoint is not None and not df_setpoint.empty and 'x_cmd' in df_setpoint.columns and 'y_cmd' in df_setpoint.columns:
@@ -275,7 +280,7 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
 
     # Exp. End-point
     end_text = f"Exp. End-point\nX: {wp3_x:.3f}m\nY: {wp3_y:.3f}m"
-    ax.annotate(end_text, xy=(rot_wp3_x, rot_wp3_y), xytext=(60, 45), textcoords='offset points',
+    ax.annotate(end_text, xy=(rot_wp3_x, rot_wp3_y), xytext=(0, 50), textcoords='offset points',
                 fontsize=8, fontweight='bold', color='#444444', ha='center', va='bottom',
                 bbox=dict(facecolor='white', alpha=0.9, edgecolor='none', pad=2),
                 arrowprops=dict(arrowstyle="->", color='#888888', lw=0.8))
@@ -364,7 +369,8 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
                 fontsize=9, ha='center', va='center', zorder=10,
                 bbox=dict(facecolor='white', alpha=0.95, edgecolor='crimson', boxstyle='round,pad=0.15'))
 
-    ax.set_title('Experiment 2D horizontal visualization', fontsize=12, fontweight='bold')
+    cond_suffix = f" <{condition}>" if condition else ""
+    ax.set_title(f'Experiment 2D horizontal visualization{cond_suffix}', fontsize=12, fontweight='bold')
 
     # Professional SSoT color coding of grid axes (X = Crimson Red, Y = Green)
     ax.set_xlabel('Y coordinate, meters', color='#2CA02C', fontweight='bold')
@@ -373,7 +379,12 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
     ax.tick_params(axis='y', colors='#D62728')
 
     # Lower bottom corner laboratory rotation disclaimer
-    ax.text(0.02, 0.02, "X and Y axes have been rotated on this plot to strictly adhere to the physical mapping of X-Y in the motion capture system used",
+    disclaimer_text = (
+        "X and Y axes have been rotated on this plot\n"
+        "to strictly adhere to the physical mapping of X-Y\n"
+        "in the motion capture system used"
+    )
+    ax.text(0.02, 0.02, disclaimer_text,
             transform=ax.transAxes, ha='left', va='bottom', fontsize=7, style='italic', alpha=0.8, zorder=10)
 
     # Strict Equal Aspect Ratio and boundary truncation
@@ -420,7 +431,7 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
             except Exception:
                 aligned_labels.append(lbl)
         elif "Actual Path" in lbl:
-            aligned_labels.append(f"{'Actual Path':<18}(MoCap ENU)")
+            aligned_labels.append(f"{'Actual Path':<18}[MoCap ENU]")
         elif "PX4 Setpoint" in lbl:
             aligned_labels.append(f"{'PX4 Setpoint':<18}(Target track)")
         elif "Separation Vector" in lbl:
@@ -437,7 +448,9 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
         plt.savefig(output_path, dpi=300)
         print(f"[INFO] Trajectory plot saved successfully to: {output_path}")
 
-    plt.show()
+    if show_plot:
+        plt.show()
+    plt.close()
 
     print(f"📐 Physical Separation Metrics (SSoT Configured):")
     print(f"   - Time of closest approach:                     t = {closest_t:.2f}s")
