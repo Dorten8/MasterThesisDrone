@@ -62,6 +62,12 @@ def init_db():
             imu_gyro_energy_z REAL,
             imu_accel_settling REAL,
             imu_gyro_settling REAL,
+            imu_vib_ax       REAL,
+            imu_vib_ay       REAL,
+            imu_vib_az       REAL,
+            imu_vib_gx       REAL,
+            imu_vib_gy       REAL,
+            imu_vib_gz       REAL,
             timestamp        TEXT
         )
     """)
@@ -127,7 +133,13 @@ def init_db():
         ("imu_gyro_energy_y", "REAL"),
         ("imu_gyro_energy_z", "REAL"),
         ("imu_accel_settling", "REAL"),
-        ("imu_gyro_settling", "REAL")
+        ("imu_gyro_settling", "REAL"),
+        ("imu_vib_ax", "REAL"),
+        ("imu_vib_ay", "REAL"),
+        ("imu_vib_az", "REAL"),
+        ("imu_vib_gx", "REAL"),
+        ("imu_vib_gy", "REAL"),
+        ("imu_vib_gz", "REAL")
     ]
     for col, coltype in new_cols:
         try:
@@ -199,6 +211,12 @@ def insert_or_replace_flight(flight_name, condition, metrics):
     imu_gyro_energy_z  = metrics.get('imu_gyro_energy_z')
     imu_accel_settling = metrics.get('imu_accel_settling')
     imu_gyro_settling  = metrics.get('imu_gyro_settling')
+    imu_vib_ax         = metrics.get('imu_vib_ax')
+    imu_vib_ay         = metrics.get('imu_vib_ay')
+    imu_vib_az         = metrics.get('imu_vib_az')
+    imu_vib_gx         = metrics.get('imu_vib_gx')
+    imu_vib_gy         = metrics.get('imu_vib_gy')
+    imu_vib_gz         = metrics.get('imu_vib_gz')
 
     # Impact Heuristic (simplified):
     # 1. Primary: closest_clearance must be negative (cage penetrated column boundary)
@@ -233,8 +251,10 @@ def insert_or_replace_flight(flight_name, condition, metrics):
             imu_accel_energy, imu_accel_energy_x, imu_accel_energy_y, imu_accel_energy_z,
             imu_gyro_energy, imu_gyro_energy_x, imu_gyro_energy_y, imu_gyro_energy_z,
             imu_accel_settling, imu_gyro_settling,
+            imu_vib_ax, imu_vib_ay, imu_vib_az,
+            imu_vib_gx, imu_vib_gy, imu_vib_gz,
             timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         flight_name, condition, sweep_speed, battery_at_start,
         impact_speed, before_impact_accel, impact_accel, impact_angle,
@@ -249,6 +269,8 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         imu_accel_energy, imu_accel_energy_x, imu_accel_energy_y, imu_accel_energy_z,
         imu_gyro_energy, imu_gyro_energy_x, imu_gyro_energy_y, imu_gyro_energy_z,
         imu_accel_settling, imu_gyro_settling,
+        imu_vib_ax, imu_vib_ay, imu_vib_az,
+        imu_vib_gx, imu_vib_gy, imu_vib_gz,
         timestamp
     ))
     conn.commit()

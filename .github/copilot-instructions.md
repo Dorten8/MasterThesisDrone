@@ -95,7 +95,7 @@ These links represent the different dimensions of the project. Reference them wh
 - **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
-## Current Session Status (Last Update: 2026-05-29 16:50 Local Time)
+## Current Session Status (Last Update: 2026-06-01 21:30 Local Time)
 
 ### 🎯 Mission Status
 - **`ExpCollision75Deg` and `ExpCollision75DegV2` missions:** ✅ STABLE, HARDENED & TESTED.
@@ -116,18 +116,16 @@ These links represent the different dimensions of the project. Reference them wh
 - **Heavy drone inertia:** The heavy 1.2kg 4-inch quadcopter has high linear inertia; keeping transit speeds at `0.30 m/s - 0.35 m/s` near geofence boundaries is mandatory.
 - **MicroXRCEAgent Stale Connection:** Do not kill the agent once it connects; doing so freezes the Flight Controller and requires a battery reboot.
 
-### ✅ Completed This Session (2026-05-29)
-- Built pure Matplotlib-based summary notebook `experiments_analysis_summary.ipynb` containing 18+ client-side pre-sliced Pandas DataFrames.
-- Overlaid 4-bin LiPo starting battery capacity trendlines matching each bin color inside Plot 7 (Rotating) and Plot 8 (Fixed).
-- Created Step 9 Comparative Enclosure Overlay plotting exactly 8 battery-colored trendlines simultaneously (dashed for Rotating Cage, solid for Fixed Cage).
-- Hardcoded Y-axis scales strictly to `ylim(0, 15)` and corrected a critical unit scaling conversion from millimeters to centimeters.
-- Purged all Emojis from plot titles and simplified X-axis labels strictly to `'Impact Angle (deg)'`.
-- Added detailed 10-degree bin count overview printout inside the summary loading cell.
+### ✅ Completed This Session (2026-06-01)
+- Added 6 new post-impact time-domain vibration metrics to SQLite database schema (`imu_vib_ax/y/z` and `imu_vib_gx/y/z`).
+- Integrated dynamic vibration calculation inside `kin_calculator.py` isolating post-impact tail oscillation spread using standard deviations over the `[t_impact + 0.2, t_impact + 3.0]` stabilization window.
+- Backfilled 95% of flight passes with the new vibration metrics using the automated pipeline.
+- Streamlined summary dashboard cells, simplified battery charge classification to publication-grade 3-bins (0-40% Red, 40-60% Orange, 60-100% Green), and deleted redundant speed and tracking deviation plots.
 
 ### 📋 Next Priority Order
-1. **Verify Startup End-to-End:** Run `./startup-sequence.sh` and ensure MoCap rigid body tracking is actively streaming in Motive GUI.
-2. **Execute Fresh Sweeps:** Run collision sweep flight passes using `ExpCollision75DegV2` and `ExpCollision45Deg` loops to build the database.
-3. **Execute Summary Dashboard:** Clear and execute all cells in `experiments_analysis_summary.ipynb` to output pristine graphics.
+1. **Verify Summary Dashboard Execution:** Clear and execute all cells in `experiments_analysis_summary.ipynb` to generate all refined publication-grade thesis figures (XYZ vibration spread boxplots, Attitude-Shock portrait, Deflection-Shock tradeoff).
+2. **Verify Graphic Outputs:** Audit all generated PNG/SVG figures under the `graphics/` directory.
+3. **Manuscript Sync:** Push updated figures and tables to the Overleaf thesis document.
 
 ## Tutoring Mode: Socratic Learning Style (Default)
 

@@ -77,7 +77,9 @@
 - Hardcoded Y-axis scaling strictly from 0 to 15 cm across all plots, correcting a major database metric conversion error (scaling mm to cm by dividing by 10.0 instead of multiplying by 100).
 - Simplified all X-axis labels to `'Impact Angle (deg)'` and removed Emojis from titles to resolve system font rendering problems.
 - Full technical breakdown in: [dev_logs/session_journals/2026-05-29-stabilization-trendlines-and-overlay.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-29-stabilization-trendlines-and-overlay.md)
-
-
-
-
+## Session: 2026-06-01 (Summary Refinement & Vibration Dynamics Analysis)
+- Added 6 new post-impact time-domain vibration metrics to SQLite database schema (`imu_vib_ax/y/z` and `imu_vib_gx/y/z`).
+- Integrated dynamic vibration calculation inside the kinematics engine `kin_calculator.py`, isolating post-impact tail oscillation spread using standard deviations over the `[t_impact + 0.2, t_impact + 3.0]` stabilization window.
+- Updated `db_pipeline.py` database caches with `imu_vib_ay` cache check validation and successfully reprocessed/backfilled 95% of flight passes in the database.
+- Streamlined summary dashboard cells, simplified battery charge classification to publication-grade 3-bins (0-40% Red, 40-60% Orange, 60-100% Green), and deleted redundant speed and tracking deviation plots.
+- Full technical breakdown in: [dev_logs/session_journals/2026-06-01-summary-refinement-and-vibration-analysis.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-01-summary-refinement-and-vibration-analysis.md)

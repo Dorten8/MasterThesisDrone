@@ -206,7 +206,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                         metrics['battery_at_start'] = None
 
                     # Skip if already cached in the database (idempotent runs, force-recompute if missing schema columns)
-                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel']):
+                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay']):
                         print(f"⏭️  '{pass_name}' already in database, skipping insert.")
                     else:
                         insert_or_replace_flight(pass_name, condition_label, metrics)
@@ -531,7 +531,7 @@ if __name__ == "__main__":
         pass_idx  = int(m.group(1))
         pass_name = f"{folder_name} - Pass-{pass_idx:02d}"
 
-        if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel']):
+        if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay']):
             print(f"⏭️  Skipping (already cached): {pass_name}")
             skipped += 1
             continue

@@ -679,9 +679,33 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
                 imu_metrics['imu_gyro_settling'] = float(high_gyro_times.max() - t_impact)
             else:
                 imu_metrics['imu_gyro_settling'] = 0.0
+
+            # 5. Vibration spread over post-impact stabilization window [t_impact + 0.2, t_impact + 3.0]
+            # We skip the first 0.2s to isolate the post-impact vibration tail from the initial shock spike
+            df_vib = df_imu[(df_imu['t'] >= t_impact + 0.2) & (df_imu['t'] <= t_impact + 3.0)]
+            if not df_vib.empty and len(df_vib) >= 5:
+                imu_metrics['imu_vib_ax'] = float(df_vib['ax'].std())
+                imu_metrics['imu_vib_ay'] = float(df_vib['ay'].std())
+                imu_metrics['imu_vib_az'] = float((df_vib['az'] + 9.81).std())
+                imu_metrics['imu_vib_gx'] = float(df_vib['gx'].std())
+                imu_metrics['imu_vib_gy'] = float(df_vib['gy'].std())
+                imu_metrics['imu_vib_gz'] = float(df_vib['gz'].std())
+            else:
+                imu_metrics['imu_vib_ax'] = 0.0
+                imu_metrics['imu_vib_ay'] = 0.0
+                imu_metrics['imu_vib_az'] = 0.0
+                imu_metrics['imu_vib_gx'] = 0.0
+                imu_metrics['imu_vib_gy'] = 0.0
+                imu_metrics['imu_vib_gz'] = 0.0
         else:
             imu_metrics['imu_accel_settling'] = 0.0
             imu_metrics['imu_gyro_settling'] = 0.0
+            imu_metrics['imu_vib_ax'] = 0.0
+            imu_metrics['imu_vib_ay'] = 0.0
+            imu_metrics['imu_vib_az'] = 0.0
+            imu_metrics['imu_vib_gx'] = 0.0
+            imu_metrics['imu_vib_gy'] = 0.0
+            imu_metrics['imu_vib_gz'] = 0.0
 
     return {
         'closest_t': closest_t,
@@ -717,5 +741,11 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         'imu_gyro_energy_y': imu_metrics['imu_gyro_energy_y'],
         'imu_gyro_energy_z': imu_metrics['imu_gyro_energy_z'],
         'imu_accel_settling': imu_metrics['imu_accel_settling'],
-        'imu_gyro_settling': imu_metrics['imu_gyro_settling']
+        'imu_gyro_settling': imu_metrics['imu_gyro_settling'],
+        'imu_vib_ax': imu_metrics.get('imu_vib_ax', 0.0),
+        'imu_vib_ay': imu_metrics.get('imu_vib_ay', 0.0),
+        'imu_vib_az': imu_metrics.get('imu_vib_az', 0.0),
+        'imu_vib_gx': imu_metrics.get('imu_vib_gx', 0.0),
+        'imu_vib_gy': imu_metrics.get('imu_vib_gy', 0.0),
+        'imu_vib_gz': imu_metrics.get('imu_vib_gz', 0.0)
     }

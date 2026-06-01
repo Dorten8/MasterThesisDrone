@@ -1,0 +1,20 @@
+<USER_REQUEST>
+@[/home/dorten/MasterThesisDrone/dev_logs/analysis/experiments_analysis_summary.ipynb] 
+now we will be doing this, pls make a plan what to do before doing anything
+
+Nominal Transi speed vs -> find it useless, get rid of it
+Trajector Recovery Area Metric COmparison -> explain what the distribution to the left and right even mean
+Post Average tracking Deviation vs Transit speed -> delete, useless
+
+The rotating cages lines will be always dashed! add it to the skill
+Post impact deviations....0> plot 60-100%battery together from now on as green
+Active flying duration....what does that mean ? what does the line mean, the box idk pls exlplain
+Battery Capacity Drain -> also explain....does not look too interesting
+
+Average flying Voltage vs Flight duration....I mean....sort of useless I feel...
+then I am adding plot
+idk what that line means, what is a global trend?
+
+ok and then I thought about a really big number of plots I will want you to try to make
+First some data
+<truncated 2542 bytes>
