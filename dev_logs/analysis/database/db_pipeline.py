@@ -55,7 +55,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
     print(f"🔧 Loaded SSoT Configs: Tracker='{drone_tracker_name}', Cage D={cage_diameter*100:.1f}cm, Column D={column_diameter*100:.1f}cm\n")
 
     # Helper to process a list of flight folders
-    def process_flights(flight_folder_names, condition_label):
+    def process_flights(flight_folder_names, condition_label, force_plot=False):
         metrics_list = []
         details_list = []
         
@@ -163,6 +163,8 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
 
                     # Calculate physical metrics with dynamic column coordinates
                     metrics = calculate_metrics(df_mocap, wp_events, col_x_flight, col_y_flight, column_radius, cage_radius, df_imu=df_imu)
+                    closest_clearance = metrics.get('closest_clearance')
+                    metrics['impact_detected'] = 1 if (closest_clearance is not None and closest_clearance < 0.0) else 0
 
                     # Read declared nominal waypoints from mission SSoT
                     try:
@@ -212,49 +214,55 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     # Generate and save all 5 high-fidelity plots to the individual flight capsule directory
                     flight_dir = os.path.dirname(pass_path)
                     
-                    # 1. Trajectory Top-Down 2D Spatial Plot
-                    traj_capsule_path = os.path.join(flight_dir, "trajectory_top_down.png")
-                    plot_trajectory(df_mocap, wp_events, col_x_flight, col_y_flight, 
-                                    cage_diameter, column_diameter, output_path=traj_capsule_path, flight_name=pass_name,
-                                    dynamic_waypoints=dynamic_waypoints, df_column=df_column,
-                                    df_setpoint=df_setpoint, show_plot=False)
-                    
-                    # Build segment events list for velocity/kinetic plots
-                    events_log = build_events_log(df_mocap, df_bat, arming_time, takeoff_time, disarming_time, wp_events, achieved_angle=metrics.get('achieved_impact_angle'))
-                    
-                    # 2. Kinetic Profile (3-Panel stack: Velocity, Tangential Accel, MoCap Rate)
-                    kinetic_capsule_path = os.path.join(flight_dir, "kinetic_profile.png")
-                    plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
+                    if metrics.get('impact_detected', 0) == 1 or force_plot:
+                        pass_prefix = f"pass{pass_idx:02d}_"
+                        
+                        # 1. Trajectory Top-Down 2D Spatial Plot
+                        traj_capsule_path = os.path.join(flight_dir, f"{pass_prefix}trajectory_top_down.png")
+                        plot_trajectory(df_mocap, wp_events, col_x_flight, col_y_flight, 
+                                        cage_diameter, column_diameter, output_path=traj_capsule_path, flight_name=pass_name,
+                                        dynamic_waypoints=dynamic_waypoints, df_column=df_column,
+                                        df_setpoint=df_setpoint, show_plot=False)
+                        
+                        # Build segment events list for velocity/kinetic plots
+                        events_log = build_events_log(df_mocap, df_bat, arming_time, takeoff_time, disarming_time, wp_events, achieved_angle=metrics.get('achieved_impact_angle'))
+                        
+                        # 2. Kinetic Profile (3-Panel stack: Velocity, Tangential Accel, MoCap Rate)
+                        kinetic_capsule_path = os.path.join(flight_dir, f"{pass_prefix}kinetic_profile.png")
+                        plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
+                                              label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
+                                              mocap_rate=mocap_rate, condition=condition_label, output_path=kinetic_capsule_path, show_plot=False)
+                        
+                        # 2b. Raw Unsmoothed Kinetic Profile
+                        kinetic_raw_capsule_path = os.path.join(flight_dir, f"{pass_prefix}kinetic_profile_raw.png")
+                        plot_velocity_profile(df_mocap_raw, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
+                                              label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
+                                              mocap_rate=mocap_rate, condition=condition_label, output_path=kinetic_raw_capsule_path, show_plot=False)
+                        
+                        # 3. Battery Voltage Sag Profile
+                        battery_capsule_path = os.path.join(flight_dir, f"{pass_prefix}battery_sag.png")
+                        plot_battery_sag(df_bat, takeoff_time, wp_events, arming_time, label=condition_label, flight_name=pass_name,
+                                         achieved_angle=metrics.get('achieved_impact_angle'), output_path=battery_capsule_path, show_plot=False)
+                        
+                        # 4. Physical IMU Dynamics Plot (Acceleration & Gyro deviation/surge)
+                        imu_dyn_capsule_path = os.path.join(flight_dir, f"{pass_prefix}imu_dynamics.png")
+                        plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
                                           label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                          mocap_rate=mocap_rate, condition=condition_label, output_path=kinetic_capsule_path, show_plot=False)
-                    
-                    # 2b. Raw Unsmoothed Kinetic Profile
-                    kinetic_raw_capsule_path = os.path.join(flight_dir, "kinetic_profile_raw.png")
-                    plot_velocity_profile(df_mocap_raw, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
-                                          label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                          mocap_rate=mocap_rate, condition=condition_label, output_path=kinetic_raw_capsule_path, show_plot=False)
-                    
-                    # 3. Battery Voltage Sag Profile
-                    battery_capsule_path = os.path.join(flight_dir, "battery_sag.png")
-                    plot_battery_sag(df_bat, takeoff_time, wp_events, arming_time, label=condition_label, flight_name=pass_name,
-                                     achieved_angle=metrics.get('achieved_impact_angle'), output_path=battery_capsule_path, show_plot=False)
-                    
-                    # 4. Physical IMU Dynamics Plot (Acceleration & Gyro deviation/surge)
-                    imu_dyn_capsule_path = os.path.join(flight_dir, "imu_dynamics.png")
-                    plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
-                                      label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                      output_path=imu_dyn_capsule_path, show_plot=False)
-                    
-                    # 5. Raw IMU XYZ Components Plot
-                    imu_xyz_capsule_path = os.path.join(flight_dir, "imu_xyz_components.png")
-                    plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
-                                            label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                            output_path=imu_xyz_capsule_path, show_plot=False)
+                                          output_path=imu_dyn_capsule_path, show_plot=False)
+                        
+                        # 5. Raw IMU XYZ Components Plot
+                        imu_xyz_capsule_path = os.path.join(flight_dir, f"{pass_prefix}imu_xyz_components.png")
+                        plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
+                                                label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
+                                                output_path=imu_xyz_capsule_path, show_plot=False)
+                    else:
+                        print(f"⏭️  No collision detected in {pass_name}, skipping plot generation.")
 
                     metrics_list.append(metrics)
                     details_list.append({
                         'flight_name': pass_name,
                         'df_mocap': df_mocap,
+                        'df_mocap_raw': df_mocap_raw,
                         'df_bat': df_bat,
                         'df_imu': df_imu,
                         'df_column': df_column,
@@ -275,13 +283,15 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
 
         return metrics_list, details_list
 
+    force_plot = kwargs.get('force_plot', False)
+
     # Process all flights
     print("⏳ Processing 'Rotating Cage' passes...")
-    metrics_rotating, details_rotating = process_flights(flights_rotating_cage, "Rotating Cage")
+    metrics_rotating, details_rotating = process_flights(flights_rotating_cage, "Rotating Cage", force_plot=force_plot)
     print(f"✅ Successfully processed {len(metrics_rotating)} passes.\n")
 
     print("⏳ Processing 'Fixed Cage' passes...")
-    metrics_fixed, details_fixed = process_flights(flights_fixed_cage, "Fixed Cage")
+    metrics_fixed, details_fixed = process_flights(flights_fixed_cage, "Fixed Cage", force_plot=force_plot)
     print(f"✅ Successfully processed {len(metrics_fixed)} passes.\n")
 
     # Render representative rotating cage flight
@@ -321,10 +331,15 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                         dynamic_waypoints=rep['dynamic_waypoints'], df_column=rep['df_column'],
                         df_setpoint=rep.get('df_setpoint'))
         
-        # Render velocity profile
+        # Render raw velocity profile
+        plot_velocity_profile(rep['df_mocap_raw'], rep['wp_events'], rep['arming_time'], 
+                              rep['takeoff_time'], rep['disarming_time'], events, label="Raw MoCap", flight_name=rep['flight_name'],
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Rotating Cage (Raw)")
+        
+        # Render splined velocity profile
         plot_velocity_profile(rep['df_mocap'], rep['wp_events'], rep['arming_time'], 
-                              rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage", flight_name=rep['flight_name'],
-                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'])
+                              rep['takeoff_time'], rep['disarming_time'], events, label="Splined MoCap", flight_name=rep['flight_name'],
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Rotating Cage (Splined)")
         
         # Render tangential acceleration / deceleration profile
         plot_tangential_accel(rep['df_mocap'], rep['wp_events'], rep['arming_time'],
@@ -382,10 +397,15 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                         dynamic_waypoints=rep['dynamic_waypoints'], df_column=rep['df_column'],
                         df_setpoint=rep.get('df_setpoint'))
         
-        # Render velocity profile
+        # Render raw velocity profile
+        plot_velocity_profile(rep['df_mocap_raw'], rep['wp_events'], rep['arming_time'], 
+                              rep['takeoff_time'], rep['disarming_time'], events, label="Raw MoCap", flight_name=rep['flight_name'],
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Fixed Cage (Raw)")
+        
+        # Render splined velocity profile
         plot_velocity_profile(rep['df_mocap'], rep['wp_events'], rep['arming_time'], 
-                              rep['takeoff_time'], rep['disarming_time'], events, label="Fixed Cage", flight_name=rep['flight_name'],
-                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'])
+                              rep['takeoff_time'], rep['disarming_time'], events, label="Splined MoCap", flight_name=rep['flight_name'],
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Fixed Cage (Splined)")
         
         # Render tangential acceleration / deceleration profile
         plot_tangential_accel(rep['df_mocap'], rep['wp_events'], rep['arming_time'],
@@ -447,6 +467,8 @@ if __name__ == "__main__":
                         help="Skipping any flight directories recorded before this timestamp in YYYYMMDD-HHMM format (default: 20260524-1904)")
     parser.add_argument('--today', '-t', action='store_true',
                         help=f"Shortcut to process only today's flights (sets cutoff to {_today_cutoff})")
+    parser.add_argument('--force-plot', '-f', action='store_true',
+                        help="Force plot generation even for passes without detected collisions")
     
     args = parser.parse_args()
 
@@ -572,6 +594,8 @@ if __name__ == "__main__":
             wp_events = wp_events_list[0]  # Pass file contains exactly one pass
 
             metrics = calculate_metrics(df_mocap, wp_events, col_x, col_y, column_radius, cage_radius, df_imu=df_imu)
+            closest_clearance = metrics.get('closest_clearance')
+            metrics['impact_detected'] = 1 if (closest_clearance is not None and closest_clearance < 0.0) else 0
 
             # Read declared nominal waypoints from mission SSoT
             _m = None
@@ -616,44 +640,49 @@ if __name__ == "__main__":
             insert_or_replace_flight(pass_name, condition, metrics)
 
             # Generate and save all 5 high-fidelity plots to the individual flight capsule directory
-            # 1. Trajectory Top-Down 2D Spatial Plot
-            traj_capsule_path = os.path.join(folder_path, "trajectory_top_down.png")
-            plot_trajectory(df_mocap, wp_events, col_x, col_y, 
-                            cage_diameter, column_diameter, output_path=traj_capsule_path, flight_name=pass_name,
-                            dynamic_waypoints=dynamic_waypoints, df_column=df_column,
-                            df_setpoint=df_setpoint, show_plot=False)
-            
-            # Build segment events list for velocity/kinetic plots
-            events_log = build_events_log(df_mocap, df_bat, arming_time, takeoff_time, disarming_time, wp_events, achieved_angle=metrics.get('achieved_impact_angle'))
-            
-            # 2. Kinetic Profile (3-Panel stack: Velocity, Tangential Accel, MoCap Rate)
-            kinetic_capsule_path = os.path.join(folder_path, "kinetic_profile.png")
-            plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
+            if metrics.get('impact_detected', 0) == 1 or args.force_plot:
+                pass_prefix = f"pass{pass_idx:02d}_"
+                
+                # 1. Trajectory Top-Down 2D Spatial Plot
+                traj_capsule_path = os.path.join(folder_path, f"{pass_prefix}trajectory_top_down.png")
+                plot_trajectory(df_mocap, wp_events, col_x, col_y, 
+                                cage_diameter, column_diameter, output_path=traj_capsule_path, flight_name=pass_name,
+                                dynamic_waypoints=dynamic_waypoints, df_column=df_column,
+                                df_setpoint=df_setpoint, show_plot=False)
+                
+                # Build segment events list for velocity/kinetic plots
+                events_log = build_events_log(df_mocap, df_bat, arming_time, takeoff_time, disarming_time, wp_events, achieved_angle=metrics.get('achieved_impact_angle'))
+                
+                # 2. Kinetic Profile (3-Panel stack: Velocity, Tangential Accel, MoCap Rate)
+                kinetic_capsule_path = os.path.join(folder_path, f"{pass_prefix}kinetic_profile.png")
+                plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
+                                      label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
+                                      mocap_rate=mocap_rate, condition=condition, output_path=kinetic_capsule_path, show_plot=False)
+                
+                # 2b. Raw Unsmoothed Kinetic Profile
+                kinetic_raw_capsule_path = os.path.join(folder_path, f"{pass_prefix}kinetic_profile_raw.png")
+                plot_velocity_profile(df_mocap_raw, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
+                                      label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
+                                      mocap_rate=mocap_rate, condition=condition, output_path=kinetic_raw_capsule_path, show_plot=False)
+                
+                # 3. Battery Voltage Sag Profile
+                battery_capsule_path = os.path.join(folder_path, f"{pass_prefix}battery_sag.png")
+                plot_battery_sag(df_bat, takeoff_time, wp_events, arming_time, label=condition, flight_name=pass_name,
+                                 achieved_angle=metrics.get('achieved_impact_angle'), output_path=battery_capsule_path, show_plot=False)
+                
+                # 4. Physical IMU Dynamics Plot (Acceleration & Gyro deviation/surge)
+                imu_dyn_capsule_path = os.path.join(folder_path, f"{pass_prefix}imu_dynamics.png")
+                plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
                                   label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                  mocap_rate=mocap_rate, condition=condition, output_path=kinetic_capsule_path, show_plot=False)
-            
-            # 2b. Raw Unsmoothed Kinetic Profile
-            kinetic_raw_capsule_path = os.path.join(folder_path, "kinetic_profile_raw.png")
-            plot_velocity_profile(df_mocap_raw, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
-                                  label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                  mocap_rate=mocap_rate, condition=condition, output_path=kinetic_raw_capsule_path, show_plot=False)
-            
-            # 3. Battery Voltage Sag Profile
-            battery_capsule_path = os.path.join(folder_path, "battery_sag.png")
-            plot_battery_sag(df_bat, takeoff_time, wp_events, arming_time, label=condition, flight_name=pass_name,
-                             achieved_angle=metrics.get('achieved_impact_angle'), output_path=battery_capsule_path, show_plot=False)
-            
-            # 4. Physical IMU Dynamics Plot (Acceleration & Gyro deviation/surge)
-            imu_dyn_capsule_path = os.path.join(folder_path, "imu_dynamics.png")
-            plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
-                              label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                              output_path=imu_dyn_capsule_path, show_plot=False)
-            
-            # 5. Raw IMU XYZ Components Plot
-            imu_xyz_capsule_path = os.path.join(folder_path, "imu_xyz_components.png")
-            plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
-                                    label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                    output_path=imu_xyz_capsule_path, show_plot=False)
+                                  output_path=imu_dyn_capsule_path, show_plot=False)
+                
+                # 5. Raw IMU XYZ Components Plot
+                imu_xyz_capsule_path = os.path.join(folder_path, f"{pass_prefix}imu_xyz_components.png")
+                plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
+                                        label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
+                                        output_path=imu_xyz_capsule_path, show_plot=False)
+            else:
+                print(f"   ⏭️  No collision detected in {pass_name}, skipping plot generation.")
 
             populated += 1
 

@@ -153,6 +153,6 @@ def compare_all_angles(results_list):
         ax.grid(True, linestyle='--', alpha=0.5)
         ax.legend(loc='best', frameon=True, facecolor='white', edgecolor='#EAEAEA')
 
-    plt.suptitle("📐 Thesis Cross-Angle Collision Metrics Progression Summary", fontsize=15, fontweight='bold', y=0.98)
+    plt.suptitle("Thesis Cross-Angle Collision Metrics Progression Summary", fontsize=15, fontweight='bold', y=0.98)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()

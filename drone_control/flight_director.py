@@ -215,6 +215,8 @@ class FlightDirector(Node):
         if self.aborted: return
         # Only enforce runtime geofence checking during active flight missions
         if self.state != "MISSION": return
+        if hasattr(self.mission, 'ENFORCE_GEOFENCE') and not self.mission.ENFORCE_GEOFENCE:
+            return
 
         # Assuming ENU from /poses, Z is positive UP
         if not (self.geo_x_min <= pos.x <= self.geo_x_max) or not (self.geo_y_min <= pos.y <= self.geo_y_max) or not (self.geo_z_min <= pos.z <= self.geo_z_max):

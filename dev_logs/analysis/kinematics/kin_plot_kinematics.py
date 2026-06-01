@@ -29,7 +29,7 @@ def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False,
         events.append(('Column Center Passed', t_passed, '#FF9900', '--', 1.8, '#995C00'))
     if t_impact is not None:
         angle_str = f" ({achieved_angle:.1f}°)" if achieved_angle is not None else ""
-        events.append((f'💥 Impact{angle_str}', t_impact, '#D62728', '-.', 2.5, '#7F0000'))
+        events.append((f'Impact{angle_str}', t_impact, '#D62728', '-.', 2.5, '#7F0000'))
     if t_end is not None:
         events.append(('Exp. End-point', t_end, '#9467BD', ':', 1.8, '#444444'))
         
@@ -269,7 +269,7 @@ def plot_battery_sag(df_bat, takeoff_time, wp_events, arming_time, label="", fli
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2, loc='lower left')
     
-    ax1.set_title(f'🔋 6S LiPo Dynamic Battery Depletion & Motor Load Sag Profile ({label})')
+    ax1.set_title(f'6S LiPo Dynamic Battery Depletion & Motor Load Sag Profile ({label})')
     ax1.grid(True)
 
     # Draw standard timeline markers on Battery plot (relative time)
@@ -351,12 +351,15 @@ def plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_ti
     ax2.tick_params(axis='y', labelcolor='#1F77B4')
     ax2.set_ylim(0, max(10.0, df_plot['g_mag'].max() * 1.1) if not df_plot.empty else 10.0)
     
-    # Combine legends
+    # Combine legends - keep upper right but shift slightly left to prevent interference with final marker line
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', frameon=True, facecolor='white', edgecolor='#EAEAEA')
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', bbox_to_anchor=(0.85, 0.98), frameon=True, facecolor='white', edgecolor='#EAEAEA')
     
-    ax1.set_title(f'💥 Physical IMU Collision Dynamics ({label})')
+    cond_str = label
+    if cond_str and not cond_str.startswith('<'):
+        cond_str = f"<{cond_str}>"
+    ax1.set_title(f'IMU Collision Dynamic {cond_str}', fontsize=12)
     ax1.grid(True)
 
     # Draw standard timeline markers (relative time)
@@ -463,7 +466,7 @@ def plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarm
                      ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
                      bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA', boxstyle='round,pad=0.2'))
     
-    fig.suptitle(f'📐 Raw IMU X/Y/Z Components ({label})\n[X = Lateral/Roll, Y = Longitudinal/Pitch, Z = Vertical/Yaw]', fontsize=14, y=0.98)
+    fig.suptitle(f'Raw IMU X/Y/Z Components ({label})\n[X = Lateral/Roll, Y = Longitudinal/Pitch, Z = Vertical/Yaw]', fontsize=14, y=0.98)
     
     plt.tight_layout()
     if output_path:

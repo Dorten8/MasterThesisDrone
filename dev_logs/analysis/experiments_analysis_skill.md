@@ -253,6 +253,7 @@ To enable rigorous statistical comparison and thesis compilation, all processed 
 Because we develop remotely over network mounts (SSHFS), POSIX advisory file locks are highly unstable. To prevent write corruption and database locks, the pipeline implements:
 1. **resilient connections:** All SQLite accesses use a connection timeout of **30 seconds** (`timeout=30.0`).
 2. **busy timeouts:** Executes `PRAGMA busy_timeout = 30000;` on connection to gracefully queue transactions rather than throwing immediate crash exceptions.
+3. **CRITICAL PIPELINE REBUILD CORE MEMORY RULE FOR CO-PILOTS:** Rebuilding or populating the database pipeline (`db_pipeline.py` or executing the full `experiments_analysis.ipynb`) triggers high-volume physical parsing of 172+ raw MCAP flight passes and takes extensive computing time. **YOU MUST ALWAYS EXPLICITLY ASK THE USER FOR CONFIRMATION before invoking a full pipeline rebuild or running any batch backfill command!** Whenever possible, ask the user to execute the command themselves inside their local environment rather than running it asynchronously or automatically behind the scenes to ensure perfect visibility and avoid unexpected system slowdowns.
 
 ### Table Schema: `flights_summary`
 
