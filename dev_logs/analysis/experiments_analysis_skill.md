@@ -398,5 +398,6 @@ These fundamental design rules dictate both how the physical drone is commanded 
   ```
 * **Why:** Position-setpoint-only commands force the PX4 flight controller to hunt aggressively toward target coordinates, leading to highly jerky speed profiles and massive vehicle attitude oscillations upon waypoint transition. Velocity feedforward acts as an explicit control hint, informing the flight controller not just *where* to fly, but *how fast* to be traveling at each point. This produces butter-smooth sweeping transits and stable column contact approaches.
 
-
-
+### 3. Thesis Graphic Style Rules (Enclosure Comparison)
+* **The Visual Standard:** When visually comparing the performance of the two protective cages in line plots or trendlines (e.g. regression fits), the **Rotating Cage** data must always be represented with **dashed lines** (`linestyle='--'`), and the **Fixed Cage** data must always be represented with **solid lines** (`linestyle='-'`).
+* **Why:** In monochrome printing or for color-blind readers, relying solely on line color (e.g., Orange vs. Blue) is insufficient. Establishing a strict structural line-style mapping guarantees that the advanced compliant mechanism (Rotating Cage) is always distinctly identifiable from the rigid baseline (Fixed Cage) across all thesis figures.
