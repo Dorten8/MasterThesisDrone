@@ -1,6 +1,30 @@
 # Intro
 
-ROS 2 Humble development environment for autonomous PX4-based drone, built on Docker with Ubuntu 22.04 base image for Gazebo Classic compatibility. 
+ROS 2 Humble development environment for autonomous PX4-based drone, built on Docker with Ubuntu 22.04 base image for Gazebo Classic compatibility.
+
+## System Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph RPi5 ["Raspberry Pi 5"]
+        subgraph HostOS ["Ubuntu 24.04 (Host OS)"]
+            subgraph Docker ["Docker Container (Ubuntu 22.04 Base Image)"]
+                ROS2["ROS2 Humble"]
+                VSCode["VS Code with Remote Development"]
+                MAV["MAVlink-router"]
+                Opti["OptiTrack (Local Motion Capture)"]
+            end
+        end
+    end
+
+    style RPi5 fill:#458B00,stroke:#2d5e00,stroke-width:2px,color:#fff
+    style HostOS fill:#32CD32,stroke:#228B22,stroke-width:1px,color:#fff
+    style Docker fill:#4F4F4F,stroke:#333,stroke-width:1px,color:#fff
+    
+    classDef appBoxes fill:#ffffff,stroke:#333,stroke-width:1px,color:#000
+    class ROS2,VSCode,MAV,Opti appBoxes
+```
+
 ### Bibliography
 AI -> read newest Master Thesis_bibliography in the root of this repository
 
@@ -32,7 +56,7 @@ The following must be configured on the Ubuntu 24.04 host system (not in contain
 
 # How to
 ## PX4 based flight conntroller (Pixhawk 6C in my case)
-apart from well documented settup of the flight controller (FC) a correct middleware settup is crucial. This middlaware is used for communication of the FC and either a companion computer (mounted on the drone) or ground control station (GCS). [PX4 is developed with asynchronous publish/subscribe uORB messaging in mind, which well translates to topics on ROS2 with uXRCE-DDS protocol. For control via Mavlink (for example to issue lower level commands such as throttle, pitch, yaw and roll) the FC has to have these parameters settup:](https://docs.px4.io/main/en/companion_computer/pixhawk_rpi)
+apart from well documented settup of the flight controller (FC) a correct middleware settup is crucial. This middlaware is used for communication of the FC and either a companion computer (mounted on [...])
 ```bash
 # Mavlink setup
 MAV_0_CONFIG = TELEM2
@@ -229,7 +253,7 @@ ros2 topic echo /fmu/out/vehicle_status
 source /opt/ros/humble/setup.bash
 source /home/ws/install/setup.bash
 
-ros2 topic pub /fmu/in/vehicle_command px4_msgs/msg/VehicleCommand "{timestamp: 0, param1: 1.0, param2: 0.0, command: 400, target_system: 1, target_component: 1, source_system: 1, source_component: 1, from_external: true}"
+ros2 topic pub /fmu/in/vehicle_command px4_msgs/msg/VehicleCommand "{timestamp: 0, param1: 1.0, param2: 0.0, command: 400, target_system: 1, target_component: 1, source_system: 1, source_component: 1,[...]
 ```
 In the PX4 shell, confirm an ACK arrives:
 ```bash
@@ -332,7 +356,7 @@ docker system prune -a
 
 ### Overview
 
-The drone uses motion capture data from an OptiTrack system to provide accurate position and orientation estimates. The `mocap_px4_bridge` package bridges mocap data from the OptiTrack client into ROS 2 topics and forwards it to the PX4 autopilot via the uXRCE-DDS middleware.
+The drone uses motion capture data from an OptiTrack system to provide accurate position and orientation estimates. The `mocap_px4_bridge` package bridges mocap data from the OptiTrack client into ROS 2.
 
 ### Architecture
 
@@ -373,7 +397,7 @@ The mocap integration relies on three key packages managed as Git submodules:
 
 1. **mocap** (`Dorten8/mocap`)
    - **Source:** Forked from [SaxionMechatronics/mocap](https://github.com/SaxionMechatronics/mocap)
-   - **Reason for fork:** The original repository supports both Vicon and OptiTrack motion capture systems. Since this project uses **OptiTrack exclusively**, the Vicon SDK was removed to reduce build complexity, eliminate unused dependencies, and streamline compilation. The modified version focuses only on OptiTrack support.
+   - **Reason for fork:** The original repository supports both Vicon and OptiTrack motion capture systems. Since this project uses **OptiTrack exclusively**, the Vicon SDK was removed to reduce build dependencies.
    - **Key modifications:** Disabled Vicon SDK build configuration, removed Vicon client headers and source files
 
 2. **mocap_px4_bridge** (`SaxionMechatronics/mocap_px4_bridge`)
@@ -398,44 +422,44 @@ colcon build --symlink-install
 ### ⚠️ Critical Mocap Coordinate Alignment Rules
 
 #### 1. NatNet Streaming Up-Axis Configuration (Crucial for EKF2)
-While Motive’s internal viewport is Y-Up (Green axis Up), the ROS 2 `mocap_px4_bridge` and Foxglove strictly expect the standard ROS Z-Up (ENU) frame.
-* **The Trap:** If Motive’s NatNet stream setting is set to **`Up Axis: Y-Axis`**, the broadcast `/poses` topic outputs coordinates where `Y` is the altitude. The C++ bridge (which assumes Z is Up) maps `poseMsg.position.z` directly to PX4's vertical Down axis, which physically maps your horizontal distance (e.g., `1.52m`) to the drone's estimated altitude. This causes EKF2 to completely lose its state, drift wildly, and fail to take off.
-* **The Law:** In the Motive UI, navigate to **Settings** → **Streaming** → **NatNet** and ensure **`Up Axis`** is explicitly set to **`Z-Axis`**. This tells Motive to mathematically rotate its internal coordinates to Z-Up before streaming them, keeping Foxglove, EKF2, and our control scripts in perfect alignment.
+While Motive's internal viewport is Y-Up (Green axis Up), the ROS 2 `mocap_px4_bridge` and Foxglove strictly expect the standard ROS Z-Up (ENU) frame.
+* **The Trap:** If Motive's NatNet stream setting is set to **`Up Axis: Y-Axis`**, the broadcast `/poses` topic outputs coordinates where `Y` is the altitude. The C++ bridge (which assumes Z is Up) will misinterpret the axes.
+* **The Law:** In the Motive UI, navigate to **Settings** → **Streaming** → **NatNet** and ensure **`Up Axis`** is explicitly set to **`Z-Axis`**. This tells Motive to mathematically rotate its internal coordinates into the ROS standard frame.
 
 #### 2. EKF2 Altitude Origin vs. MoCap World Origin
-* **The Hurdle:** When the Pixhawk boots, the EKF2 estimator initializes its own local coordinate system (`/fmu/out/vehicle_local_position`) by pinning its `[0,0,0]` origin to the starting sensor calibration (barometer). This creates a persistent coordinate translation offset $\Delta$ relative to the physical MoCap floor origin (e.g., EKF2 Z reading `-0.8m` when the drone is physically sitting `0.09m` off the floor).
-* **The Architecture Solution (Transform Layer):** Because our geofencing safety boundaries and obstacle boxes are defined in absolute room coordinates (`mocap_world` frame), we decouple safety and control through a continuous **Translation Layer** in our control scripts:
+* **The Hurdle:** When the Pixhawk boots, the EKF2 estimator initializes its own local coordinate system (`/fmu/out/vehicle_local_position`) by pinning its `[0,0,0]` origin to the starting sensor calibration point. Meanwhile, the mocap system has its own fixed room-origin.
+* **The Architecture Solution (Transform Layer):** Because our geofencing safety boundaries and obstacle boxes are defined in absolute room coordinates (`mocap_world` frame), we decouple safety and control:
   1. Calculate the active spatial offset vector at takeoff: $\Delta = P_{ekf2} - P_{mocap}$.
   2. Map all absolute room coordinate setpoints $S_{mocap}$ onto the flight controller's active frame: $S_{ekf2} = S_{mocap} + \Delta$.
   3. Enforce geofencing checks by subscribing directly to the absolute, drift-free `/poses` topic, keeping the emergency safety boundary independent of PX4's EKF2 state.
 
 #### 3. ROS 2 QoS Compatibility (Durability Policy Mismatches)
-* **The Hurdle:** In ROS 2, if a subscriber specifies a QoS durability policy, any publisher *must* offer a matching or stronger durability policy. If a subscriber expects `TRANSIENT_LOCAL` and the publisher offers `VOLATILE`, **ROS 2 silently drops the connection under the hood** with absolutely zero console logs or warnings. Conversely, if a subscriber expects `VOLATILE`, it can successfully connect to both `VOLATILE` and `TRANSIENT_LOCAL` publishers.
-* **The Offboard Trap:** PX4's uXRCE-DDS agent subscribes to `/fmu/in/vehicle_command` and `/fmu/in/offboard_control_mode` with **`TRANSIENT_LOCAL`** durability. If a custom offboard control node publishes commands using standard `VOLATILE` durability, the Pixhawk will completely ignore the node, and the drone will silently refuse to arm or switch to offboard mode.
-* **The Subscription Trap:** The OptiTrack `motion_capture_tracking_node` publishes the `/poses` topic with **`VOLATILE`** durability. If your control node subscribes to `/poses` using a `TRANSIENT_LOCAL` QoS profile, ROS 2 will print a console warning and refuse to receive any motion capture coordinates!
+* **The Hurdle:** In ROS 2, if a subscriber specifies a QoS durability policy, any publisher *must* offer a matching or stronger durability policy. If a subscriber expects `TRANSIENT_LOCAL` and the publisher only offers `VOLATILE`, the subscriber will never receive messages.
+* **The Offboard Trap:** PX4's uXRCE-DDS agent subscribes to `/fmu/in/vehicle_command` and `/fmu/in/offboard_control_mode` with **`TRANSIENT_LOCAL`** durability. If a custom offboard control node publishes these topics with `VOLATILE` durability, PX4 will never see the commands.
+* **The Subscription Trap:** The OptiTrack `motion_capture_tracking_node` publishes the `/poses` topic with **`VOLATILE`** durability. If your control node subscribes to `/poses` using a `TRANSIENT_LOCAL` policy, you will receive stale cached messages instead of fresh pose data.
 * **The Law:**
   * Use **`durability=DurabilityPolicy.TRANSIENT_LOCAL`** for all ROS 2 *publishers* sending commands into the Pixhawk.
   * Use **`durability=DurabilityPolicy.VOLATILE`** for all ROS 2 *subscribers* receiving external data (such as `/poses` and PX4 telemetry `/fmu/out/*`).
 
 #### 4. The Eager Local State Transition Control Loop Anti-Pattern
-* **The Hurdle:** Never assume an arming or mode-change command sent to PX4 has been executed immediately on the next local script tick. Transitioning states eagerly locally (e.g., setting `self.state = "ARMED"` immediately after calling `command_arm()`) halts the arming control loop before the command is processed, and prevents status callbacks from realizing when physical confirmation is received.
-* **The Law:** Keep the offboard heartbeat stream active in the `"ARMING"` state and only transition the local state to `"ARMED"` when the flight controller broadcasts physical confirmation back over `/fmu/out/vehicle_status` (e.g., when `msg.arming_state == VehicleStatus.ARMING_STATE_ARMED`).
+* **The Hurdle:** Never assume an arming or mode-change command sent to PX4 has been executed immediately on the next local script tick. Transitioning states eagerly locally (e.g., setting `self.state = "ARMED"` right after sending the arm command) creates a logic race condition.
+* **The Law:** Keep the offboard heartbeat stream active in the `"ARMING"` state and only transition the local state to `"ARMED"` when the flight controller broadcasts physical confirmation back over the `/fmu/out/vehicle_status` topic.
 
 #### 5. The 90-Degree Cross-Coupling Trap (Horizontal Instability)
-* **The Hurdle:** The `mocap_px4_bridge` C++ node hardcodes its coordinate transforms by setting $X_{ned} = X_{mocap}$ and $Y_{ned} = -Y_{mocap}$. This mirrors the Y-axis but keeps X identical. If your offboard control script assumes standard textbook ENU-to-NED swap ($X_{ned} = Y_{enu}, Y_{ned} = X_{enu}$), the commanded horizontal velocities and positions will be rotated by exactly $90^\circ$! This creates a positive feedback cross-coupling loop where the drone attempts to correct drift by driving sideways, causing it to spiral outward and crash.
+* **The Hurdle:** The `mocap_px4_bridge` C++ node hardcodes its coordinate transforms by setting $X_{ned} = X_{mocap}$ and $Y_{ned} = -Y_{mocap}$. This mirrors the Y-axis but keeps X identical. If you apply a different rotation matrix in your Python offboard controller, the drone will oscillate in figure-eights or spiral sideways.
 * **The Law:** Ensure your companion computer offboard command layer applies the exact coordinate transforms utilized by the physical bridge:
   $$\text{m\_ned\_x} = x_{\text{enu}}$$
   $$\text{m\_ned\_y} = -y_{\text{enu}}$$
   $$\text{m\_ned\_z} = -z_{\text{enu}}$$
 
 #### 6. The Trigonometric Yaw Inversion (Counter-Clockwise vs. Clockwise)
-* **The Hurdle:** Standard Python trigonometry functions like `math.atan2(dy, dx)` compute angles increasing in the **counter-clockwise (CCW)** direction. However, in PX4's local frame, the Z-axis points Down, which means a positive yaw represents a **clockwise (CW)** rotation when viewed from above. If you send `math.atan2(dy, dx)` directly to the flight controller, the drone will orient correctly when flying East or West, but will face exactly **backwards (180° wrong)** when flying North or South!
+* **The Hurdle:** Standard Python trigonometry functions like `math.atan2(dy, dx)` compute angles increasing in the **counter-clockwise (CCW)** direction. However, in PX4's local frame, the Z-axis points down (FRD frame), so yaw angles increase **clockwise (CW)** when viewed from above.
 * **The Law:** Always negate the calculated trigonometric angle to translate counter-clockwise angles into clockwise yaw orientations:
   $$\psi_{\text{px4}} = -\text{atan2}(dy, dx)$$
 
 #### 7. Sensor Latency & EKF2_EV_DELAY Cross-Correlation Calibration
-* **The Hurdle:** Motion Capture processing, camera exposure times, and network packet transmission to the companion computer introduce a physical latency of 20-60ms. If `EKF2_EV_DELAY` is set to 0, EKF2 fuses the data assuming it represents the drone's position in the current instant. When the drone accelerates or changes direction, the temporal mismatch between raw IMU changes (instantaneous) and delayed visual inputs creates innovation spikes, causing wobbling and overshoot.
-* **The Law:** Use cross-correlation analysis of your flight records to align the instantaneous onboard gyroscope yaw rate against the delayed raw visual odometry yaw rate. The time offset that yields the highest correlation is your physical system latency. Enter this exact value in QGroundControl as `EKF2_EV_DELAY` (in ms) and reboot the flight controller to achieve razor-sharp tracking.
+* **The Hurdle:** Motion Capture processing, camera exposure times, and network packet transmission to the companion computer introduce a physical latency of 20-60ms. If `EKF2_EV_DELAY` is set to 0, EKF2 will fuse mocap odometry at the wrong timestamp, breaking gyro-to-vision alignment and causing yaw drift.
+* **The Law:** Use cross-correlation analysis of your flight records to align the instantaneous onboard gyroscope yaw rate against the delayed raw visual odometry yaw rate. The time offset that yields maximum correlation is your true `EKF2_EV_DELAY` in milliseconds.
 
 # RVIZ simple start
 ### Goal
