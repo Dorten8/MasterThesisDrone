@@ -598,6 +598,39 @@ ros2 topic echo /poses
 ```
 
 
+# Expertiments
+architerture of running the experiments
+```mermaid
+flowchart TD
+    %% ==================== Drone side (SSH) ====================
+    subgraph Drone["🛸 Drone (SSH) – `startup‑sequence.sh`"]
+        direction TB
+        A[Start script] --> B[Time Synchronisation<br/>(NTP / MOCAP fallback)]
+        B --> C[MicroXRCEAgent (serial on /dev/ttyAMA0)]
+        C --> D[Motion Capture Tracking Node]
+        D --> E[← /poses topic (multicast from MOCAP PC)]
+        D --> F[mocap_px4_bridge]
+        F --> G[Publish to /fmu/in/vehicle_visual_odometry]
+        G --> H[Foxglove Bridge (ROS2 launch)]
+        H --> I[WebSocket WS://0.0.0.0:8765]:::ws
+    end
+
+    %% ==================== Local PC side =====================
+    subgraph PC["💻 Local PC"]
+        direction TB
+        J[Foxglove Studio] --> K[WebSocket client<br/>ws://192.168.74.8:8765]:::ws
+        L[MOCAP PC (6 cameras)] -->|multicast 120 Hz| M[/poses ROS2 topic]:::topic
+    end
+
+    %% ==================== Connections ======================
+    I -.-> K
+    M -.-> D
+    style Drone fill:#1f2937,stroke:#3b82f6,color:#f9fafb
+    style PC fill:#111827,stroke:#10b981,color:#f9fafb
+    classDef ws fill:#fff3c4,stroke:#d97706,color:#1f2937;
+    classDef topic fill:#e0f2fe,stroke:#0369a1,color:#1f2937;
+```
+
 
 ## Thesis Finish Bootstrap (Draft)
 
