@@ -12,3 +12,10 @@ dev_logs/flights/**
 *.png
 .fuse_hidden*
 
+# Telemetry analysis cache and scratchfiles
+dev_logs/scratch/
+dev_logs/analysis/database/*.pkl
+dev_logs/analysis/*_dump.txt
+graphics/
+
+
