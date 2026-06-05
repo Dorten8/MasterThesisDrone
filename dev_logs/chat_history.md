@@ -99,6 +99,16 @@
 - Streamlined summary dashboard cells, simplified battery charge classification to publication-grade 3-bins (0-40% Red, 40-60% Orange, 60-100% Green), and deleted redundant speed and tracking deviation plots.
 - Full technical breakdown in: [dev_logs/session_journals/2026-06-01-summary-refinement-and-vibration-analysis.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-01-summary-refinement-and-vibration-analysis.md)
 
+## Session: 2026-06-02 (Structural Dynamics Boxplots & Battery Binning)
+- Appended Step 12 boxplots for structural dynamics: Peak Accelerometer Z, Rotational Energy Integration, and Vibration Tail Spread.
+- Re-implemented boxplots using pure Matplotlib instead of Seaborn to resolve dependency warnings and enforce visual theme consistency.
+- Standardized battery charge classification to publication-grade 3-bins (0-40% Red, 40-60% Orange, 60-100% Green) across all deviation scatter plots.
+- Updated visual styling guidelines in `experiments_analysis_skill.md` to establish the monochrome standard (dashed lines for Rotating Cage, solid for Fixed Cage).
+- Full technical breakdown in: [dev_logs/session_journals/2026-06-02-structural-dynamics-boxplots-and-battery-binning.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-02-structural-dynamics-boxplots-and-battery-binning.md)
+
+## Session: 2026-06-03 (Project Inactivity)
+- Inactive day. No active development or telemetry processing performed.
+
 ## Session: 2026-06-04 (Experimental Collision Sweep Refinements)
 - Aligned the IMU collision dynamics timeline by dynamically scanning the accelerometer peak gradient to correct coordinate-based MoCap latency.
 - Restored three empty plots (Post-Impact Deviation, Stabilization Overlay) by standardizing query filters to `'Rotating'` and `'Fixed'` instead of `'Rotating Cage'` and `'Fixed Cage'`.
