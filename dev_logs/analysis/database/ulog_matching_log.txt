@@ -1,0 +1,62 @@
+=== ULog Matching Log ===
+Date: 2026-06-04 16:49:30.051983
+🔍 Found 48 flight folders in /home/dorten/MasterThesisDrone/dev_logs/flights.
+
+skip: Skipping pre-admissible flight: flight_20260524-0928_75°_column_collision_loop_rotating_cage
+skip: Skipping pre-admissible flight: flight_20260524-1007_75°_column_collision_loop_rotating_cage
+skip: Skipping pre-admissible flight: flight_20260524-1136_75°_column_collision_loop_rotating_cage
+skip: Skipping pre-admissible flight: flight_20260524-1143_75°_column_collision_loop_rotating_cage
+skip: Skipping pre-admissible flight: flight_20260524-1148_75°_column_collision_loop_rotating_cage
+skip: Skipping pre-admissible flight: flight_20260524-1757_75°_column_collision_loop_fixed_cage
+skip: Skipping pre-admissible flight: flight_20260524-1813_75°_column_collision_loop_fixed_cage
+skip: Skipping pre-admissible flight: flight_20260524-1824_75°_column_collision_loop_fixed_cage
+skip: Skipping pre-admissible flight: flight_20260524-1831_75°_column_collision_loop_fixed_cage
+skip: Skipping pre-admissible flight: flight_20260524-1842_75°_column_collision_loop_fixed_cage
+skip: Skipping pre-admissible flight: flight_20260524-1847_75°_column_collision_loop_fixed_cage
+skip: Skipping pre-admissible flight: flight_20260524-1848_75°_column_collision_loop_fixed_cage
+skip: Skipping pre-admissible flight: flight_20260524-1850_75°_column_collision_loop_fixed_cage
+skip: Skipping pre-admissible flight: flight_20260524-1852_75°_column_collision_loop_fixed_cage
+skip: Skipping pre-admissible flight: flight_20260524-1853_75°_column_collision_loop_fixed_cage
+✅ ULog already present and correct in flight_20260524-1904_75°_column_collision_loop_fixed_cage: 18_57_21.ulg
+✅ ULog already present and correct in flight_20260525-1706_75°_column_collision_loop_fixed_cage: 16_42_16.ulg
+✅ ULog already present and correct in flight_20260525-1715_75°_column_collision_loop_fixed_cage: 17_09_57.ulg
+✅ ULog already present and correct in flight_20260525-1716_75°_column_collision_loop_fixed_cage: 17_09_57.ulg
+✅ ULog already present and correct in flight_20260525-1829_75°_column_collision_loop_rotating_cage: 18_20_31.ulg
+✅ ULog already present and correct in flight_20260525-1837_75°_column_collision_loop_rotating_cage: 18_33_06.ulg
+✅ ULog already present and correct in flight_20260525-1840_75°_column_collision_loop_rotating_cage: 18_33_06.ulg
+🧹 Deleting mismatched ULog 09_26_24.ulg from flight_20260526-0922_75°_column_collision_loop_rotating_cage
+⚡ Matched flight_20260526-0922_75°_column_collision_loop_rotating_cage -> 20_16_18.ulg (from folder: 2026-05-25)
+✅ ULog already present and correct in flight_20260526-0931_75°_column_collision_loop_rotating_cage: 09_26_24.ulg
+✅ ULog already present and correct in flight_20260527-1558_75°_column_collision_loop_rotating_cage: 15_37_59.ulg
+✅ ULog already present and correct in flight_20260527-1607_75°_column_collision_loop_fixed_cage: 16_01_42.ulg
+⚡ Matched flight_20260528-1230_75°_column_collision_loop_fixed_cage -> 17_22_15.ulg (from folder: 2026-05-27)
+✅ ULog already present and correct in flight_20260528-1239_75°_column_collision_loop_rotating_cage: 12_35_01.ulg
+✅ ULog already present and correct in flight_20260528-1457_75°_column_collision_loop_rotating_cage: 14_47_58.ulg
+✅ ULog already present and correct in flight_20260528-1511_75°_column_collision_loop_fixed_cage: 15_02_34.ulg
+✅ ULog already present and correct in flight_20260528-1655_45°_column_collision_loop_fixed_cage: 16_49_18.ulg
+✅ ULog already present and correct in flight_20260528-1706_45°_column_collision_loop_fixed_cage: 16_59_53.ulg
+🧹 Deleting mismatched ULog 10_53_07.ulg from flight_20260529-1041_45°_column_collision_loop_fixed_cage
+⚡ Matched flight_20260529-1041_45°_column_collision_loop_fixed_cage -> 18_52_56.ulg (from folder: 2026-05-28)
+✅ ULog already present and correct in flight_20260529-1049_45°_column_collision_loop_fixed_cage: 10_45_51.ulg
+✅ ULog already present and correct in flight_20260529-1210_45°_column_collision_loop_rotating_cage: 12_05_59.ulg
+✅ ULog already present and correct in flight_20260529-1219_45°_column_collision_loop_rotating_cage: 12_15_13.ulg
+✅ ULog already present and correct in flight_20260529-1345_45°_column_collision_loop_rotating_cage: 13_39_11.ulg
+✅ ULog already present and correct in flight_20260529-1419_45°_column_collision_loop_rotating_cage: 14_13_41.ulg
+🧹 Deleting mismatched ULog 17_30_58.ulg from flight_20260530-1724_45°_column_collision_loop_fixed_cage
+⚡ Matched flight_20260530-1724_45°_column_collision_loop_fixed_cage -> 16_00_51.ulg (from folder: 2026-05-29)
+🧹 Deleting mismatched ULog 17_40_47.ulg from flight_20260530-1727_45°_column_collision_loop_fixed_cage
+⚡ Matched flight_20260530-1727_45°_column_collision_loop_fixed_cage -> 16_00_51.ulg (from folder: 2026-05-29)
+✅ ULog already present and correct in flight_20260530-1735_45°_column_collision_loop_fixed_cage: 17_30_58.ulg
+🧹 Deleting mismatched ULog 11_07_04.ulg from flight_20260531-1102_45°_column_collision_loop_fixed_cage
+⚡ Matched flight_20260531-1102_45°_column_collision_loop_fixed_cage -> 18_38_34.ulg (from folder: 2026-05-30)
+✅ ULog already present and correct in flight_20260531-1112_45°_column_collision_loop_fixed_cage: 11_07_04.ulg
+✅ ULog already present and correct in flight_20260531-1228_45°_column_collision_loop_rotating_cage: 12_22_49.ulg
+✅ ULog already present and correct in flight_20260531-1237_45°_column_collision_loop_rotating_cage: 12_31_47.ulg
+🧹 Deleting mismatched ULog 18_59_12.ulg from flight_20260601-1756_45°_column_collision_loop_rotating_cage
+⚡ Matched flight_20260601-1756_45°_column_collision_loop_rotating_cage -> 21_48_21.ulg (from folder: 2026-05-31)
+
+📊 ULog Copying Summary:
+   Matched & Copied: 7
+   Already Present:  39
+   Failed to Match:  0
+   Total Folders:    48

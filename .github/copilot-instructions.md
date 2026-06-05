@@ -95,7 +95,7 @@ These links represent the different dimensions of the project. Reference them wh
 - **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
-## Current Session Status (Last Update: 2026-06-01 21:30 Local Time)
+## Current Session Status (Last Update: 2026-06-04 21:00 Local Time)
 
 ### 🎯 Mission Status
 - **`ExpCollision75Deg` and `ExpCollision75DegV2` missions:** ✅ STABLE, HARDENED & TESTED.
@@ -116,16 +116,19 @@ These links represent the different dimensions of the project. Reference them wh
 - **Heavy drone inertia:** The heavy 1.2kg 4-inch quadcopter has high linear inertia; keeping transit speeds at `0.30 m/s - 0.35 m/s` near geofence boundaries is mandatory.
 - **MicroXRCEAgent Stale Connection:** Do not kill the agent once it connects; doing so freezes the Flight Controller and requires a battery reboot.
 
-### ✅ Completed This Session (2026-06-01)
-- Added 6 new post-impact time-domain vibration metrics to SQLite database schema (`imu_vib_ax/y/z` and `imu_vib_gx/y/z`).
-- Integrated dynamic vibration calculation inside `kin_calculator.py` isolating post-impact tail oscillation spread using standard deviations over the `[t_impact + 0.2, t_impact + 3.0]` stabilization window.
-- Backfilled 95% of flight passes with the new vibration metrics using the automated pipeline.
-- Streamlined summary dashboard cells, simplified battery charge classification to publication-grade 3-bins (0-40% Red, 40-60% Orange, 60-100% Green), and deleted redundant speed and tracking deviation plots.
+### ✅ Completed This Session (2026-06-04)
+- **IMU Timeline Alignment**: Aligned the collision timeline dynamically to the peak accelerometer gradient, resolving coordinate-based MoCap latency and sync offsets. Reprocessed and rebuilt the database cache for all 137 flights.
+- **Resolved Empty Plots**: Standardized condition string queries to `'Rotating'` and `'Fixed'` inside the summary notebook to restore the comparative deviation and stabilization overlay figures.
+- **Notebook Figure Cleaning**: Removed `/poses` update rate red dots, retired the inconclusive Plot 14 and Plot 15, and split/filtered the motor speed commanded idle outliers at 2000 RPM.
+- **Robust Fitting**: Integrated Huber Regressor and Theil-Sen estimators for the Deceleration vs. Battery Capacity trendlines.
 
 ### 📋 Next Priority Order
-1. **Verify Summary Dashboard Execution:** Clear and execute all cells in `experiments_analysis_summary.ipynb` to generate all refined publication-grade thesis figures (XYZ vibration spread boxplots, Attitude-Shock portrait, Deflection-Shock tradeoff).
-2. **Verify Graphic Outputs:** Audit all generated PNG/SVG figures under the `graphics/` directory.
-3. **Manuscript Sync:** Push updated figures and tables to the Overleaf thesis document.
+1. **Investigate Control Allocator Saturation**: Resolve why `allocator_saturation_duration_sec` is empty/zero for 177 flights. Verify active motor limit hits and alternate instances of `actuator_outputs` or `actuator_motors`.
+2. **Phase 6 - Motor Analysis**: Generate Plot 1, Plot 2, Plot 17, and Plot 18 comparative figures.
+3. **Phase 2 & 3 - Plot Polish**: Resolve Plot 16 Y-axis name, convert Plot 12 to 2-panels with mathematical descriptions, and implement the nominal vs. actual polar wedge geometry visualization.
+4. **Phase 4 - Trajectory Path Spread**: Implement SDLD calculations to quantify path spread.
+5. **Manuscript Sync**: Push updated figures and tables to the Overleaf thesis document.
+
 
 ## Tutoring Mode: Socratic Learning Style (Default)
 

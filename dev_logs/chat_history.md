@@ -83,3 +83,10 @@
 - Updated `db_pipeline.py` database caches with `imu_vib_ay` cache check validation and successfully reprocessed/backfilled 95% of flight passes in the database.
 - Streamlined summary dashboard cells, simplified battery charge classification to publication-grade 3-bins (0-40% Red, 40-60% Orange, 60-100% Green), and deleted redundant speed and tracking deviation plots.
 - Full technical breakdown in: [dev_logs/session_journals/2026-06-01-summary-refinement-and-vibration-analysis.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-01-summary-refinement-and-vibration-analysis.md)
+
+## Session: 2026-06-04 (Experimental Collision Sweep Refinements)
+- Aligned the IMU collision dynamics timeline by dynamically scanning the accelerometer peak gradient to correct coordinate-based MoCap latency.
+- Restored three empty plots (Post-Impact Deviation, Stabilization Overlay) by standardizing query filters to `'Rotating'` and `'Fixed'` instead of `'Rotating Cage'` and `'Fixed Cage'`.
+- Implemented robust **Huber Regressor** and **Theil-Sen estimator** trendlines for Deceleration vs. Battery Capacity, and filtered command speed outliers at 2000 RPM.
+- Cleaned the summary notebook figures (removing red dots and retiring Plot 14 and Plot 15).
+- Full technical breakdown in: [dev_logs/session_journals/2026-06-04-experiments-analysis-refinements.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-04-experiments-analysis-refinements.md)

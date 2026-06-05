@@ -1,3 +1,10 @@
+# ==============================================================================
+# ⚠️ CRITICAL NOTICE: DO NOT TOUCH OR ALTER THE 2D TRAJECTORY PLOT OR FORMATTING!
+# The layout, colors, styles, labels, CAD drone rendering, and mathematical
+# overlays (e.g., max deviation, recovery area hatching) must NOT be modified.
+# If any adjustments are necessary, ALWAYS consult the user first.
+# ==============================================================================
+
 import os
 import sys
 import numpy as np
@@ -20,6 +27,9 @@ def perpendicular_distance(p, p1, p2):
     den = np.sqrt((y2 - y1)**2 + (x2 - x1)**2)
     return num / den if den > 0 else 0.0
 
+# ==============================================================================
+# ⚠️ CRITICAL NOTICE: DO NOT ALTER OR RENAME THE STYLING OR LABELS OF THIS PLOT!
+# ==============================================================================
 def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358, 
                     cage_diameter=0.358, column_diameter=0.09, output_path=None, flight_name=None,
                     dynamic_waypoints=None, df_column=None, df_setpoint=None, condition=None, show_plot=True):

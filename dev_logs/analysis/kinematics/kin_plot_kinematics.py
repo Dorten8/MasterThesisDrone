@@ -7,10 +7,9 @@ C_MOCAP = '#1F77B4'      # Steel Blue (Actual Ground Truth)
 C_CMD = '#D62728'        # Crimson Red (Commanded Setpoint)
 C_BAT = '#9467BD'        # Muted Purple (Battery Voltage)
 
-def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False, achieved_angle=None, draw_labels=True):
+def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False, achieved_angle=None, draw_labels=True, label_pos='top'):
     """Draws perfectly aligned, standard timeline event markers on the given axis (General Plot Rule 6)."""
     y_min, y_max = y_lims
-    y_pos = y_min + (y_max - y_min) * 0.88
     
     t_start = wp_events.get('WP1')
     t_impact = wp_events.get('Column Impact')
@@ -37,7 +36,12 @@ def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False,
         t_val = t_abs if is_absolute else (t_abs - arming_time)
         ax.axvline(x=t_val, color=color, linestyle=style, linewidth=width, alpha=0.95, zorder=5)
         # Prevents label text collision by alternating offsets and height positions
-        h_fraction = 0.88 - 0.20 * (idx % 3)
+        if label_pos == 'bottom':
+            h_fraction = 0.12 + 0.20 * (idx % 3)
+            v_align = 'bottom'
+        else:
+            h_fraction = 0.88 - 0.20 * (idx % 3)
+            v_align = 'top'
         h_pos = y_min + (y_max - y_min) * h_fraction
         
         # Left-align the label for Impact to prevent obscuring post-impact curves (General Plot Rule 7)
@@ -49,7 +53,7 @@ def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False,
             h_align = 'left'
             
         if draw_labels:
-            ax.text(x_pos, h_pos, name, rotation=90, va='top', ha=h_align, fontsize=8, fontweight='bold',
+            ax.text(x_pos, h_pos, name, rotation=90, va=v_align, ha=h_align, fontsize=8, fontweight='bold',
                     color=text_color, bbox=dict(facecolor='white', alpha=0.90, edgecolor=color, pad=1.5), zorder=6)
 
 def get_timeline_limits(wp_events, arming_time, df_t, is_absolute=False):
@@ -69,7 +73,7 @@ def get_timeline_limits(wp_events, arming_time, df_t, is_absolute=False):
         
     return crop_min, crop_max
 
-def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, ax=None, label="", flight_name=None, achieved_angle=None, mocap_rate=240.0, condition=None, output_path=None, show_plot=True):
+def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, ax=None, label="", flight_name=None, achieved_angle=None, mocap_rate=240.0, condition=None, output_path=None, show_plot=True, df_raw=None, is_raw=False):
     """Plots a 3-subplot consolidated physical kinetic profile (Velocity, Tangential Accel, MoCap Rate)."""
     if df_mocap.empty:
         print("[WARN] Empty MoCap DataFrame, skipping velocity profile plot.")
@@ -99,6 +103,8 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         ax_acc = None
         ax_rate = None
         show_plot = False
+        
+    is_raw_inferred = is_raw or (label and "raw" in label.lower()) or (condition and "raw" in condition.lower())
 
     # ---------------- 1. Top Panel: continuous velocity profile ----------------
     ax_vel.plot(t_rel, df_plot['speed'], color=C_MOCAP, linewidth=2.2, label=f'MoCap SG Velocity ({label})')
@@ -167,15 +173,21 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
 
     # ---------------- 3. Bottom Panel: dynamic MoCap /poses rate ----------------
     if ax_rate is not None:
-        dt = df_plot['t'].diff()
+        df_rate_source = df_raw[df_raw['t'] >= arming_time].copy() if df_raw is not None else df_plot
+        dt = df_rate_source['t'].diff()
         rate = 1.0 / dt
         rate = rate.clip(0, 450)
         
         # Color coding: Green for healthy, Red for dropouts (< 30Hz)
-        colors = np.where(rate < 30.0, '#D62728', '#2CA02C')
+        t_rel_rate = df_rate_source['t'] - arming_time
         
-        ax_rate.scatter(t_rel, rate, c=colors, s=12, alpha=0.8, label='/poses Publish Rate')
-        ax_rate.plot(t_rel, rate, color='#888888', linewidth=0.5, alpha=0.3)
+        if is_raw_inferred:
+            colors = np.where(rate < 30.0, '#D62728', '#2CA02C')
+            ax_rate.scatter(t_rel_rate, rate, c=colors, s=12, alpha=0.8, label='/poses Publish Rate')
+            ax_rate.plot(t_rel_rate, rate, color='#888888', linewidth=0.5, alpha=0.3)
+        else:
+            # Clean plot: no scatter dots, just a smooth solid line
+            ax_rate.plot(t_rel_rate, rate, color='#2CA02C', linewidth=1.5, alpha=0.8, label='/poses Publish Rate')
         
         # Draw threshold lines
         ax_rate.axhline(30.0, color='#D62728', linestyle='--', linewidth=1.2, label='Min Failsafe Rate (30 Hz)')
@@ -311,7 +323,11 @@ def plot_battery_sag(df_bat, takeoff_time, wp_events, arming_time, label="", fli
         print(f"   - Safe Flight Ceiling (40% Cutoff):    {(60.0 / depletion_rate_per_min) * 2.4:.1f} seconds")
 
 def plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log, label="", flight_name=None, achieved_angle=None, output_path=None, show_plot=True):
-    """Plots the physical IMU collision dynamics overlaid with the flight mission waypoints."""
+    """
+    Plots the physical IMU collision dynamics overlaid with the flight mission waypoints.
+    *** FROZEN PLOT: DO NOT MODIFY ***
+    (This plot is considered complete and serves as a template for future aggregated visualizations.)
+    """
     if df_imu is None or df_imu.empty:
         print("[WARN] Empty IMU DataFrame, skipping IMU plot.")
         return
@@ -387,8 +403,11 @@ def plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_ti
     plt.close()
 
 def plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log, label="", flight_name=None, achieved_angle=None, output_path=None, show_plot=True):
-    """Plots the raw X, Y, Z components of the IMU acceleration and gyroscope.
+    """
+    Plots the raw X, Y, Z components of the IMU acceleration and gyroscope.
     Axis labels are professionally annotated to define the physical meaning on the Pixhawk 6C body frame.
+    *** FROZEN PLOT: DO NOT MODIFY ***
+    (This plot is considered beautiful and complete. Event labels have been moved to the bottom.)
     """
     if df_imu is None or df_imu.empty:
         print("[WARN] Empty IMU DataFrame, skipping IMU XYZ plot.")
@@ -444,7 +463,7 @@ def plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarm
         ax_gyr.set_ylim(df_plot[g_col].min() - 0.5, df_plot[g_col].max() + 0.5)
 
         # Draw standard timeline markers (relative time). Draw labels only on top plot (index 0) to prevent text collision.
-        draw_timeline_markers(ax, wp_events, arming_time, (y_min, y_max), is_absolute=False, achieved_angle=achieved_angle, draw_labels=(i == 0))
+        draw_timeline_markers(ax, wp_events, arming_time, (y_min, y_max), is_absolute=False, achieved_angle=achieved_angle, draw_labels=(i == 0), label_pos='bottom')
         
         ax.grid(True)
         
@@ -477,69 +496,3 @@ def plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarm
         plt.show()
     plt.close()
 
-def plot_tangential_accel(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, label="", flight_name=None, achieved_angle=None, output_path=None):
-    """Plots the Savitzky-Golay tangential acceleration profile over time.
-    Positive values = acceleration, negative = deceleration.
-    A bold zero line marks the boundary between the two states.
-    """
-    if df_mocap.empty or 'accel' not in df_mocap.columns:
-        print("[WARN] No tangential acceleration data available. Run compute_velocity() first.")
-        return
-
-    df_plot = df_mocap[df_mocap['t'] >= arming_time].copy()
-    
-    t_min_crop, t_max_crop = get_timeline_limits(wp_events, arming_time, df_plot['t'], is_absolute=False)
-    duration = t_max_crop - t_min_crop
-    fig_width = max(6.0, duration * 1.5)
-
-    fig, ax = plt.subplots(figsize=(fig_width, 5))
-    t_rel = df_plot['t'] - arming_time
-
-    # Fill positive (acceleration) and negative (deceleration) regions
-    ax.fill_between(t_rel, df_plot['accel'], 0,
-                    where=(df_plot['accel'] >= 0),
-                    color='#2CA02C', alpha=0.18, label='_nolegend_')
-    ax.fill_between(t_rel, df_plot['accel'], 0,
-                    where=(df_plot['accel'] < 0),
-                    color='#D62728', alpha=0.18, label='_nolegend_')
-
-    # Main signal line
-    ax.plot(t_rel, df_plot['accel'], color='#1F77B4', linewidth=1.8,
-            label='Tangential Acceleration (m/s²)')
-
-    # Bold zero reference line
-    ax.axhline(0.0, color='black', linewidth=1.6, linestyle='-', zorder=5,
-               label='Zero Acceleration (Steady State)')
-
-    # Symmetric Y-axis — auto-scale to a clean range, minimum ±1.5 m/s²
-    a_abs_max = max(1.5, df_plot['accel'].abs().quantile(0.99) * 1.2)
-    ax.set_ylim(-a_abs_max, a_abs_max)
-
-    # Draw standard timeline markers
-    draw_timeline_markers(ax, wp_events, arming_time, (-a_abs_max, a_abs_max), is_absolute=False, achieved_angle=achieved_angle)
-
-    ax.set_xlabel('Time Since Arming (seconds)')
-    ax.set_ylabel('Tangential Acceleration (m/s²)\n← Deceleration | Acceleration →')
-    ax.set_title(f'⚡ Tangential Acceleration / Deceleration Profile ({label})')
-    
-    # Set timeline limits (General Plot Rule 3: [T_start - 1s, T_end + 1s])
-    ax.set_xlim(t_min_crop, t_max_crop)
-    
-    # Strictly enforce 1.0s uniform ticks
-    ax.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
-    
-    ax.legend(loc='upper right', frameon=True, facecolor='white', edgecolor='#EAEAEA')
-    ax.grid(True, alpha=0.5)
-
-    if flight_name:
-        ax.text(0.98, 0.02, f"{flight_name}", transform=ax.transAxes,
-                ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
-                bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA', boxstyle='round,pad=0.2'))
-
-    plt.tight_layout()
-    if output_path:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        plt.savefig(output_path, dpi=300)
-        print(f"[INFO] Tangential acceleration plot saved successfully to: {output_path}")
-    plt.show()
-    plt.close()

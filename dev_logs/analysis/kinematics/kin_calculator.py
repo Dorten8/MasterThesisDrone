@@ -19,16 +19,11 @@ def resample_and_interpolate_mocap(df_mocap, target_freq=100.0):
     dt = 1.0 / target_freq
     t_uniform = np.arange(t_start, t_end + dt/2.0, dt)
 
-    # Use CubicSpline for position channels to preserve high-fidelity smoothness and curvature
-    cs_x = CubicSpline(df_clean['t'], df_clean['x'], extrapolate=False)
-    cs_y = CubicSpline(df_clean['t'], df_clean['y'], extrapolate=False)
-    cs_z = CubicSpline(df_clean['t'], df_clean['z'], extrapolate=False)
-
     resampled_data = {
         't': t_uniform,
-        'x': cs_x(t_uniform),
-        'y': cs_y(t_uniform),
-        'z': cs_z(t_uniform)
+        'x': np.interp(t_uniform, df_clean['t'], df_clean['x']),
+        'y': np.interp(t_uniform, df_clean['t'], df_clean['y']),
+        'z': np.interp(t_uniform, df_clean['t'], df_clean['z'])
     }
 
     # Interpolate orientation quaternions and other continuous channels linearly
@@ -359,8 +354,31 @@ def find_waypoint_events(df_mocap, df_setpoint, takeoff_time=None, label=None, c
     # Post-process: ALWAYS run Column Passed and Column Impact detection for all passes that have both WP2 and WP3
     for wp_evs in passes_events:
         if 'WP2' in wp_evs and 'WP3' in wp_evs:
-            t_wp2 = wp_evs['WP2']
+            t_wp2_cmd = wp_evs['WP2']
             t_wp3 = wp_evs['WP3']
+            
+            # Refine WP2 to be the actual start of sweep (when it locks and goes) rather than the command transition time.
+            df_window = df_mocap[(df_mocap['t'] >= t_wp2_cmd) & (df_mocap['t'] <= t_wp3)]
+            if not df_window.empty:
+                # Find when the drone crosses Y = 0.70m towards WP3 (Y is decreasing towards WP3 = -1.2)
+                cross_mask = df_window['y'] <= 0.70
+                t_cross = df_window.loc[cross_mask, 't'].iloc[0] if cross_mask.any() else t_wp3
+                
+                df_pre_cross = df_window[df_window['t'] <= t_cross]
+                if not df_pre_cross.empty:
+                    # Find the last time speed is below 0.10 m/s
+                    low_speed_mask = df_pre_cross['speed'] < 0.10
+                    if low_speed_mask.any():
+                        t_start_sweep = df_pre_cross.loc[low_speed_mask, 't'].iloc[-1]
+                    else:
+                        # Fallback to minimum speed in pre-cross window
+                        idx_min = df_pre_cross['speed'].idxmin()
+                        t_start_sweep = df_pre_cross.loc[idx_min, 't']
+                    
+                    # Update WP2 to the refined timestamp
+                    wp_evs['WP2'] = t_start_sweep
+            
+            t_wp2 = wp_evs['WP2']
             sweep_data = df_mocap[(df_mocap['t'] >= t_wp2) & (df_mocap['t'] <= t_wp3)]
             if not sweep_data.empty:
                 idx_min = (sweep_data['y'] - column_y).abs().idxmin()
@@ -627,6 +645,15 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
 
     if df_imu is not None and not df_imu.empty:
         t_impact = wp_events.get('Column Impact', closest_t)
+        # Align t_impact dynamically with the physical IMU peak shock if possible
+        search_window = df_imu[(df_imu['t'] >= t_impact - 0.20) & (df_imu['t'] <= t_impact + 0.20)]
+        if not search_window.empty:
+            idx_max = search_window['a_deviation'].idxmax()
+            t_physical_impact = float(search_window.loc[idx_max, 't'])
+            if search_window['a_deviation'].max() > 2.0:
+                t_impact = t_physical_impact
+                wp_events['Column Impact'] = t_physical_impact
+
         # 1. Slice contact window strictly to [t_impact - 0.05, t_impact + 0.35]
         df_contact = df_imu[(df_imu['t'] >= t_impact - 0.05) & (df_imu['t'] <= t_impact + 0.35)]
         if df_contact.empty:

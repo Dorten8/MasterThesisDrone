@@ -55,7 +55,7 @@ def build_dataframes(topic_data, drone_tracker_name, bag_start_ns):
     battery_msgs = topic_data.get("/fmu/out/battery_status", [])
     setpoint_msgs = topic_data.get("/fmu/in/trajectory_setpoint", [])
     odom_msgs = topic_data.get("/fmu/out/vehicle_odometry", [])
-    status_msgs = topic_data.get("/fmu/out/vehicle_status", [])
+    status_msgs = topic_data.get("/fmu/out/vehicle_status", []) or topic_data.get("/fmu/out/vehicle_status_v1", [])
     imu_msgs = topic_data.get("/fmu/out/sensor_combined", [])
 
     # MoCap

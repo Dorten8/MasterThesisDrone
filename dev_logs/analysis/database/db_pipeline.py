@@ -1,5 +1,7 @@
+import glob
 import os
 import sys
+import glob
 import numpy as np
 import pandas as pd
 from IPython.display import display, HTML
@@ -7,9 +9,274 @@ from IPython.display import display, HTML
 from dev_logs.analysis.database.db_loader import load_drone_metadata, load_mcap, build_dataframes
 from dev_logs.analysis.kinematics.kin_calculator import compute_velocity, find_waypoint_events, build_events_log, calculate_metrics
 from dev_logs.analysis.kinematics.kin_plot_trajectory import plot_trajectory
-from dev_logs.analysis.kinematics.kin_plot_kinematics import plot_velocity_profile, plot_battery_sag, plot_imu_dynamics, plot_imu_xyz_components, plot_tangential_accel
+from dev_logs.analysis.kinematics.kin_plot_kinematics import plot_velocity_profile, plot_battery_sag, plot_imu_dynamics, plot_imu_xyz_components
+from dev_logs.analysis.kinematics.kin_plot_actuators import plot_actuators_and_status, plot_control_allocator_saturation, plot_pid_rate_tracking
 from dev_logs.analysis.kinematics.kin_plot_statistics import plot_angle_boxplots
 from dev_logs.analysis.database.db_manager import insert_or_replace_flight, get_database_summary_markdown, is_already_cached
+
+
+def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
+    import glob
+    import os
+    import numpy as np
+    import pyulog
+    from mcap_ros2.reader import read_ros2_messages
+
+    # Initialize empty metrics
+    motor_metrics = {
+        'motor_avg_before': None,
+        'motor_max_before': None,
+        'motor_avg_after': None,
+        'motor_max_after': None,
+        'motor_thrust_surge': None,
+        'motor_imbalance_after': None,
+        'timestamp_PX4': None
+    }
+
+    ulg_files = glob.glob(os.path.join(flight_dir, "*.ulg"))
+    if not ulg_files:
+        return motor_metrics
+
+    # Extract timesync status from MCAP to compute exact clock offset
+    observed_offset = None
+    try:
+        # Check current pass MCAP first
+        for msg in read_ros2_messages(pass_path):
+            if msg.channel.topic == "/fmu/out/timesync_status":
+                observed_offset = msg.ros_msg.observed_offset
+                break
+        
+        # If not in pass, check other MCAPs in directory
+        if observed_offset is None:
+            mcap_files = glob.glob(os.path.join(flight_dir, "*.mcap"))
+            for mf in mcap_files:
+                if mf == pass_path:
+                    continue
+                for msg in read_ros2_messages(mf):
+                    if msg.channel.topic == "/fmu/out/timesync_status":
+                        observed_offset = msg.ros_msg.observed_offset
+                        break
+                if observed_offset is not None:
+                    break
+    except Exception as e:
+        print(f"  [WARN] Error reading MCAP for timesync status: {e}")
+
+    # Load ULog
+    try:
+        ulg_path = ulg_files[0]
+        
+        if observed_offset is not None:
+            offset_sec = - (observed_offset * 1e-6)
+            print(f"  ⚡ Clock sync: Using exact timesync offset_sec={offset_sec:.6f}s")
+        else:
+            # Fallback to EKF velocity correlation
+            print("  ⚠️ Timesync status not found in MCAP. Falling back to EKF velocity correlation...")
+            mcap_odom = None
+            try:
+                for msg in read_ros2_messages(pass_path):
+                    if msg.channel.topic == "/fmu/out/vehicle_odometry":
+                        mcap_odom = {
+                            'ros_ts': msg.ros_msg.timestamp,
+                            'log_time_ns': msg.log_time_ns,
+                            'vx': msg.ros_msg.velocity[0],
+                            'vy': msg.ros_msg.velocity[1],
+                            'vz': msg.ros_msg.velocity[2]
+                        }
+                        break
+            except Exception as e:
+                print(f"  [WARN] Error reading MCAP for motor sync fallback: {e}")
+                return motor_metrics
+
+            if mcap_odom is None:
+                print("  [WARN] No /fmu/out/vehicle_odometry found in MCAP for fallback motor sync.")
+                return motor_metrics
+
+            ulog_pos = pyulog.ULog(ulg_path, message_name_filter_list=["vehicle_local_position"])
+            u_odom = ulog_pos.get_dataset("vehicle_local_position")
+            u_timestamps = u_odom.data["timestamp"]
+            u_vx = u_odom.data["vx"]
+            u_vy = u_odom.data["vy"]
+            u_vz = u_odom.data["vz"]
+
+            # Find matching message in ULog by velocity correlation
+            best_idx = None
+            min_err = float('inf')
+            for i in range(len(u_timestamps)):
+                err = (u_vx[i] - mcap_odom['vx'])**2 + (u_vy[i] - mcap_odom['vy'])**2 + (u_vz[i] - mcap_odom['vz'])**2
+                if err < min_err:
+                    min_err = err
+                    best_idx = i
+
+            if best_idx is None or min_err > 0.01:
+                print(f"  [WARN] Failed to find close velocity match in ULog (min_err={min_err:.6e}).")
+                return motor_metrics
+
+            offset_sec = (mcap_odom['log_time_ns'] * 1e-9) - (u_timestamps[best_idx] * 1e-6)
+            print(f"  ⚡ Clock sync: Using EKF velocity correlation offset_sec={offset_sec:.6f}s (min_err={min_err:.3e})")
+
+
+        def ulog_to_rel_sec(t_us):
+            return (t_us * 1e-6) + offset_sec - (bag_start_ns * 1e-9)
+
+        # Load necessary topics from ULog
+        ulog_all = pyulog.ULog(ulg_path, message_name_filter_list=["actuator_motors", "control_allocator_status", "vehicle_rates_setpoint", "vehicle_angular_velocity"])
+        motors_data = ulog_all.get_dataset("actuator_motors")
+        motor_t_us = motors_data.data["timestamp"]
+        motor_t = np.array([ulog_to_rel_sec(t) for t in motor_t_us])
+
+        # Get control commands for the 4 main motors
+        c0 = motors_data.data["control[0]"]
+        c1 = motors_data.data["control[1]"]
+        c2 = motors_data.data["control[2]"]
+        c3 = motors_data.data["control[3]"]
+
+        # Calculate average of the 4 motors
+        motor_avg_signal = (c0 + c1 + c2 + c3) / 4.0
+
+        # Define time windows based on collision/impact timestamp (from WP2 / closest approach)
+        t_impact = wp_events.get('WP2', None)
+        if t_impact is None or np.isnan(t_impact):
+            # If no impact, use the middle of the sweep pass (between WP1 and WP3)
+            t_start = wp_events.get('WP1', 0.0)
+            t_end = wp_events.get('WP3', 10.0)
+            t_impact = (t_start + t_end) / 2.0
+
+        # Windows:
+        # Before impact: [-1.0, 0.0] relative to t_impact
+        # After impact: [0.0, 1.0] relative to t_impact
+        # Imbalance after impact: standard deviation of motor outputs in [0.0, 0.4]
+        # Thrust surge: max in [0.0, 1.0] - average in [-1.0, 0.0]
+        mask_before = (motor_t >= (t_impact - 1.0)) & (motor_t < t_impact)
+        mask_after = (motor_t >= t_impact) & (motor_t <= (t_impact + 1.0))
+        mask_after_04 = (motor_t >= t_impact) & (motor_t <= (t_impact + 0.4))
+
+        if np.any(mask_before):
+            avg_before = float(np.mean(motor_avg_signal[mask_before]))
+            max_before = float(np.max(motor_avg_signal[mask_before]))
+        else:
+            avg_before = None
+            max_before = None
+
+        if np.any(mask_after):
+            avg_after = float(np.mean(motor_avg_signal[mask_after]))
+            max_after = float(np.max(motor_avg_signal[mask_after]))
+        else:
+            avg_after = None
+            max_after = None
+
+        if np.any(mask_after_04):
+            # Imbalance after impact: compute standard deviation between motors at each time stamp, then average them
+            imbalances = []
+            for idx in np.where(mask_after_04)[0]:
+                devs = [c0[idx], c1[idx], c2[idx], c3[idx]]
+                imbalances.append(np.std(devs))
+            imbalance_after = float(np.mean(imbalances))
+
+            # Individual motor averages over the 0.4s window
+            m1_avg_after = float(np.mean(c0[mask_after_04]))
+            m2_avg_after = float(np.mean(c1[mask_after_04]))
+            m3_avg_after = float(np.mean(c2[mask_after_04]))
+            m4_avg_after = float(np.mean(c3[mask_after_04]))
+        else:
+            imbalance_after = None
+            m1_avg_after = None
+            m2_avg_after = None
+            m3_avg_after = None
+            m4_avg_after = None
+
+        if avg_before is not None and max_after is not None:
+            thrust_surge = float(max_after - avg_before)
+        else:
+            thrust_surge = None
+
+        # Compute timestamp_PX4 for start of sweep (WP2 transition)
+        t_start = wp_events.get('WP2') or wp_events.get('WP1')
+        t_px4_us = None
+        if t_start is not None:
+            t_px4_us = int(round((t_start - offset_sec + (bag_start_ns * 1e-9)) * 1e6))
+
+        # Initialize default new metrics
+        allocator_saturation_duration_sec = None
+        max_unallocated_torque = None
+        thrust_setpoint_achieved_pct = None
+        roll_rate_error_rms = None
+        pitch_rate_error_rms = None
+        yaw_rate_error_rms = None
+
+        # Extract Control Allocator metrics
+        try:
+            ds_alloc = ulog_all.get_dataset("control_allocator_status")
+            alloc_t_us = ds_alloc.data["timestamp"]
+            alloc_t = np.array([ulog_to_rel_sec(t) for t in alloc_t_us])
+            mask_alloc = (alloc_t >= t_impact) & (alloc_t <= (t_impact + 1.0))
+            if np.any(mask_alloc):
+                sat = [ds_alloc.data[f"actuator_saturation[{i}]"] for i in range(4)]
+                sat_any = np.any([sat[i] != 0 for i in range(4)], axis=0)
+                alloc_dt = np.diff(alloc_t)
+                alloc_dt = np.append(alloc_dt, alloc_dt[-1] if len(alloc_dt) > 0 else 0.0)
+                allocator_saturation_duration_sec = float(np.sum(alloc_dt[mask_alloc & sat_any]))
+
+                unallocated_torque_norm = np.sqrt(
+                    ds_alloc.data["unallocated_torque[0]"]**2 +
+                    ds_alloc.data["unallocated_torque[1]"]**2 +
+                    ds_alloc.data["unallocated_torque[2]"]**2
+                )
+                max_unallocated_torque = float(np.max(unallocated_torque_norm[mask_alloc]))
+                thrust_setpoint_achieved_pct = float(np.mean(ds_alloc.data["thrust_setpoint_achieved"][mask_alloc]) * 100.0)
+        except Exception as e:
+            print(f"  [WARN] Failed to compute control allocator metrics: {e}")
+
+        # Extract PID tracking metrics
+        try:
+            ds_sp = ulog_all.get_dataset("vehicle_rates_setpoint")
+            ds_vel = ulog_all.get_dataset("vehicle_angular_velocity")
+            sp_t = np.array([ulog_to_rel_sec(t) for t in ds_sp.data["timestamp"]])
+            vel_t = np.array([ulog_to_rel_sec(t) for t in ds_vel.data["timestamp"]])
+            mask_vel = (vel_t >= t_impact) & (vel_t <= (t_impact + 1.0))
+            if np.any(mask_vel):
+                vel_t_win = vel_t[mask_vel]
+                roll_sp_interp = np.interp(vel_t_win, sp_t, ds_sp.data["roll"])
+                pitch_sp_interp = np.interp(vel_t_win, sp_t, ds_sp.data["pitch"])
+                yaw_sp_interp = np.interp(vel_t_win, sp_t, ds_sp.data["yaw"])
+
+                roll_err = ds_vel.data["xyz[0]"][mask_vel] - roll_sp_interp
+                pitch_err = ds_vel.data["xyz[1]"][mask_vel] - pitch_sp_interp
+                yaw_err = ds_vel.data["xyz[2]"][mask_vel] - yaw_sp_interp
+
+                roll_rate_error_rms = float(np.sqrt(np.mean(roll_err**2)))
+                pitch_rate_error_rms = float(np.sqrt(np.mean(pitch_err**2)))
+                yaw_rate_error_rms = float(np.sqrt(np.mean(yaw_err**2)))
+        except Exception as e:
+            print(f"  [WARN] Failed to compute PID tracking metrics: {e}")
+
+        motor_metrics = {
+            'motor_avg_before': avg_before,
+            'motor_max_before': max_before,
+            'motor_avg_after': avg_after,
+            'motor_max_after': max_after,
+            'motor_thrust_surge': thrust_surge,
+            'motor_imbalance_after': imbalance_after,
+            'motor_m1_avg_after': m1_avg_after,
+            'motor_m2_avg_after': m2_avg_after,
+            'motor_m3_avg_after': m3_avg_after,
+            'motor_m4_avg_after': m4_avg_after,
+            'timestamp_PX4': t_px4_us,
+            'allocator_saturation_duration_sec': allocator_saturation_duration_sec,
+            'max_unallocated_torque': max_unallocated_torque,
+            'thrust_setpoint_achieved_pct': thrust_setpoint_achieved_pct,
+            'roll_rate_error_rms': roll_rate_error_rms,
+            'pitch_rate_error_rms': pitch_rate_error_rms,
+            'yaw_rate_error_rms': yaw_rate_error_rms,
+            'offset_sec': offset_sec
+        }
+        if avg_before is not None and max_after is not None and thrust_surge is not None:
+            print(f"  ⚡ Motor stats computed: avg_before={avg_before:.3f}, max_after={max_after:.3f}, surge={thrust_surge:.3f}")
+        else:
+            print(f"  ⚡ Motor stats: Not available (avg_before={avg_before}, max_after={max_after}, surge={thrust_surge})")
+    except Exception as e:
+        print(f"  [WARN] Failed to process ULog motor data: {e}")
+
+    return motor_metrics
 
 
 def run(label, angle_deg, column_x=0.408, column_y=0.358, 
@@ -205,8 +472,13 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     else:
                         metrics['battery_at_start'] = None
 
+                    # Load raw PX4 ULog metrics if available
+                    flight_dir = os.path.dirname(pass_path)
+                    motor_metrics = get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events)
+                    metrics.update(motor_metrics)
+
                     # Skip if already cached in the database (idempotent runs, force-recompute if missing schema columns)
-                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay']):
+                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms']):
                         print(f"⏭️  '{pass_name}' already in database, skipping insert.")
                     else:
                         insert_or_replace_flight(pass_name, condition_label, metrics)
@@ -231,13 +503,15 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                         kinetic_capsule_path = os.path.join(flight_dir, f"{pass_prefix}kinetic_profile.png")
                         plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
                                               label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                              mocap_rate=mocap_rate, condition=condition_label, output_path=kinetic_capsule_path, show_plot=False)
+                                              mocap_rate=mocap_rate, condition=condition_label, output_path=kinetic_capsule_path, show_plot=False,
+                                              df_raw=df_mocap_raw, is_raw=False)
                         
                         # 2b. Raw Unsmoothed Kinetic Profile
                         kinetic_raw_capsule_path = os.path.join(flight_dir, f"{pass_prefix}kinetic_profile_raw.png")
                         plot_velocity_profile(df_mocap_raw, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
                                               label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                              mocap_rate=mocap_rate, condition=condition_label, output_path=kinetic_raw_capsule_path, show_plot=False)
+                                              mocap_rate=mocap_rate, condition=condition_label, output_path=kinetic_raw_capsule_path, show_plot=False,
+                                              is_raw=True)
                         
                         # 3. Battery Voltage Sag Profile
                         battery_capsule_path = os.path.join(flight_dir, f"{pass_prefix}battery_sag.png")
@@ -255,6 +529,21 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                         plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
                                                 label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
                                                 output_path=imu_xyz_capsule_path, show_plot=False)
+                        
+                        # 6. Actuators and Status
+                        act_capsule_path = os.path.join(flight_dir, f"{pass_prefix}actuators_profile.png")
+                        ulg_files = glob.glob(os.path.join(flight_dir, "*.ulg"))
+                        if ulg_files:
+                            offset_sec = metrics.get('offset_sec', 0.0)
+                            plot_actuators_and_status(ulg_files[0], offset_sec, bag_start_ns, wp_events, arming_time, pass_name, condition_label, act_capsule_path, show_plot=False)
+                            
+                            # 7. Control Allocator Saturation
+                            sat_capsule_path = os.path.join(flight_dir, f"{pass_prefix}control_allocator_saturation.png")
+                            plot_control_allocator_saturation(ulg_files[0], offset_sec, bag_start_ns, wp_events, pass_name, condition_label, sat_capsule_path, show_plot=False)
+                            
+                            # 8. PID Rate Tracking
+                            pid_capsule_path = os.path.join(flight_dir, f"{pass_prefix}pid_rate_tracking.png")
+                            plot_pid_rate_tracking(ulg_files[0], offset_sec, bag_start_ns, wp_events, pass_name, condition_label, pid_capsule_path, show_plot=False)
                     else:
                         print(f"⏭️  No collision detected in {pass_name}, skipping plot generation.")
 
@@ -334,17 +623,14 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
         # Render raw velocity profile
         plot_velocity_profile(rep['df_mocap_raw'], rep['wp_events'], rep['arming_time'], 
                               rep['takeoff_time'], rep['disarming_time'], events, label="Raw MoCap", flight_name=rep['flight_name'],
-                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Rotating Cage (Raw)")
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Rotating Cage (Raw)",
+                              is_raw=True)
         
         # Render splined velocity profile
         plot_velocity_profile(rep['df_mocap'], rep['wp_events'], rep['arming_time'], 
                               rep['takeoff_time'], rep['disarming_time'], events, label="Splined MoCap", flight_name=rep['flight_name'],
-                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Rotating Cage (Splined)")
-        
-        # Render tangential acceleration / deceleration profile
-        plot_tangential_accel(rep['df_mocap'], rep['wp_events'], rep['arming_time'],
-                              rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage", flight_name=rep['flight_name'],
-                              achieved_angle=rep_metrics.get('achieved_impact_angle'))
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Rotating Cage (Splined)",
+                              df_raw=rep['df_mocap_raw'], is_raw=False)
         
         # Render battery profile
         plot_battery_sag(rep['df_bat'], rep['takeoff_time'], rep['wp_events'], rep['arming_time'], label="Rotating Cage", flight_name=rep['flight_name'],
@@ -358,6 +644,21 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
         plot_imu_xyz_components(rep['df_imu'], rep['wp_events'], rep['arming_time'],
                                 rep['takeoff_time'], rep['disarming_time'], events, label="Rotating Cage", flight_name=rep['flight_name'],
                                 achieved_angle=rep_metrics.get('achieved_impact_angle'))
+        
+        # Render Actuators, Control Allocator, and PID tracking plots for Rotating Cage representative flight
+        rep_flight_dir = os.path.join(project_root, rep['flight_name'].split(" - Pass")[0])
+        rep_ulg_files = glob.glob(os.path.join(rep_flight_dir, "*.ulg"))
+        if rep_ulg_files:
+            offset_sec = rep_metrics.get('offset_sec', 0.0)
+            act_plot_path = os.path.join(project_root, "dev_logs", "analysis", "graphics", f"actuators_{clean_label}_rotating_cage.png")
+            plot_actuators_and_status(rep_ulg_files[0], offset_sec, bag_start_ns, rep['wp_events'], rep['arming_time'], rep['flight_name'], "Rotating Cage", act_plot_path)
+            
+            sat_plot_path = os.path.join(project_root, "dev_logs", "analysis", "graphics", f"allocator_{clean_label}_rotating_cage.png")
+            plot_control_allocator_saturation(rep_ulg_files[0], offset_sec, bag_start_ns, rep['wp_events'], rep['flight_name'], "Rotating Cage", sat_plot_path)
+            
+            pid_plot_path = os.path.join(project_root, "dev_logs", "analysis", "graphics", f"pid_{clean_label}_rotating_cage.png")
+            plot_pid_rate_tracking(rep_ulg_files[0], offset_sec, bag_start_ns, rep['wp_events'], rep['flight_name'], "Rotating Cage", pid_plot_path)
+            
         print("\n" + "="*80 + "\n")
   
     # Render representative fixed cage flight
@@ -400,17 +701,14 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
         # Render raw velocity profile
         plot_velocity_profile(rep['df_mocap_raw'], rep['wp_events'], rep['arming_time'], 
                               rep['takeoff_time'], rep['disarming_time'], events, label="Raw MoCap", flight_name=rep['flight_name'],
-                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Fixed Cage (Raw)")
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Fixed Cage (Raw)",
+                              is_raw=True)
         
         # Render splined velocity profile
         plot_velocity_profile(rep['df_mocap'], rep['wp_events'], rep['arming_time'], 
                               rep['takeoff_time'], rep['disarming_time'], events, label="Splined MoCap", flight_name=rep['flight_name'],
-                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Fixed Cage (Splined)")
-        
-        # Render tangential acceleration / deceleration profile
-        plot_tangential_accel(rep['df_mocap'], rep['wp_events'], rep['arming_time'],
-                              rep['takeoff_time'], rep['disarming_time'], events, label="Fixed Cage", flight_name=rep['flight_name'],
-                              achieved_angle=rep_metrics.get('achieved_impact_angle'))
+                              achieved_angle=rep_metrics.get('achieved_impact_angle'), mocap_rate=rep['mocap_rate'], condition="Fixed Cage (Splined)",
+                              df_raw=rep['df_mocap_raw'], is_raw=False)
         
         # Render battery profile
         plot_battery_sag(rep['df_bat'], rep['takeoff_time'], rep['wp_events'], rep['arming_time'], label="Fixed Cage", flight_name=rep['flight_name'],
@@ -424,6 +722,20 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
         plot_imu_xyz_components(rep['df_imu'], rep['wp_events'], rep['arming_time'],
                                 rep['takeoff_time'], rep['disarming_time'], events, label="Fixed Cage", flight_name=rep['flight_name'],
                                 achieved_angle=rep_metrics.get('achieved_impact_angle'))
+        
+        # Render Actuators, Control Allocator, and PID tracking plots for Fixed Cage representative flight
+        rep_flight_dir = os.path.join(project_root, rep['flight_name'].split(" - Pass")[0])
+        rep_ulg_files = glob.glob(os.path.join(rep_flight_dir, "*.ulg"))
+        if rep_ulg_files:
+            offset_sec = rep_metrics.get('offset_sec', 0.0)
+            act_plot_path = os.path.join(project_root, "dev_logs", "analysis", "graphics", f"actuators_{clean_label}_fixed_cage.png")
+            plot_actuators_and_status(rep_ulg_files[0], offset_sec, bag_start_ns, rep['wp_events'], rep['arming_time'], rep['flight_name'], "Fixed Cage", act_plot_path)
+            
+            sat_plot_path = os.path.join(project_root, "dev_logs", "analysis", "graphics", f"allocator_{clean_label}_fixed_cage.png")
+            plot_control_allocator_saturation(rep_ulg_files[0], offset_sec, bag_start_ns, rep['wp_events'], rep['flight_name'], "Fixed Cage", sat_plot_path)
+            
+            pid_plot_path = os.path.join(project_root, "dev_logs", "analysis", "graphics", f"pid_{clean_label}_fixed_cage.png")
+            plot_pid_rate_tracking(rep_ulg_files[0], offset_sec, bag_start_ns, rep['wp_events'], rep['flight_name'], "Fixed Cage", pid_plot_path)
         print("\n" + "="*80 + "\n")
 
     # Render side-by-side comparative boxplots
@@ -531,7 +843,7 @@ if __name__ == "__main__":
         pass_idx  = int(m.group(1))
         pass_name = f"{folder_name} - Pass-{pass_idx:02d}"
 
-        if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay']):
+        if False:  # Temporarily bypassed to populate new motor metrics columns for all flights
             print(f"⏭️  Skipping (already cached): {pass_name}")
             skipped += 1
             continue
@@ -636,11 +948,15 @@ if __name__ == "__main__":
             else:
                 metrics['battery_at_start'] = None
 
+            # Load raw PX4 ULog metrics if available
+            motor_metrics = get_ulog_motor_metrics(folder_path, pass_path, bag_start_ns, wp_events)
+            metrics.update(motor_metrics)
+
             condition = _infer_condition(folder_name)
             insert_or_replace_flight(pass_name, condition, metrics)
 
             # Generate and save all 5 high-fidelity plots to the individual flight capsule directory
-            if metrics.get('impact_detected', 0) == 1 or args.force_plot:
+            if False:  # Temporarily disabled plot generation to speed up DB ingestion
                 pass_prefix = f"pass{pass_idx:02d}_"
                 
                 # 1. Trajectory Top-Down 2D Spatial Plot
@@ -657,13 +973,15 @@ if __name__ == "__main__":
                 kinetic_capsule_path = os.path.join(folder_path, f"{pass_prefix}kinetic_profile.png")
                 plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
                                       label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                      mocap_rate=mocap_rate, condition=condition, output_path=kinetic_capsule_path, show_plot=False)
+                                      mocap_rate=mocap_rate, condition=condition, output_path=kinetic_capsule_path, show_plot=False,
+                                      df_raw=df_mocap_raw, is_raw=False)
                 
                 # 2b. Raw Unsmoothed Kinetic Profile
                 kinetic_raw_capsule_path = os.path.join(folder_path, f"{pass_prefix}kinetic_profile_raw.png")
                 plot_velocity_profile(df_mocap_raw, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
                                       label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                      mocap_rate=mocap_rate, condition=condition, output_path=kinetic_raw_capsule_path, show_plot=False)
+                                      mocap_rate=mocap_rate, condition=condition, output_path=kinetic_raw_capsule_path, show_plot=False,
+                                      is_raw=True)
                 
                 # 3. Battery Voltage Sag Profile
                 battery_capsule_path = os.path.join(folder_path, f"{pass_prefix}battery_sag.png")

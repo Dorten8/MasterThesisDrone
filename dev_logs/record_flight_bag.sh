@@ -122,7 +122,7 @@ ros2 bag record \
   /fmu/out/sensor_combined \
   /fmu/out/actuator_outputs \
   /fmu/out/battery_status \
-  /fmu/out/vehicle_status \
+  /fmu/out/vehicle_status_v1 \
   /fmu/out/timesync_status \
   /fmu/in/trajectory_setpoint \
   /fmu/in/actuator_motors \

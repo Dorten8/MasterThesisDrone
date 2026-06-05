@@ -68,7 +68,14 @@ def init_db():
             imu_vib_gx       REAL,
             imu_vib_gy       REAL,
             imu_vib_gz       REAL,
-            timestamp        TEXT
+            timestamp        TEXT,
+            timestamp_PX4    INTEGER,
+            allocator_saturation_duration_sec REAL,
+            max_unallocated_torque REAL,
+            thrust_setpoint_achieved_pct REAL,
+            roll_rate_error_rms REAL,
+            pitch_rate_error_rms REAL,
+            yaw_rate_error_rms REAL
         )
     """)
     # Initialize raw flight battery and efficiency table
@@ -139,7 +146,24 @@ def init_db():
         ("imu_vib_az", "REAL"),
         ("imu_vib_gx", "REAL"),
         ("imu_vib_gy", "REAL"),
-        ("imu_vib_gz", "REAL")
+        ("imu_vib_gz", "REAL"),
+        ("motor_avg_before", "REAL"),
+        ("motor_max_before", "REAL"),
+        ("motor_avg_after", "REAL"),
+        ("motor_max_after", "REAL"),
+        ("motor_thrust_surge", "REAL"),
+        ("motor_imbalance_after", "REAL"),
+        ("motor_m1_avg_after", "REAL"),
+        ("motor_m2_avg_after", "REAL"),
+        ("motor_m3_avg_after", "REAL"),
+        ("motor_m4_avg_after", "REAL"),
+        ("timestamp_PX4", "INTEGER"),
+        ("allocator_saturation_duration_sec", "REAL"),
+        ("max_unallocated_torque", "REAL"),
+        ("thrust_setpoint_achieved_pct", "REAL"),
+        ("roll_rate_error_rms", "REAL"),
+        ("pitch_rate_error_rms", "REAL"),
+        ("yaw_rate_error_rms", "REAL")
     ]
     for col, coltype in new_cols:
         try:
@@ -218,6 +242,26 @@ def insert_or_replace_flight(flight_name, condition, metrics):
     imu_vib_gy         = metrics.get('imu_vib_gy')
     imu_vib_gz         = metrics.get('imu_vib_gz')
 
+    # Motor actuator metrics
+    motor_avg_before   = metrics.get('motor_avg_before')
+    motor_max_before   = metrics.get('motor_max_before')
+    motor_avg_after    = metrics.get('motor_avg_after')
+    motor_max_after    = metrics.get('motor_max_after')
+    motor_thrust_surge = metrics.get('motor_thrust_surge')
+    motor_imbalance_after = metrics.get('motor_imbalance_after')
+    motor_m1_avg_after = metrics.get('motor_m1_avg_after')
+    motor_m2_avg_after = metrics.get('motor_m2_avg_after')
+    motor_m3_avg_after = metrics.get('motor_m3_avg_after')
+    motor_m4_avg_after = metrics.get('motor_m4_avg_after')
+    timestamp_PX4      = metrics.get('timestamp_PX4')
+
+    allocator_saturation_duration_sec = metrics.get('allocator_saturation_duration_sec')
+    max_unallocated_torque = metrics.get('max_unallocated_torque')
+    thrust_setpoint_achieved_pct = metrics.get('thrust_setpoint_achieved_pct')
+    roll_rate_error_rms = metrics.get('roll_rate_error_rms')
+    pitch_rate_error_rms = metrics.get('pitch_rate_error_rms')
+    yaw_rate_error_rms = metrics.get('yaw_rate_error_rms')
+
     # Impact Heuristic (simplified):
     # 1. Primary: closest_clearance must be negative (cage penetrated column boundary)
     # 2. Secondary: look for a deceleration spike of magnitude ≤ -1 m/s² within ±0.6s of closest approach
@@ -253,8 +297,13 @@ def insert_or_replace_flight(flight_name, condition, metrics):
             imu_accel_settling, imu_gyro_settling,
             imu_vib_ax, imu_vib_ay, imu_vib_az,
             imu_vib_gx, imu_vib_gy, imu_vib_gz,
-            timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            motor_avg_before, motor_max_before, motor_avg_after, motor_max_after,
+            motor_thrust_surge, motor_imbalance_after,
+            motor_m1_avg_after, motor_m2_avg_after, motor_m3_avg_after, motor_m4_avg_after,
+            timestamp, timestamp_PX4,
+            allocator_saturation_duration_sec, max_unallocated_torque, thrust_setpoint_achieved_pct,
+            roll_rate_error_rms, pitch_rate_error_rms, yaw_rate_error_rms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         flight_name, condition, sweep_speed, battery_at_start,
         impact_speed, before_impact_accel, impact_accel, impact_angle,
@@ -271,7 +320,12 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         imu_accel_settling, imu_gyro_settling,
         imu_vib_ax, imu_vib_ay, imu_vib_az,
         imu_vib_gx, imu_vib_gy, imu_vib_gz,
-        timestamp
+        motor_avg_before, motor_max_before, motor_avg_after, motor_max_after,
+        motor_thrust_surge, motor_imbalance_after,
+        motor_m1_avg_after, motor_m2_avg_after, motor_m3_avg_after, motor_m4_avg_after,
+        timestamp, timestamp_PX4,
+        allocator_saturation_duration_sec, max_unallocated_torque, thrust_setpoint_achieved_pct,
+        roll_rate_error_rms, pitch_rate_error_rms, yaw_rate_error_rms
     ))
     conn.commit()
     conn.close()

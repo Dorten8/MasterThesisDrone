@@ -9,7 +9,8 @@ import pandas as pd
 # Self-healing path boilerplate for Python package discovery
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../" if "__file__" in locals() or "__file__" in globals() else "")))
 
-from dev_logs.analysis.database.db_loader import load_drone_metadata, load_mcap, build_dataframes
+from dev_logs.analysis.database.db_loader import load_drone_metadata, build_dataframes
+from dev_logs.analysis.database.db_mcap_event_segmenter import try_load_mcap
 from dev_logs.analysis.database.db_manager import insert_or_replace_battery_efficiency, get_connection, init_db
 
 def _infer_condition(folder_name):
@@ -100,8 +101,7 @@ def main(force_recompute=False):
             
         print(f"🔄 Processing unsliced flight: {flight_name}")
         try:
-            # Load MCAP raw topics
-            topic_data, bag_start_ns = load_mcap(mcap_path)
+            topic_data, bag_start_ns, _ = try_load_mcap(os.path.dirname(mcap_path))
             dfs = build_dataframes(topic_data, drone_tracker_name, bag_start_ns)
             
             df_mocap = dfs['mocap']
