@@ -77,6 +77,21 @@
 - Hardcoded Y-axis scaling strictly from 0 to 15 cm across all plots, correcting a major database metric conversion error (scaling mm to cm by dividing by 10.0 instead of multiplying by 100).
 - Simplified all X-axis labels to `'Impact Angle (deg)'` and removed Emojis from titles to resolve system font rendering problems.
 - Full technical breakdown in: [dev_logs/session_journals/2026-05-29-stabilization-trendlines-and-overlay.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-29-stabilization-trendlines-and-overlay.md)
+
+## Session: 2026-05-30 (Battery Efficiency Pipeline & Trajectory Refinements)
+- Programmatically scraped starting battery voltages, capacity drain rates, and active flight times directly from raw unsliced `.mcap` flight logs.
+- Refactored `kin_plot_trajectory.py` to project lateral tracking errors (`dev_max`) and recovery area integrals onto a hybrid reference line (start of sweep `WP2` to target exit `WP3`).
+- Added actual PX4 target setpoint trajectory visualization (topic `/fmu/in/trajectory_setpoint`) as rotated, dashed-purple lines to 2D trajectory plots.
+- Injected formal mathematical framework for line-tracking algorithms, waypoint acceptance radius, and impact geometry derivations.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-30-battery-efficiency-pipeline-and-trajectory-refinements.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-05-30-battery-efficiency-pipeline-and-trajectory-refinements.md)
+
+## Session: 2026-05-31 (Database Backfill & Battery-Deceleration Analysis)
+- Imported and parsed 4 new multi-pass flight folders (30 new passes total) covering 45° and 75° collision loops.
+- Backfilled the SQLite database `experiments_summary.db` with all updated telemetry metrics.
+- Designed and implemented Step 11: Deceleration vs Battery Capacity plot (`deceleration_vs_battery_angle.png`) to study energy absorption.
+- Hardened database ingestion pipeline to safely match file paths containing unicode degree symbols.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-31-database-backfill-and-battery-deceleration-analysis.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-05-31-database-backfill-and-battery-deceleration-analysis.md)
+
 ## Session: 2026-06-01 (Summary Refinement & Vibration Dynamics Analysis)
 - Added 6 new post-impact time-domain vibration metrics to SQLite database schema (`imu_vib_ax/y/z` and `imu_vib_gx/y/z`).
 - Integrated dynamic vibration calculation inside the kinematics engine `kin_calculator.py`, isolating post-impact tail oscillation spread using standard deviations over the `[t_impact + 0.2, t_impact + 3.0]` stabilization window.
