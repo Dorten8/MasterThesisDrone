@@ -101,9 +101,8 @@ def extract_and_cache_imu():
                 print(f"Skipping {flight_name} (No IMU data near impact)")
                 continue
                 
-            # Align the collision timeline dynamically to the peak of a_deviation
-            peak_idx = df_search['a_deviation'].idxmax()
-            true_impact_t = df_search.loc[peak_idx, 't']
+            # Align the collision timeline to MoCap closest approach (WP2)
+            true_impact_t = impact_t
             
             # Recalculate relative time based on the true high-frequency shock
             df_search['t_rel'] = df_search['t'] - true_impact_t

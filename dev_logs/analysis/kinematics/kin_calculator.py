@@ -3,9 +3,10 @@ import pandas as pd
 from scipy.signal import savgol_filter
 from scipy.interpolate import CubicSpline
 
-def resample_and_interpolate_mocap(df_mocap, target_freq=100.0):
-    """Resamples the MoCap coordinates onto a uniform grid and interpolates using a cubic spline
-    to eliminate dropouts, packet lag, and time step compression.
+def resample_and_interpolate_mocap(df_mocap, target_freq=100.0, filter_half_window=10):
+    """Resamples MoCap coordinates onto a uniform grid using simple linear interpolation.
+    Detects dropout gaps and marks the "ringing regions" (gap + SG window margin) so they
+    can be surgically removed from the velocity/acceleration arrays later.
     """
     if df_mocap.empty or len(df_mocap) < 4:
         return df_mocap
@@ -19,32 +20,62 @@ def resample_and_interpolate_mocap(df_mocap, target_freq=100.0):
     dt = 1.0 / target_freq
     t_uniform = np.arange(t_start, t_end + dt/2.0, dt)
 
-    resampled_data = {
-        't': t_uniform,
-        'x': np.interp(t_uniform, df_clean['t'], df_clean['x']),
-        'y': np.interp(t_uniform, df_clean['t'], df_clean['y']),
-        'z': np.interp(t_uniform, df_clean['t'], df_clean['z'])
-    }
-
-    # Interpolate orientation quaternions and other continuous channels linearly
+    resampled_data = {'t': t_uniform}
+    
+    # Simple linear interpolation for all columns (preserves raw data feel, no PCHIP jitter)
     for col in df_clean.columns:
-        if col not in ['t', 'x', 'y', 'z']:
+        if col != 't':
             try:
-                # Linearly interpolate numeric columns
                 resampled_data[col] = np.interp(t_uniform, df_clean['t'], df_clean[col])
             except Exception:
-                # Fallback for non-numeric columns (like strings/metadata)
                 resampled_data[col] = df_clean[col].iloc[0]
 
     df_resampled = pd.DataFrame(resampled_data)
+    
+    # --- ADAPTIVE JITTER LOGIC ---
+    # Rotating Cage has very clean tracking (~7 drops). Fixed Cage has severe jitter (~146 drops).
+    raw_t = df_clean['t'].values
+    raw_dt = np.diff(raw_t)
+    
+    strict_drops = np.where(raw_dt > (1.0 / 30.0))[0]
+    is_high_jitter = len(strict_drops) > 20
+    
+    if is_high_jitter:
+        # FIXED CAGE PROFILE: Ignore micro-jitter. Only repair massive structural gaps (> 100ms).
+        dropout_indices = np.where(raw_dt > 0.1)[0]
+        margin = 2  # Small margin to prevent overlapping repair windows
+    else:
+        # ROTATING CAGE PROFILE: The exact parameters you approved.
+        dropout_indices = strict_drops
+        margin = filter_half_window  # Full 9-point margin
+    
+    # Build a mask of the "ringing regions" (the gap itself + the calculated margin)
+    ringing_mask = np.zeros(len(t_uniform), dtype=bool)
+    
+    for idx in dropout_indices:
+        t0, t1 = raw_t[idx], raw_t[idx + 1]
+        gap_indices = np.where((t_uniform >= t0) & (t_uniform <= t1))[0]
+        if len(gap_indices) == 0:
+            continue
+        
+        start_idx = max(0, gap_indices[0] - margin)
+        end_idx = min(len(t_uniform) - 1, gap_indices[-1] + margin)
+        
+        ringing_mask[start_idx:end_idx + 1] = True
+
+    df_resampled['_ringing_mask'] = ringing_mask
+    df_resampled['_is_high_jitter'] = is_high_jitter
+
     # Resilient fallback for any floating point boundary NaNs
     df_resampled = df_resampled.ffill().bfill()
     return df_resampled
 
 def compute_velocity(df_mocap, window=19, polyorder=3, resample=True):
-    """Computes velocity derivatives from position signals using Savitzky-Golay filtering.
-    If resample is True, the positions are uniformly resampled at 100Hz and cubic-spline
-    interpolated to eliminate network dropouts and derivative spikes.
+    """Computes velocity derivatives from position signals.
+    
+    Uses standard SG differentiation on linearly interpolated positions.
+    To avoid SG filter ringing spikes at dropout gap boundaries, it surgically
+    snips out the ringing regions and replaces them with a clean straight line.
     """
     if df_mocap.empty or len(df_mocap) < 3:
         df_mocap['vx'] = 0.0
@@ -54,10 +85,17 @@ def compute_velocity(df_mocap, window=19, polyorder=3, resample=True):
         return df_mocap
 
     if resample and len(df_mocap) >= 4:
-        df_mocap = resample_and_interpolate_mocap(df_mocap, target_freq=100.0)
+        df_mocap = resample_and_interpolate_mocap(df_mocap, target_freq=100.0, filter_half_window=window//2)
+
+    # Extract adaptive jitter flag
+    is_high_jitter = False
+    if '_is_high_jitter' in df_mocap.columns:
+        is_high_jitter = bool(df_mocap['_is_high_jitter'].iloc[0])
+        df_mocap = df_mocap.drop(columns=['_is_high_jitter'])
 
     # Unique and monotonically sorted
     df_mocap = df_mocap.drop_duplicates(subset=['t']).sort_values('t').reset_index(drop=True)
+
     dt = df_mocap['t'].diff()
     median_dt = dt.median()
     if median_dt is None or np.isnan(median_dt) or median_dt == 0:
@@ -71,13 +109,14 @@ def compute_velocity(df_mocap, window=19, polyorder=3, resample=True):
         if adjusted_window < 3:
             adjusted_window = 3
 
+    # === SG DIFFERENTIATION PATH ===
+    # Traditional approach: differentiate position with SG deriv=1
     if adjusted_window > polyorder:
         try:
             vx_filtered = savgol_filter(df_mocap['x'], window_length=adjusted_window, polyorder=polyorder, deriv=1) / median_dt
             vy_filtered = savgol_filter(df_mocap['y'], window_length=adjusted_window, polyorder=polyorder, deriv=1) / median_dt
             vz_filtered = savgol_filter(df_mocap['z'], window_length=adjusted_window, polyorder=polyorder, deriv=1) / median_dt
         except Exception:
-            # Fallback to basic finite difference
             vx_filtered = np.gradient(df_mocap['x'], df_mocap['t'])
             vy_filtered = np.gradient(df_mocap['y'], df_mocap['t'])
             vz_filtered = np.gradient(df_mocap['z'], df_mocap['t'])
@@ -86,12 +125,25 @@ def compute_velocity(df_mocap, window=19, polyorder=3, resample=True):
         vy_filtered = np.gradient(df_mocap['y'], df_mocap['t'])
         vz_filtered = np.gradient(df_mocap['z'], df_mocap['t'])
 
+    # --- BUTTERWORTH LOW-PASS FILTER FOR HIGH JITTER ---
+    if is_high_jitter:
+        from scipy.signal import butter, filtfilt
+        try:
+            # 2nd order Butterworth filter with 4Hz cutoff (fs=100Hz)
+            b, a = butter(2, 4.0, fs=100.0, btype='low')
+            vx_filtered = filtfilt(b, a, vx_filtered)
+            vy_filtered = filtfilt(b, a, vy_filtered)
+            vz_filtered = filtfilt(b, a, vz_filtered)
+        except Exception as e:
+            print(f"[Warning] Failed to apply Butterworth low-pass filter: {e}")
+
+    df_mocap['is_high_jitter'] = is_high_jitter
     df_mocap['vx'] = vx_filtered
     df_mocap['vy'] = vy_filtered
     df_mocap['vz'] = vz_filtered
     df_mocap['speed'] = np.sqrt(vx_filtered**2 + vy_filtered**2 + vz_filtered**2)
     
-    # Compute derivative accelerations using Savitzky-Golay filter on velocity channel to remove high-frequency noise
+    # Compute acceleration: SG deriv=1 on the velocity signal
     if adjusted_window > polyorder:
         try:
             df_mocap['ax'] = savgol_filter(df_mocap['vx'], window_length=adjusted_window, polyorder=polyorder, deriv=1) / median_dt
@@ -108,6 +160,23 @@ def compute_velocity(df_mocap, window=19, polyorder=3, resample=True):
         df_mocap['ay'] = np.gradient(df_mocap['vy'], df_mocap['t'])
         df_mocap['az'] = np.gradient(df_mocap['vz'], df_mocap['t'])
         df_mocap['accel'] = np.gradient(df_mocap['speed'], df_mocap['t'])
+
+    # === SURGICAL RINGING REMOVAL ===
+    # Linearly interpolate over the ringing gap boundaries to remove SG spikes
+    if '_ringing_mask' in df_mocap.columns:
+        is_valid = ~df_mocap['_ringing_mask'].values
+        valid_t = df_mocap['t'].values[is_valid]
+        
+        if len(valid_t) > 0:
+            for col in ['vx', 'vy', 'vz', 'speed', 'ax', 'ay', 'az', 'accel']:
+                valid_vals = df_mocap[col].values[is_valid]
+                df_mocap[col] = np.interp(df_mocap['t'].values, valid_t, valid_vals)
+                
+        df_mocap['is_doctored'] = df_mocap['_ringing_mask']
+        df_mocap = df_mocap.drop(columns=['_ringing_mask'])
+    else:
+        df_mocap['is_doctored'] = False
+            
     return df_mocap
 
 def detect_mission_class(df_setpoint, label=None, target_z=0.5):
@@ -366,14 +435,19 @@ def find_waypoint_events(df_mocap, df_setpoint, takeoff_time=None, label=None, c
                 
                 df_pre_cross = df_window[df_window['t'] <= t_cross]
                 if not df_pre_cross.empty:
-                    # Find the last time speed is below 0.10 m/s
-                    low_speed_mask = df_pre_cross['speed'] < 0.10
+                    # Find the last time speed is below 0.10 m/s (ignoring NaNs)
+                    valid_speeds = df_pre_cross['speed'].dropna()
+                    low_speed_mask = valid_speeds < 0.10
+                    
                     if low_speed_mask.any():
-                        t_start_sweep = df_pre_cross.loc[low_speed_mask, 't'].iloc[-1]
-                    else:
+                        t_start_sweep = df_pre_cross.loc[valid_speeds[low_speed_mask].index[-1], 't']
+                    elif not valid_speeds.empty:
                         # Fallback to minimum speed in pre-cross window
-                        idx_min = df_pre_cross['speed'].idxmin()
+                        idx_min = valid_speeds.idxmin()
                         t_start_sweep = df_pre_cross.loc[idx_min, 't']
+                    else:
+                        # Fallback if entire window is NaN-masked
+                        t_start_sweep = df_pre_cross['t'].iloc[-1]
                     
                     # Update WP2 to the refined timestamp
                     wp_evs['WP2'] = t_start_sweep
@@ -553,9 +627,11 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         errors = [perpendicular_distance((row['x'], row['y']), wp2_pos, wp3_pos) for _, row in df_wp2_wp3.iterrows()]
         mean_err = np.mean(errors)
         max_err = np.max(errors)
+        sdld = np.std(errors) * 1000.0  # mm
     else:
         mean_err = 0.0
         max_err = 0.0
+        sdld = 0.0
 
     # Calculate speed, accel, and before_impact_accel at closest approach (always available)
     achieved_angle = None
@@ -640,24 +716,23 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         'imu_peak_gyro': None, 'imu_peak_gyro_x': None, 'imu_peak_gyro_y': None, 'imu_peak_gyro_z': None,
         'imu_accel_energy': None, 'imu_accel_energy_x': None, 'imu_accel_energy_y': None, 'imu_accel_energy_z': None,
         'imu_gyro_energy': None, 'imu_gyro_energy_x': None, 'imu_gyro_energy_y': None, 'imu_gyro_energy_z': None,
-        'imu_accel_settling': None, 'imu_gyro_settling': None
+        'imu_accel_settling': None, 'imu_gyro_settling': None,
+        'imu_ax_spread_impact': None, 'imu_ay_spread_impact': None, 'imu_az_spread_impact': None,
+        'imu_ax_spread_regular': None, 'imu_ay_spread_regular': None, 'imu_az_spread_regular': None
     }
 
     if df_imu is not None and not df_imu.empty:
         t_impact = wp_events.get('Column Impact', closest_t)
-        # Align t_impact dynamically with the physical IMU peak shock if possible
-        search_window = df_imu[(df_imu['t'] >= t_impact - 0.20) & (df_imu['t'] <= t_impact + 0.20)]
-        if not search_window.empty:
-            idx_max = search_window['a_deviation'].idxmax()
-            t_physical_impact = float(search_window.loc[idx_max, 't'])
-            if search_window['a_deviation'].max() > 2.0:
-                t_impact = t_physical_impact
-                wp_events['Column Impact'] = t_physical_impact
+        # Reverted back to MoCap closest-approach alignment as requested by user
+
 
         # 1. Slice contact window strictly to [t_impact - 0.05, t_impact + 0.35]
         df_contact = df_imu[(df_imu['t'] >= t_impact - 0.05) & (df_imu['t'] <= t_impact + 0.35)]
         if df_contact.empty:
             df_contact = df_imu
+            
+        # 1b. Slice regular flight window strictly to [t_impact - 1.05, t_impact - 0.05]
+        df_regular = df_imu[(df_imu['t'] >= t_impact - 1.05) & (df_imu['t'] < t_impact - 0.05)]
 
         # 2. Peak linear and rotational components
         imu_metrics['imu_peak_accel'] = float(df_contact['a_deviation'].max())
@@ -668,6 +743,17 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         imu_metrics['imu_peak_gyro'] = float(df_contact['g_mag'].max())
         imu_metrics['imu_peak_gyro_x'] = float(df_contact['gx'].abs().max())
         imu_metrics['imu_peak_gyro_y'] = float(df_contact['gy'].abs().max())
+        
+        # Calculate IMU Spreads (Standard Deviation)
+        if not df_contact.empty:
+            imu_metrics['imu_ax_spread_impact'] = float(df_contact['ax'].std() / 9.81)
+            imu_metrics['imu_ay_spread_impact'] = float(df_contact['ay'].std() / 9.81)
+            imu_metrics['imu_az_spread_impact'] = float((df_contact['az'] + 9.81).std() / 9.81)
+            
+        if not df_regular.empty:
+            imu_metrics['imu_ax_spread_regular'] = float(df_regular['ax'].std() / 9.81)
+            imu_metrics['imu_ay_spread_regular'] = float(df_regular['ay'].std() / 9.81)
+            imu_metrics['imu_az_spread_regular'] = float((df_regular['az'] + 9.81).std() / 9.81)
         imu_metrics['imu_peak_gyro_z'] = float(df_contact['gz'].abs().max())
 
         # 3. Trapezoidal integration over the contact window
@@ -742,6 +828,7 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         'max_tracking_error': max_err,
         'mean_tracking_error': mean_err,
         'max_lateral_displacement': max_err,
+        'path_spread_sdld': sdld,
         'achieved_impact_angle': achieved_angle,
         'impact_speed': impact_speed,
         'impact_accel': impact_accel,
@@ -774,5 +861,13 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         'imu_vib_az': imu_metrics.get('imu_vib_az', 0.0),
         'imu_vib_gx': imu_metrics.get('imu_vib_gx', 0.0),
         'imu_vib_gy': imu_metrics.get('imu_vib_gy', 0.0),
-        'imu_vib_gz': imu_metrics.get('imu_vib_gz', 0.0)
+        'imu_vib_gz': imu_metrics.get('imu_vib_gz', 0.0),
+        
+        # New IMU acceleration spread metrics
+        'imu_ax_spread_impact': imu_metrics.get('imu_ax_spread_impact'),
+        'imu_ay_spread_impact': imu_metrics.get('imu_ay_spread_impact'),
+        'imu_az_spread_impact': imu_metrics.get('imu_az_spread_impact'),
+        'imu_ax_spread_regular': imu_metrics.get('imu_ax_spread_regular'),
+        'imu_ay_spread_regular': imu_metrics.get('imu_ay_spread_regular'),
+        'imu_az_spread_regular': imu_metrics.get('imu_az_spread_regular')
     }

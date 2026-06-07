@@ -75,7 +75,18 @@ def init_db():
             thrust_setpoint_achieved_pct REAL,
             roll_rate_error_rms REAL,
             pitch_rate_error_rms REAL,
-            yaw_rate_error_rms REAL
+            yaw_rate_error_rms REAL,
+            active_flight_time_sec REAL,
+            voltage_drop_rate_v_per_min REAL,
+            capacity_drain_rate_pct_per_min REAL,
+            max_actuator_output REAL,
+            path_spread_sdld REAL,
+            imu_ax_spread_impact REAL,
+            imu_ay_spread_impact REAL,
+            imu_az_spread_impact REAL,
+            imu_ax_spread_regular REAL,
+            imu_ay_spread_regular REAL,
+            imu_az_spread_regular REAL
         )
     """)
     # Initialize raw flight battery and efficiency table
@@ -161,9 +172,18 @@ def init_db():
         ("allocator_saturation_duration_sec", "REAL"),
         ("max_unallocated_torque", "REAL"),
         ("thrust_setpoint_achieved_pct", "REAL"),
-        ("roll_rate_error_rms", "REAL"),
-        ("pitch_rate_error_rms", "REAL"),
-        ("yaw_rate_error_rms", "REAL")
+        ("yaw_rate_error_rms", "REAL"),
+        ("active_flight_time_sec", "REAL"),
+        ("voltage_drop_rate_v_per_min", "REAL"),
+        ("capacity_drain_rate_pct_per_min", "REAL"),
+        ("max_actuator_output", "REAL"),
+        ("path_spread_sdld", "REAL"),
+        ("imu_ax_spread_impact", "REAL"),
+        ("imu_ay_spread_impact", "REAL"),
+        ("imu_az_spread_impact", "REAL"),
+        ("imu_ax_spread_regular", "REAL"),
+        ("imu_ay_spread_regular", "REAL"),
+        ("imu_az_spread_regular", "REAL")
     ]
     for col, coltype in new_cols:
         try:
@@ -261,6 +281,19 @@ def insert_or_replace_flight(flight_name, condition, metrics):
     roll_rate_error_rms = metrics.get('roll_rate_error_rms')
     pitch_rate_error_rms = metrics.get('pitch_rate_error_rms')
     yaw_rate_error_rms = metrics.get('yaw_rate_error_rms')
+    
+    active_flight_time_sec = metrics.get('active_flight_time_sec')
+    voltage_drop_rate_v_per_min = metrics.get('voltage_drop_rate_v_per_min')
+    capacity_drain_rate_pct_per_min = metrics.get('capacity_drain_rate_pct_per_min')
+    max_actuator_output = metrics.get('max_actuator_output')
+    path_spread_sdld = metrics.get('path_spread_sdld')
+    
+    imu_ax_spread_impact = metrics.get('imu_ax_spread_impact')
+    imu_ay_spread_impact = metrics.get('imu_ay_spread_impact')
+    imu_az_spread_impact = metrics.get('imu_az_spread_impact')
+    imu_ax_spread_regular = metrics.get('imu_ax_spread_regular')
+    imu_ay_spread_regular = metrics.get('imu_ay_spread_regular')
+    imu_az_spread_regular = metrics.get('imu_az_spread_regular')
 
     # Impact Heuristic (simplified):
     # 1. Primary: closest_clearance must be negative (cage penetrated column boundary)
@@ -280,31 +313,35 @@ def insert_or_replace_flight(flight_name, condition, metrics):
 
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        INSERT OR REPLACE INTO flights_summary (
-            flight_name, condition, sweep_speed, battery_at_start,
-            impact_speed, before_impact_accel, impact_accel, impact_angle,
-            avg_dev_after, max_dev_after, recovery_area, closest_clearance,
-            impact_detected, 
-            nom_sp_x, nom_sp_y, nom_sp_z, 
-            nom_ep_x, nom_ep_y, nom_ep_z, 
-            act_sp_x, act_sp_y, act_sp_z, 
-            act_ep_x, act_ep_y, act_ep_z,
-            imu_peak_accel, imu_peak_accel_x, imu_peak_accel_y, imu_peak_accel_z,
-            imu_peak_gyro, imu_peak_gyro_x, imu_peak_gyro_y, imu_peak_gyro_z,
-            imu_accel_energy, imu_accel_energy_x, imu_accel_energy_y, imu_accel_energy_z,
-            imu_gyro_energy, imu_gyro_energy_x, imu_gyro_energy_y, imu_gyro_energy_z,
-            imu_accel_settling, imu_gyro_settling,
-            imu_vib_ax, imu_vib_ay, imu_vib_az,
-            imu_vib_gx, imu_vib_gy, imu_vib_gz,
-            motor_avg_before, motor_max_before, motor_avg_after, motor_max_after,
-            motor_thrust_surge, motor_imbalance_after,
-            motor_m1_avg_after, motor_m2_avg_after, motor_m3_avg_after, motor_m4_avg_after,
-            timestamp, timestamp_PX4,
-            allocator_saturation_duration_sec, max_unallocated_torque, thrust_setpoint_achieved_pct,
-            roll_rate_error_rms, pitch_rate_error_rms, yaw_rate_error_rms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
+    cols = [
+        "flight_name", "condition", "sweep_speed", "battery_at_start",
+        "impact_speed", "before_impact_accel", "impact_accel", "impact_angle",
+        "avg_dev_after", "max_dev_after", "recovery_area", "closest_clearance",
+        "impact_detected", 
+        "nom_sp_x", "nom_sp_y", "nom_sp_z", 
+        "nom_ep_x", "nom_ep_y", "nom_ep_z", 
+        "act_sp_x", "act_sp_y", "act_sp_z", 
+        "act_ep_x", "act_ep_y", "act_ep_z",
+        "imu_peak_accel", "imu_peak_accel_x", "imu_peak_accel_y", "imu_peak_accel_z",
+        "imu_peak_gyro", "imu_peak_gyro_x", "imu_peak_gyro_y", "imu_peak_gyro_z",
+        "imu_accel_energy", "imu_accel_energy_x", "imu_accel_energy_y", "imu_accel_energy_z",
+        "imu_gyro_energy", "imu_gyro_energy_x", "imu_gyro_energy_y", "imu_gyro_energy_z",
+        "imu_accel_settling", "imu_gyro_settling",
+        "imu_vib_ax", "imu_vib_ay", "imu_vib_az",
+        "imu_vib_gx", "imu_vib_gy", "imu_vib_gz",
+        "motor_avg_before", "motor_max_before", "motor_avg_after", "motor_max_after",
+        "motor_thrust_surge", "motor_imbalance_after",
+        "motor_m1_avg_after", "motor_m2_avg_after", "motor_m3_avg_after", "motor_m4_avg_after",
+        "timestamp", "timestamp_PX4",
+        "allocator_saturation_duration_sec", "max_unallocated_torque", "thrust_setpoint_achieved_pct",
+        "roll_rate_error_rms", "pitch_rate_error_rms", "yaw_rate_error_rms",
+        "active_flight_time_sec", "voltage_drop_rate_v_per_min", "capacity_drain_rate_pct_per_min",
+        "max_actuator_output", "path_spread_sdld",
+        "imu_ax_spread_impact", "imu_ay_spread_impact", "imu_az_spread_impact",
+        "imu_ax_spread_regular", "imu_ay_spread_regular", "imu_az_spread_regular"
+    ]
+
+    vals = (
         flight_name, condition, sweep_speed, battery_at_start,
         impact_speed, before_impact_accel, impact_accel, impact_angle,
         avg_dev_after, max_dev_after, recovery_area, closest_clearance_cm,
@@ -325,8 +362,15 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         motor_m1_avg_after, motor_m2_avg_after, motor_m3_avg_after, motor_m4_avg_after,
         timestamp, timestamp_PX4,
         allocator_saturation_duration_sec, max_unallocated_torque, thrust_setpoint_achieved_pct,
-        roll_rate_error_rms, pitch_rate_error_rms, yaw_rate_error_rms
-    ))
+        roll_rate_error_rms, pitch_rate_error_rms, yaw_rate_error_rms,
+        active_flight_time_sec, voltage_drop_rate_v_per_min, capacity_drain_rate_pct_per_min,
+        max_actuator_output, path_spread_sdld,
+        imu_ax_spread_impact, imu_ay_spread_impact, imu_az_spread_impact,
+        imu_ax_spread_regular, imu_ay_spread_regular, imu_az_spread_regular
+    )
+
+    query = f"INSERT OR REPLACE INTO flights_summary ({', '.join(cols)}) VALUES ({', '.join(['?'] * len(cols))})"
+    cursor.execute(query, vals)
     conn.commit()
     conn.close()
     print(f"💾 Successfully cached '{flight_name}' metrics in SQLite database.")

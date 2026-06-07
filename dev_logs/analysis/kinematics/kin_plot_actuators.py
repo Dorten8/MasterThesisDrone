@@ -81,7 +81,7 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
         if impact_t is not None and wp3_t is not None:
             ax.axvspan(impact_t, wp3_t, color='#C8E6C9', alpha=0.3, label='Recovery Phase')
         if impact_t is not None:
-            ax.axvline(x=impact_t, color='#D32F2F', linestyle='--', linewidth=2, label='Impact (WP2)')
+            ax.axvline(x=impact_t, color='#D32F2F', linestyle='--', linewidth=2, label='Impact')
 
     # Panel 1: Actuator Motors (Commands)
     ax1 = fig.add_subplot(gs[0])
@@ -246,7 +246,7 @@ def plot_control_allocator_saturation(ulg_path, offset_sec, bag_start_ns, wp_eve
 
     # Draw vertical dashed line at t_impact
     for a in axes:
-        a.axvline(x=t_impact, color='#D32F2F', linestyle='--', linewidth=2, label='Impact (WP2)')
+        a.axvline(x=t_impact, color='#D32F2F', linestyle='--', linewidth=2, label='Impact')
         a.set_xlim(t_min, t_max)
 
     plt.tight_layout()
@@ -339,7 +339,7 @@ def plot_pid_rate_tracking(ulg_path, offset_sec, bag_start_ns, wp_events, flight
 
     # Draw vertical dashed line at t_impact
     for a in axes:
-        a.axvline(x=t_impact, color='#D32F2F', linestyle='--', linewidth=2, label='Impact (WP2)')
+        a.axvline(x=t_impact, color='#D32F2F', linestyle='--', linewidth=2, label='Impact')
         a.set_xlim(t_min, t_max)
 
     plt.tight_layout()

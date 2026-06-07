@@ -108,6 +108,18 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
 
     # ---------------- 1. Top Panel: continuous velocity profile ----------------
     ax_vel.plot(t_rel, df_plot['speed'], color=C_MOCAP, linewidth=2.2, label=f'MoCap SG Velocity ({label})')
+    
+    # Highlight surgically repaired dropout segments
+    if 'is_doctored' in df_plot.columns and df_plot['is_doctored'].any():
+        # Dilate mask by 1 point to ensure the doctored segment connects perfectly to the clean data lines
+        doctored_mask = df_plot['is_doctored'].values
+        dilated_mask = doctored_mask.copy()
+        dilated_mask[1:] |= doctored_mask[:-1]
+        dilated_mask[:-1] |= doctored_mask[1:]
+        
+        doctored_speed = np.where(dilated_mask, df_plot['speed'], np.nan)
+        ax_vel.plot(t_rel, doctored_speed, color='#10B981', linewidth=2.5,
+                    label='Reconstructed Dropout Segment (Linear Fit)', zorder=4)
 
     # Segment average velocities
     has_avg_legend = False
@@ -144,7 +156,7 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
     ax_vel.grid(True)
 
     cond_suffix = f" <{condition}>" if condition else ""
-    ax_vel.set_title(f'⚡ Thesis Flight Kinetic Profile: SG Velocity & Event Timeline{cond_suffix}', pad=15)
+    ax_vel.set_title(f'Thesis Flight Kinetic Profile: Filtered Velocity & Event Timeline{cond_suffix}', pad=15)
 
     # ---------------- 2. Middle Panel: continuous tangential acceleration ----------------
     if ax_acc is not None:
@@ -160,6 +172,17 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         ax_acc.plot(t_rel, df_plot['accel'], color='#D62728', linewidth=1.8,
                     label='Tangential Acceleration (m/s²)')
 
+        # Highlight surgically repaired dropout segments in acceleration
+        if 'is_doctored' in df_plot.columns and df_plot['is_doctored'].any():
+            doctored_mask = df_plot['is_doctored'].values
+            dilated_mask = doctored_mask.copy()
+            dilated_mask[1:] |= doctored_mask[:-1]
+            dilated_mask[:-1] |= doctored_mask[1:]
+            
+            doctored_accel = np.where(dilated_mask, df_plot['accel'], np.nan)
+            ax_acc.plot(t_rel, doctored_accel, color='#10B981', linewidth=2.2,
+                        label='Reconstructed Dropout Segment (Linear Fit)', zorder=4)
+
         # Bold zero reference line separating acceleration and deceleration states
         ax_acc.axhline(0.0, color='black', linewidth=1.6, linestyle='-', zorder=5,
                        label='Zero Acceleration (Steady State)')
@@ -170,6 +193,25 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         ax_acc.set_ylabel('Tangential Accel (m/s²)\n← Decel | Accel →')
         ax_acc.legend(loc='upper right', frameon=True, facecolor='white', edgecolor='#EAEAEA')
         ax_acc.grid(True)
+
+        # Add filter explanation box at the right bottom
+        is_high_jitter = df_plot['is_high_jitter'].iloc[0] if 'is_high_jitter' in df_plot.columns else False
+        if is_high_jitter:
+            filter_text = (
+                "Filter Info:\n"
+                "• Savitzky-Golay (w=19, p=3)\n"
+                "• 4Hz Butterworth Low-Pass\n"
+                "• Surgical Gap Repair (>100ms)"
+            )
+        else:
+            filter_text = (
+                "Filter Info:\n"
+                "• Savitzky-Golay (w=19, p=3)\n"
+                "• Surgical Gap Repair (>33ms)"
+            )
+        props = dict(boxstyle='round', facecolor='white', alpha=0.85, edgecolor='#EAEAEA')
+        ax_acc.text(0.98, 0.08, filter_text, transform=ax_acc.transAxes, fontsize=8,
+                    verticalalignment='bottom', horizontalalignment='right', bbox=props, zorder=6)
 
     # ---------------- 3. Bottom Panel: dynamic MoCap /poses rate ----------------
     if ax_rate is not None:

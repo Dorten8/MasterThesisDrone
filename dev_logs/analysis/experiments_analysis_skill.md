@@ -81,3 +81,12 @@ The workspace (`dev_logs/analysis/`) is strictly partitioned.
   * `dev_logs/analysis/` is exclusively for the core, production-grade analysis pipelines and dashboards (e.g., `db_pipeline.py`, `experiments_analysis_summary.ipynb`). Do not clutter this space.
   * `dev_logs/scratch/` is the designated area for all one-off scripts, prototyping tools, temporary data checks, and experimental code.
 * **Routine Tool Cleanup:** Regularly audit and delete one-time use tools, experimental scratchpads, and obsolete helper scripts once their specific task is completed. Do not leave dead code in the repository.
+
+## 7. AI Behavior & Roadmap Management
+* **Roadmap/Walkthrough Modification Constraint:** Under no circumstances should the AI assistant delete tasks, mark tasks as complete/done (`[x]`), or modify checklists in roadmaps (such as `walkthrough_experiments.md`) unless the user explicitly and deliberately instructs to do so. The AI assistant must always explicitly ask the user for confirmation and obtain clear approval before updating roadmap tasks.
+
+## 8. Retired & Attempted Graphics/Metrics (Changelog / Hall of Shame)
+To prevent repeating past visualization attempts that yielded low-value, redundant, or noise-dominated data, the following assets have been retired:
+* **PID Rate Controller Tracking (Plot 2)**: Individual pass plots mapping rate setpoint vs. angular velocity. Retired as it was redundant with aggregate rate tracking error RMS metrics in the database and cluttered individual flight directories.
+* **Motor Imbalance Profile (Plot F)**: Individual/aggregate post-impact motor signal variance. Found to be highly dependent on transient ground-effect interactions rather than cage-induced structural dynamics.
+* **Sweep Velocity vs. Impact Speed Scatter (`sweep_vs_impact_speed.png`)**: Aggregate plot showing commanded transit sweep speed vs. actual velocity at impact. Found to be redundant due to the high consistency of the feedforward guidance controller.

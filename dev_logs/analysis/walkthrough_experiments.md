@@ -1,207 +1,231 @@
 # 🏁 Master Thesis Walkthrough: Experimental Collision Sweep Refinements
 
-This document serves as our shared, checkable roadmap to refine, fix, and polish the experimental telemetry analysis summary dashboard (`experiments_analysis_summary.ipynb`) and the telemetry ingestion pipelines. You can strike through items or check off boxes (`- [x]`) as we proceed.
+This document serves as our shared, checkable roadmap to refine, fix, and polish the experimental telemetry analysis dashboard. Its structure directly mirrors the sequence of cells in our two notebooks:
+1. `experiments_analysis.ipynb` (individual flights and telemetry ingestion)
+2. `experiments_analysis_summary.ipynb` (aggregate comparative analytics)
+
+Feel free to check off boxes (`- [x]`) or add comments/complaints directly under the respective notebook sections below.
 
 ---
 
-## 🛠️ Phase 1: Database & Pipeline Hotfixes
+## 📐 1. Individual Flight Ingestion & Analysis (`experiments_analysis.ipynb`)
 
+This section tracks tasks and pipeline hotfixes relating to raw telemetry processing, ULog matching, database generation, and individual flight pass visuals.
+
+### Telemetry Ingestion & Database Generation (`db_pipeline.py`)
 - [x] **Fix `NameError: name 'glob' is not defined`**
   * **Location:** `dev_logs/analysis/database/db_pipeline.py:644`
-  * **Symptom:** Running the automated telemetry ingestion pipeline throws a `NameError` because the standard library `glob` module is used but not imported.
   * **Fix:** Added `import glob` at the top of `db_pipeline.py`.
+- [x] **Resolve Unmatched Flights**
+DONE
+- [x] **Incorporate ULog Topics & Flight Time/Efficiency Metrics**
+  * **Location:** Telemetry Pipeline (`db_pipeline.py`)
+  * **Action:** Extract and utilize additional `.ulg` fields in the pipeline to run comparative analysis. Currently, the database table has NULL/unpopulated values for:
+    * `active_flight_time_sec` (not populated)
+    * `voltage_drop_rate_v_per_min` (not populated)
+    * `capacity_drain_rate_pct_per_min` (not populated)
+    * `max_actuator_output` (not populated)
+  * *_Review Note (Implemented & Investigating Trash Data):_*
+    * *I updated `db_pipeline.py` to fix the `max_actuator_output` bug and implemented a robust global battery parser using `pyulog`.*
+    * *Trash Data Investigation (Root Cause Found): For flights like `20260528-1511`, the ULog contains multiple arming sessions (e.g., a brief 6-second pre-flight test arming, followed by the actual flight arming). The initial `_get_global_battery` parser only captured the first arm/disarm pair it encountered, which was the 6.6-second test arm where no battery drain occurred. The actual flight occurred in a later arming session.*
+    * *Proposed Session-Matching Fix:*
+      1. *Modify `_get_global_battery` to identify all arming sessions in the ULog.*
+      2. *Use the pass's PX4-aligned timestamp (`timestamp_PX4` already calculated in `get_ulog_motor_metrics`) to map the pass to the exact arming session during which it occurred.*
+      3. *If no session matches the timestamp, fall back to the longest arming session (the main flight) rather than the first one.*
+      4. *To avoid full DB repopulation, we can also check for `capacity_drain_rate_pct_per_min <= 0.0` or `active_flight_time_sec < 15.0` during notebook/dashboard loading and discard/filter out those specific data points dynamically, or apply the pipeline fix to only update the mismatched rows.*
+- [x] **Filter Out Below 30 Hz Data Points for Velocity and Tangential Accel**
+  * **Location:** `kin_calculator.py` → `compute_velocity` + `resample_and_interpolate_mocap`
+  * **Action:** Eliminate derivative spikes caused by MoCap dropouts in the splined kinematic profiles while keeping curves fully connected.
+  * *_Log of Attempts:_*
+    * *Attempt 1 — Linear Repair (Reverted): Linearly connected positions across gaps → SG filter produced severe ringing spikes at corners.*
+    * *Attempt 2 — PCHIP + NaN Mask (9pt): Shape-preserving PCHIP spline + mask 9 points each side. Reduced spike from ~12→3.7 m/s² but left boundary bumps visible.*
+    * *Attempt 3 — PCHIP + NaN Mask (27pt): Expanded mask to 27 points. Flattened spikes completely but cut too much of the blue/red curves — user rejected.*
+    * *Attempt 4 — PCHIP + No Mask: Removed NaN masking entirely. Lines were connected but spikes returned at full force (~9.9 m/s²). Root cause confirmed: SG `deriv=1` on positions amplifies C² curvature discontinuity at PCHIP gap boundaries.*
+    * *Attempt 5 — PCHIP Analytical Derivative + SG Smoother:* Used PCHIP analytical 1st derivative for velocity, then applied SG as a smoother (deriv=0, w=31).
+      * *What worked:* Successfully reduced the massive 9.9 m/s² dropout spike at t≈6.7s down to 1.6 m/s² (below the real impact peak of 2.4 m/s²).
+      * *What did not work:* Spreading the smoothing window (w=31) across the C¹ boundary kinks of PCHIP created a new, visible bump at t=5.1-5.2s (a region with smaller 35ms dropouts that previously looked fine).
+    * *Attempt 5b — Hermite Gap Reconstruction (Tested & Rejected):* Diagnostic tested using `CubicHermiteSpline` constrained by (P₁, V₁, P₂, V₂) at gap boundaries. Result: nearly identical to PCHIP (9.8 vs 9.9 m/s²) because PCHIP internally IS a Hermite spline. The spikes come from the curvature inside the gap, not from boundary velocity mismatch.*
+    * *Attempt 6 — Targeted Gaussian Blur + SG Smooth (Rejected):* Applied a Gaussian blur (σ=8) only to the PCHIP velocity in dropout gaps. Reduced spikes nicely (1.8 m/s²) but user rejected it because PCHIP analytical derivatives introduced noticeable high-frequency jitter across the entire signal compared to raw SG filtering.
+    * *Attempt 7 — Surgical Ringing Removal (ACTIVE for Rotating Cage):* Reverted to raw linear interpolation of positions and standard SG(deriv=1) to obtain clean raw velocity. We mathematically cut out the SG "ringing" spikes (gap width + `filter_half_window` margin on each side) and replace them with a straight line.
+      * *Diagnostic results on Rotating Cage (Pass-02):* Spike reduced from 9.618 → 3.652 m/s²; impact peak (3.082 m/s²) perfectly preserved.
+    * *Attempt 8 — Adaptive Butterworth Low-Pass Filter (ACTIVE for Fixed Cage / Jittery Flights):*
+      * *Concept:* If a flight has systemic tracking degradation (>20 drops below 30Hz, typical of Fixed Cage flights), surgical masking becomes impossible without masking the entire flight. Instead, we use a 100ms threshold for large dropouts, and apply a 2nd-order 4Hz Butterworth Low-Pass Filter to the computed velocity.
+      * *Results:* The Butterworth filter completely eliminates high-frequency noise from micro-gaps, revealing the true underlying physical trajectory without introducing C1/C2 corners.
+    * **⚠️ STATUS: SUCCESSFULLY IMPLEMENTED**
+      * Both paths are dynamically resolved based on MoCap signal quality (low jitter vs high jitter).
+      * Universal titles updated to "Filtered Velocity" and filter descriptions added to the Tangential Acceleration subplots.
 
-- [x] **Adjust IMU Collision Dynamics Time Alignment**
-  * **Issue:** The coordinate-based closest approach detection uses MoCap position data, which exhibits ~100 ms of latency relative to the high-frequency IMU sensor shock. This makes the vertical "Impact Line" in the plots appear slightly before/after the actual shock.
-  * **Fix:** Aligned the collision timeline dynamically by scanning the IMU data in the contact window and setting $t = 0.0$ to the exact peak gradient of the accelerometer vector magnitude ($a_{\text{deviation}}$).
-  * **Benefit:** Ensures physical events align perfectly across all flights.
+### Individual Pass Visualizations (Step 2: UNIFIED SWEEP COLLISION EXPERIMENTS)
+- [ ] **Plot 1: Control Allocator Saturation (Individual Pass Plot)**
+  * **Inputs:** `control_allocator_status`, `actuator_motors`, `wp_events`.
+  * **Outputs:** Standalone PNG plot: `<pass_id>_control_allocator_saturation.png` in the pass directory. SQLite database columns: `allocator_saturation_duration_sec`, `max_unallocated_torque`, `thrust_setpoint_achieved_pct`.
+- [x] **Retire Plot 2: PID Rate Controller Tracking (Individual Pass Plot)**
+  * **Status:** Retired. This was previously implemented and has been deleted to focus resources on aggregate performance comparisons.
 
 ---
 
-## 📊 Phase 2: Plot Enhancements & Cleaning
+## 📈 2. Aggregate Comparative Dashboard (`experiments_analysis_summary.ipynb`)
 
-- [x] **Resolve Kinetic Profile Plot Red Dots (`/poses` Publish Rate)**
-  * **Issue:** Red dots are plotted on the kinetic curves to highlight drops in the `/poses` MoCap update rate below 30 Hz. While useful for raw debug logs, they clutter the thesis-ready summary plot.
-  * **Fix:** Disabled/removed the red scatter dots in the clean non-RAW plotting function, while retaining standard interpolation to bridge any brief data gaps.
+This section mirrors the aggregate notebook cells, starting from theoretical guidance derivations down to the final master thesis metrics table.
 
-- [x] **Fix Empty Plots in Summary Notebook**
-  * **Empty Figures:**
-    1. *Post-Impact Deviation vs. Impact Angle (Rotating Cage)*
-    2. *Post-Impact Deviation vs. Impact Angle (Fixed Cage)*
-    3. *Stabilization Overlay: Rotating vs. Fixed Cage Dynamics*
-  * **Root Cause:** The database queries for these plots were using categorical filters `'Rotating Cage'` and `'Fixed Cage'` that mismatched the string labels stored in the database (`'Rotating'` and `'Fixed'`).
-  * **Fix:** Standardized the query filters in the plotting cells to match the database schema exactly and ensure data points are successfully loaded and plotted.
+### Guidance Framework, Waypoint Acceptance, and Impact Geometry
+- **Theoretical Sub-sections:**
+  * 1. PX4 Guidance Dynamics: The "Spring-Loaded Slider" on a Virtual Track
+  * 2. Waypoint Acceptance and S-Curve Transitions
+  * 3. Mathematical Justification of 2D Horizontal Plane Simplifications
+  * 4. Trigonometric Derivation of Collision Impact Angles
+- [ ] **Revert IMU Collision Dynamics Time Alignment**
+  * **Location:** Telemetry Pipeline (`db_cache_imu.py` / `db_pipeline.py`) and aggregate plots.
+  * **Issue:** Aligning the collision timeline to the peak gradient of $a_{\text{deviation}}$ places the alignment point $t = 0.0$ *after* the physical impact has already commenced. The original closest-approach detection based on the MoCap `/poses` topic correctly registered the moment of impact a split second *before* it becomes visible in the Tangential Acceleration plots.
+  * **Action:** Revert the time-alignment logic back to the original MoCap `/poses`-based closest approach detection.
+  * **Label Correction:** In the aggregate plots, rename the vertical alignment reference line. It is currently labeled `"WP2"` which is incorrect; rename it to `"Impact"`.
 
-- [x] **Retire Plot 14 (Actuator Saturation Phase Portrait) & Plot 15**
-  * **Action:** Removed these two inconclusive figures to clean up the dashboard.
+### Data Loading, Filtering & Pre-processing (Steps 1 to 4)
+- **Step 1: Base Impact-Only Loaders**
+- **Step 2: Segmented Geometry & Cage Loaders (IMPACTS ONLY)**
+- **Step 3: Segmented Impact Angle Ranges (IMPACTS ONLY)**
+- **Step 4: Angle Ranges Sub-Split by Cage State (Rotating vs. Fixed)**
 
-- [ ] **Fix Plot 16 Y-Axis Explanation**
-  * **Proposed Fix:** Rename the Y-axis to clearly indicate what tracking metric is being displayed (e.g., "Normalized Attitude Error [$^\circ$]") and add a brief description of how it is calculated.
+### Global Thesis Visualizations (Step 5 to 10)
+- [ ] **Verify Derivative Calculations on Kinetic Profile Plots (Red Dots Removal)**
+  * **Location:** `experiments_analysis_summary.ipynb` -> Section: `Kinetic Profile Plots` / `kin_plot_kinematics.py`
+  * **Action:** We removed the red update rate dropout scatter dots from the plots. Now, we must verify that when `/poses` update rate drops occur, the computed velocity and acceleration curves in the other two kinetic profile subplots are properly interpolated/filtered so that MoCap dropouts do not introduce derivative noise, spikes, or calculation errors.
+  * *_Review Note (Pending Fixes - Analysis of Splined Spikes):_*
+    * *The straight-line repair code was written under `if not resample`, meaning it only ran for the raw MoCap profile. The splined profile (`<Rotating Cage (Splined)>`) skipped it and used the default `np.interp` (linear interpolation).*
+    * *Why linear interpolation still causes derivative spikes: Even though the positions across the dropout are a straight line, the boundaries where the real flight path meets the straight line form "corners" (discontinuities in the first derivative/velocity). The Savitzky-Golay filter (window size 19, or ~190ms) fits a polynomial to this corner, causing it to "ring" and overshoot. This ringing leaks into the healthy data up to 10 samples (~100ms) before and after the gap.*
+    * *Proposed Implementation:*
+      1. *Apply the repair to BOTH paths (inside `compute_velocity` and `resample_and_interpolate_mocap`).*
+      2. *Instead of linear interpolation (`np.interp`), we will use a shape-preserving Hermite spline (PCHIP) or Cubic Spline to interpolate the dropout gaps. This guarantees that the velocity is smooth ($C^1$ continuous) at the boundary points, preventing the Savitzky-Golay filter from ringing.*
+      3. *When masking the dropout region with NaNs, we will expand the mask window by 10 points (half the Savitzky-Golay window size) on each side to completely hide any numerical edge artifacts from the plots.*
 
-- [ ] **Polish Integrated Rotational Energy (Plot 12)**
-  * **Action 1:** Remove the third panel (Plot 12c: Linear & Attitudinal Settling Times) entirely. Layout will become a 2-panel figure:
-    1. *Peak Acceleration (g)*
-    2. *Integrated Rotational Energy (rad)*
+- [x] **Retire Outdated Figures**
+  * **Location:** `experiments_analysis_summary.ipynb`
+  * **Action:** Removed the legacy *Actuator Saturation Phase Portrait (Plot 14)* and *Plot 15* to clean up the dashboard.
+- [ ] **Polish Integrated Rotational Energy (originally Plot 12)**
+  * **Location:** `experiments_analysis_summary.ipynb` -> `Peak Acceleration (g) / Integrated Rotational Energy / Linear & Attitudinal Settling Times` (Line 1752)
+  * **Action 1:** Remove the third panel (*Linear & Attitudinal Settling Times*) entirely. The layout will become a 2-panel figure:
+    1. `Peak Acceleration (g)`
+    2. `Integrated Rotational Energy`
   * **Action 2:** Add units `[rad]` to the Y-axis of the Rotational Energy plot.
   * **Action 3:** Add an explanatory printout below the plot showing the math:
     $$\text{Rotational Energy} = \int_{t_{\text{impact}} - 50\text{ms}}^{t_{\text{impact}} + 350\text{ms}} \|\vec{\omega}(t)\|_2 \, dt \quad [\text{rad}]$$
     *Explanation:* This represents the integrated shock impulse of angular velocity magnitude (rad/s) over a 400 ms contact window, representing the total angular displacement transferred into high-frequency cage rotations.
+- **Step 7 & 8: Deviation vs. Impact Angle color-coded by Battery State** (Rotating vs. Fixed Cage)
+- **Step 9: Comparative Stabilization Overlay (Rotating vs. Fixed Cage)**
+- **Step 10: Battery & Flight Efficiency Comparative Analysis**
+  * Outputs `### 📊 Enclosure Comparative Energy Metrics Summary`
 
----
+### Battery, Deceleration & Structural Dynamics (Steps 11 to 12)
+- [x] **Robust Trendline for Deceleration vs. Battery Plot**
+  * **Location:** `experiments_analysis_summary.ipynb` -> `Maximum Impact Deceleration vs. Start Battery Percentage` and `Global Comparison: Deceleration vs. Battery State (Angle-Free)`
+  * **Fix:** Used a **Huber Regressor** or **Theil-Sen estimator** instead of OLS to fit the trendlines.
+- [ ] **Unify Axis Scales and Overlay for Motor Speed vs Acceleration**
+  * **Location:** `experiments_analysis_summary.ipynb` -> `IMU Peak Acceleration Z vs Commanded Motor Speed (RPM)` (Line 1927)
+  * **Action 1:** Enforce a unified Y-axis scale across both subplots (Rotating vs. Fixed Cage).
+  * **Action 2:** Set a unified X-axis scale ranging from `8600` to `10800` RPM, with divisions of `200` (ticks every 200 RPM).
+  * **Action 3:** Generate an alternative plot in this section where the Rotating Cage and Fixed Cage values are overlaid on a single, unified plot, rather than separate subplots, for direct comparison.
+- [ ] **Investigate Command Speed Outliers at 2000 RPM**
+  * **Location:** `experiments_analysis_summary.ipynb` -> `IMU Peak Acceleration Z vs Commanded Motor Speed (RPM)` (Line 1927)
+  * **Issue:** The plot has outliers at 2000 RPM (minimum idle speed).
+  * **Action:** Investigate whether these occur due to a mismatch in the collision time window (capturing pre-takeoff/post-landing states) or a failed collision detection where the drone hovered without rotor engagement. Filter out timestamps where the drone speed was below threshold or state was not in active flight.
+- **Step 12: Enclosure Structural Dynamics**
+  * Outputs `### Enclosure Comparative Table of Averages`
 
-## 📐 Phase 3: Nominal vs. Actual Impact Geometry Visualization
-
-- [ ] **Nominal vs. Actual Impact Geometry Visualization**
-  * **Issue:** Need to visualize the actual impact angles and how they distribute relative to the nominal sweep directions.
-  * **Proposed Visualization:**
+### Advanced Thesis Highlights
+- [ ] **Add Recovery Area & Comparative Performance Improvement Printouts**
+  * **Location:** `experiments_analysis_summary.ipynb` -> Section: `📐 Trajectory Recovery Area Metric Comparison` (Line 470), `Post-Impact Maximum Deviation vs. Impact Angle` (Line 2032), `Maximum Impact Deceleration vs. Start Battery Percentage` (Line 1255).
+  * **Proposed Fix:** Dynamically print the percentage improvement (reduction in recovery area, deviation, or deceleration) of the Rotating Cage vs. Fixed Cage configuration directly below/under each plot where a clear comparative metric is shown.
+- **Plot A: IMU Z vs Commanded Motor Speed (RPM)**
+- **Plot B: Impact Angle vs. Max Deviation**
+- **Plot C: Recovery Area Distribution**
+- **Plot D: 2D Path Overlay & Obstacle Clearance**
+  * [ ] **Nominal vs. Actual Impact Geometry Visualization**
     * Draw the column to-scale ($R = 4.5\text{ cm}$).
     * Draw the drone silhouette/circumference ($R = 17.9\text{ cm}$).
     * Draw nominal sweep vectors (45° and 75°).
     * For each flight, plot a line segment from the drone perimeter to the column representing the actual impact angle.
     * Overlay shaded polar wedges (histograms) whose radii represent the percentage distribution of impacts.
     * Add a summary table below this plot.
+  * [ ] **Quantify Trajectory Path Spread (SDLD)**
+    * **Proposed Metric:** Calculate the **Standard Deviation of Lateral Displacement (SDLD)** along the path:
+      1. Resample all trajectories to a uniform grid along the travel axis ($y$).
+      2. Compute the standard deviation of the lateral coordinate ($x$) at each step.
+      3. Calculate the mean SDLD over the sweep zone. A smaller SDLD indicates highly repeatable trajectories.
+    * **Output:** Display this spread value directly on the plot/table.
+- **Plot 13: Attitude-Shock Phase Portrait**
+  * [ ] **Implement Pearson & Spearman Correlations on Phase Portrait**
+    * **Proposed Fix:** Compute and display:
+      1. **Pearson's $r$:** Measures the linear correlation between shock acceleration and attitude deviation.
+      2. **Spearman's $\rho$:** Measures the monotonic relationship (resilient to non-linearities and outliers).
+- **Plot 16: Post-Impact Raw IMU Oscillation Spread**
+  * [ ] **Fix `Post-Impact Y-Axis Vibration Spread` (originally Plot 16) Y-Axis & Introduce IMU Spread Metric**
+    * **Proposed Fix:** Rename the Y-axis to clearly indicate what tracking/vibration metric is being displayed (e.g., `"Normalized Attitude Error [deg]"`) and add a brief description of how it is calculated.
+    * **New Metric (IMU Acceleration Spread):** Compute and compare the typical spread (standard deviation) of high-frequency IMU acceleration in the X, Y, and Z axes within:
+      1. The **Impact Window** (from $t_{\text{impact}} - 50$ ms to $t_{\text{impact}} + 350$ ms).
+      2. **Regular (Steady State) Flight** (the 1.0 second window before impact).
+    
+    * **Visualization:** Generate boxplots or error-bar comparisons to visualize this spread difference between Rotating and Fixed Cage configurations.
+    * **Notebook Integration:** Render and display the generated plot (`plot_16_imu_vibration_spread.png`) inside the `experiments_analysis_summary.ipynb` notebook.
 
----
-
-## 📈 Phase 4: Statistical Rigor & Metric Quantification
-
-- [x] **Robust Trendline for Deceleration vs. Battery Plot**
-  * **Action:** Created a duplicate plot that drops the heatmap colors for angles to show the global battery dependency clearly, and used a **Huber Regressor** or **Theil-Sen estimator** (from `scikit-learn`) instead of Ordinary Least Squares (OLS) to fit the trendlines.
-  * **Why:** Huber loss treats residuals quadratically for small errors and linearly for large errors (outliers), preventing anomalous battery drops/sensor spikes from pulling the trendline away from the true mean.
-
-- [x] **Investigate Command Speed Outliers at 2000 RPM**
-  * **Issue:** The plot of *Peak Acceleration Z vs. Commanded Motor Speed* has outliers at 2000 RPM (minimum idle speed).
-  * **Fix:** Split into two side-by-side plots (Rotating vs. Fixed Cage) and filter out timestamps where the drone speed was below threshold or state was not in active flight. Fit robust trendlines to both.
-
-- [ ] **Quantify Trajectory Path Spread**
-  * **Proposed Metric:** Calculate the **Standard Deviation of Lateral Displacement (SDLD)** along the path.
-    1. Resample all trajectories to a uniform grid along the travel axis ($y$).
-    2. Compute the standard deviation of the lateral coordinate ($x$) at each step.
-    3. Calculate the mean SDLD over the sweep zone. A smaller SDLD indicates highly repeatable trajectories.
-  * **Output:** Display this spread value directly on the plot/table.
-
-- [ ] **Add Recovery Area Distribution Improvement Printout**
-  * **Proposed Fix:** Print the percentage improvement (reduction in recovery area deviation) of the Rotating Cage vs. Fixed Cage dynamically under the plot.
-
-- [ ] **Implement Pearson & Spearman Correlations on Plot 13 (Phase Portrait)**
-  * **Proposed Fix:** Compute and display:
-    1. **Pearson's $r$:** Measures the linear correlation between shock acceleration and attitude deviation.
-    2. **Spearman's $\rho$:** Measures the monotonic relationship (resilient to non-linearities and outliers).
-
-- [x] **Build Master Comparison Metrics Table**
-  * **Proposed Table:** A comprehensive markdown table at the end of the notebook summarizing all metrics:
-    | Metric | Rotating Cage (Mean ± SD) | Fixed Cage (Mean ± SD) | Absolute Improvement | % Improvement |
-    | :--- | :--- | :--- | :--- | :--- |
-    | Peak Accel (g) | | | | |
-    | Rotational Energy (rad) | | | | |
-    | Recovery Area (mm·m) | | | | |
-    | Path Spread (mm) | | | | |
-
----
-
-## 🛠️ Phase 5: ULog Matching Review & Ulog Topics Integration
-
-- [ ] **User Review Action: Resolve Unmatched Flights**
-  * **Action:** Review unmatched flights list from `ulog_matching_log.txt` (located at `dev_logs/analysis/database/ulog_matching_log.txt`) and copy the missing ones again down to the document. 
-  * **Missing flights:**
-    1. `flight_20260526-0922_75°_column_collision_loop_rotating_cage`
-    2. `flight_20260528-1230_75°_column_collision_loop_fixed_cage`
-    3. `flight_20260529-1041_45°_column_collision_loop_fixed_cage`
-    4. `flight_20260530-1724_45°_column_collision_loop_fixed_cage`
-    5. `flight_20260530-1727_45°_column_collision_loop_fixed_cage`
-    6. `flight_20260531-1102_45°_column_collision_loop_fixed_cage`
-    7. `flight_20260601-1756_45°_column_collision_loop_rotating_cage`
-
-- [ ] **Incorporate ULog Topics**
-  * **Action:** Add and utilize the following topics from `.ulg` files to make various plots:
-    * `/fmu/out/actuator_outputs` (raw PWM/ESC commands)
-    * `/fmu/out/vehicle_status` (flight state and arming status)
-    * `/fmu/in/actuator_motors` (normalized motor control values)
-    * `/tf_static` (static TF transforms)
-
----
-
-## ⚙️ Phase 6: Advanced Motor Analysis & Visualizations
-
-- [ ] **Plot 1: Control Allocator Saturation (Individual Pass Plot)**
-  * **Inputs:**
-    * `control_allocator_status` (`timestamp`, `actuator_saturation[0..3]`, `torque_setpoint_achieved`, `thrust_setpoint_achieved`, `unallocated_torque[0..2]`, `unallocated_thrust[0..2]`).
-    * `actuator_motors` (`timestamp`, `control[0..3]`).
-    * `wp_events` (for pass alignment/time window bounds).
-  * **Outputs:**
-    * Standalone PNG plot: `<pass_id>_control_allocator_saturation.png` in the pass directory.
-    * SQLite database columns populated: `allocator_saturation_duration_sec`, `max_unallocated_torque`, `thrust_setpoint_achieved_pct`.
-  * **Visual Description:**
-    * Subpanel 1: Motor Command Input (`actuator_motors/control[0..3]`) to show the desired inputs (0.0 to 1.0).
-    * Subpanel 2: Saturation State (`actuator_saturation[0..3]`) step plot showing `-2` (lower saturation), `0` (normal), or `2` (upper saturation). Shading will highlight the saturation duration.
-    * Subpanel 3: Control Allocation Deficiency. Plot the norm of the `unallocated_torque[0..2]` vector along with binary indicators for `torque_setpoint_achieved` and `thrust_setpoint_achieved`.
-
-- [ ] **Plot 2: PID Rate Controller Tracking (Individual Pass Plot)**
-  * **Inputs:**
-    * `vehicle_rates_setpoint` (`timestamp`, `roll`, `pitch`, `yaw`).
-    * `vehicle_angular_velocity` (`timestamp`, `xyz[0..2]` for rollspeed, pitchspeed, yawspeed).
-    * `wp_events` (for pass alignment/time window bounds).
-  * **Outputs:**
-    * Standalone PNG plot: `<pass_id>_pid_rate_tracking.png` in the pass directory.
-    * SQLite database columns populated: `roll_rate_error_rms`, `pitch_rate_error_rms`, `yaw_rate_error_rms`.
-  * **Visual Description:**
-    * A 3-panel vertical layout (Roll, Pitch, Yaw rate tracking).
-    * In each panel: Commanded rate (dashed line) vs. Actual rate (solid line) during the recovery window, with the absolute tracking error (|command - actual|) plotted as a shaded band at the bottom. The impact point (`WP2`) will be marked by a vertical dashed red line.
-
-- [ ] **Plot 17: Aggregated Control Allocator Saturation**
-  * **Inputs:** SQLite database columns: `condition`, `allocator_saturation_duration_sec`, `max_unallocated_torque`, `thrust_setpoint_achieved_pct`.
-  * **Outputs:**
-    * Saved graphic: `dev_logs/analysis/graphics/plot_17_allocator_saturation_comparison.png`.
-    * Integrated cell in `experiments_analysis_summary.ipynb` showing this comparative analysis.
-  * **Visual Description:**
-    * A 3-panel horizontal subplot figure.
-    * Panel A: Boxplot comparison of control allocator saturation duration (seconds) for Rotating vs. Fixed Cage.
-    * Panel B: Boxplot comparison of maximum unallocated torque (N-m) for both configurations.
-    * Panel C: Boxplot comparison of thrust setpoint achieved percentage (%) for both configurations.
-
-- [ ] **Plot 18: Aggregated PID Rate Tracking Error (Roll, Pitch, Yaw RMS)**
-  * **Inputs:** SQLite database columns: `condition`, `roll_rate_error_rms`, `pitch_rate_error_rms`, `yaw_rate_error_rms`.
-  * **Outputs:**
-    * Saved graphic: `dev_logs/analysis/graphics/plot_18_pid_tracking_comparison.png`.
-    * Integrated cell in `experiments_analysis_summary.ipynb` showing this comparative analysis.
-  * **Visual Description:**
-    * A 3-panel horizontal boxplot figure (Roll, Pitch, Yaw tracking errors).
-    * Each panel contains side-by-side boxplots comparing the RMS tracking error (rad/s) for Rotating vs. Fixed Cage.
-
-- [ ] **Spatial Thrust Vector Polar Diagrams**
-  * **Action:** Visualize the direction and magnitude of thrust adjustments.
-
-- [ ] **Differential Motor Effort Heatmaps**
-  * **Action:** Show which motors work hardest under specific impact angles.
-
----
-
-## 💡 Phase 7: Control Theory & Hardware Explanations
-
-- [ ] **Control Allocator Saturation Plots Explanation**
-  * **Explanation to Add:**
-    During aggressive recovery post-collision, the PID attitude controller commands moments that force motor mixers to their limits (minimum or maximum RPM). When saturation occurs, the drone loses the capacity to apply further control inputs in that axis.
-    Comparing the saturation duration between the two enclosures shows whether the Rotating Cage allows the drone to recover using less aggressive corrections, thereby avoiding actuator saturation limits.
-
-- [ ] **MoCap Latency Impact on PID Tracking Error**
-  * **Explanation to Add:**
-    The PID rate controller tracking error is artificially inflated by packet dropouts and latency in the `/poses` topic. When MoCap drops packets, the EKF state estimate lags, producing sudden step changes in the estimated orientation. The controller sees this lag as a massive tracking error and applies sharp corrections, even though the physical drone may be stable.
-    Thus, the tracking error plot reflects a combination of control instability and EOC/MoCap network latency.
-
----
-
-## 📐 Phase 8: Statistical Analysis & Notebook Migration
-
+### Statistical Aggregate Performance Analysis (Section 3)
 - [ ] **Statistical Aggregate Performance Analysis**
-  * **Action:** Interface the statistical aggregation code (e.g., `compare_all_angles` in kinematics module) correctly with the current SQLite database state in the Jupyter environment (`dev_logs/analysis/experiments_analysis.ipynb`).
+  * **Location:** `experiments_analysis_summary.ipynb` -> Section 3
+  * **Action:** Incorporate statistical significance tests (e.g., T-test, Wilcoxon rank-sum) directly into comparative plots, marking significant differences with standard notation (e.g., `*`, `**`, `n.s.`).
+- [ ] **Control Allocator Performance Comparison (originally Plot 17)**
+  * **Outputs:** Saved graphic: `dev_logs/analysis/graphics/plot_17_allocator_saturation_comparison.png`.
+- [ ] **PID Rate Controller Tracking Error Comparison (originally Plot 18)**
+  * **Outputs:** Saved graphic: `dev_logs/analysis/graphics/plot_18_pid_tracking_comparison.png`.
+- [ ] **Spatial Thrust Vector Polar Diagrams**
+- [ ] **Differential Motor Effort Heatmaps**
 
+### Aggregated IMU Dynamics & Summary (Section 4)
+- [ ] **Integrate Structural Dynamics Boxplots**
+  * **Outputs:** Saved graphic: `dev_logs/analysis/graphics/structural_dynamics_boxplots.png`.
+  * **Notebook Integration:** Render and display this plot (comparing peak reaction/deceleration forces between configurations) in Section 4 of `experiments_analysis_summary.ipynb`.
+  * *_Review Note: I appended a new Markdown cell to the very end of `experiments_analysis_summary.ipynb` that properly embeds this PNG image for your review._*
+- **Plot 19: Aggregated IMU Collision Dynamics**
+  * **Requirement:** The vertical impact line must be aligned same as in the Thesis Flight Kinetic Profile (a smidgen before the acceleration starts). It should not be hard-coded at the peak, but rather represent the average of when the physical impact is registered. Update the time alignment logic in the plotting script to reflect this.
+- [ ] **Build High-Fidelity Expanded Master Comparison Metrics Table**
+  * **Proposed Table:** A comprehensive markdown table segmenting all key performance metrics by Enclosure Configuration and Impact Angle. Ensure all entries are populated with precise values, units, absolute differences, and percentage improvements where applicable.
+  * **Notebook Integration:** Dynamically generate and print this 20-row comparison table directly within a Python cell at the end of the `experiments_analysis_summary.ipynb` notebook using the real database values. The table must be outputted as a formatted plain-text/monospace printout.
+  * *_Review Note (Pending Fixes):_*
+    * *The injected code cell at the end of `experiments_analysis_summary.ipynb` currently raises a `SyntaxError: unterminated string literal` on line 85 due to a malformed `print` statement. We will patch this syntax error in the notebook.*
+    * **Metrics to include:**
+      1. Peak Deceleration Z (g)
+      2. Maximum Attitude Deviation Magnitude (m)
+      3. Integrated Rotational Energy (rad)
+      4. Max Actuator Output (%)
+      5. Average Commanded Motor Speed (RPM)
+      6. Voltage Drop Rate (V/min)
+      7. Capacity Drain Rate (%/min)
+      8. Active Flight Time (s)
+      9. Recovery Area (mm·m)
+      10. Path Spread / SDLD (mm)
+      11. Post-Impact Yaw Drift (deg)
+      12. Attitude Rate Roll RMS Tracking Error (rad/s)
+      13. Attitude Rate Pitch RMS Tracking Error (rad/s)
+      14. Attitude Rate Yaw RMS Tracking Error (rad/s)
+      15. Control Allocator Saturation Duration (s)
+      16. Max Unallocated Torque (N·m)
+      17. Thrust Setpoint Achieved Percentage (%)
+      18. IMU Acceleration X-axis Spread (g) (Impact vs. Regular)
+      19. IMU Acceleration Y-axis Spread (g) (Impact vs. Regular)
+      20. IMU Acceleration Z-axis Spread (g) (Impact vs. Regular)
+    * **Segmentation Columns:**
+      * Overall (All Angles): `Rotating Cage (Mean ± SD)` | `Fixed Cage (Mean ± SD)` | `% Improvement`
+      * 45° Impact Angle Subset: `Rotating Cage (Mean ± SD)` | `Fixed Cage (Mean ± SD)` | `% Improvement`
+      * 75° Impact Angle Subset: `Rotating Cage (Mean ± SD)` | `Fixed Cage (Mean ± SD)` | `% Improvement`
+
+### Control Theory & Hardware Explanations
+- [ ] **Control Allocator Saturation Plots Explanation**
+- [ ] **MoCap Latency Impact on PID Tracking Error**
+
+### Code Automation & LaTeX Migration
 - [ ] **Automatic LaTeX PGF/TikZ Vector Graphics Generator**
-  * **Action:** Refactor the PGF/TikZ graphics generator out of the main pipeline execution loop to a standalone helper script (`dev_logs/analysis/graphics/tikz_generator.py`). Freeze this generator script.
+  * **Location:** Standalone helper script (`dev_logs/analysis/graphics/tikz_generator.py`).
+- [ ] **Submodule Pinning & Event-Driven Decoupling**
 
----
 
-## 🗺️ Phase 9: Submodule Pinning & Event-Driven Telelying
-
-- [ ] **Submodule Pinning & Event-Driven Telemetry Decoupling**
-  * Re-validate that submodules (e.g. `src/mocap_px4_bridge`) are locked to their stable commits.
-  * Ensure the flight director `/flight_director/active_waypoint` status is used as the primary event segmentation mechanism.
+# Finishing touches to do:
+- [ ] **Make sure no trash data in .db**
+  

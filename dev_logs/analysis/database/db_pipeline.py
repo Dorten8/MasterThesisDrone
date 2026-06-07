@@ -30,7 +30,8 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
         'motor_max_after': None,
         'motor_thrust_surge': None,
         'motor_imbalance_after': None,
-        'timestamp_PX4': None
+        'timestamp_PX4': None,
+        'max_actuator_output': None
     }
 
     ulg_files = glob.glob(os.path.join(flight_dir, "*.ulg"))
@@ -119,7 +120,10 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
             return (t_us * 1e-6) + offset_sec - (bag_start_ns * 1e-9)
 
         # Load necessary topics from ULog
-        ulog_all = pyulog.ULog(ulg_path, message_name_filter_list=["actuator_motors", "control_allocator_status", "vehicle_rates_setpoint", "vehicle_angular_velocity"])
+        ulog_all = pyulog.ULog(ulg_path, message_name_filter_list=[
+            "actuator_motors", "actuator_outputs", "control_allocator_status", 
+            "vehicle_rates_setpoint", "vehicle_angular_velocity"
+        ])
         motors_data = ulog_all.get_dataset("actuator_motors")
         motor_t_us = motors_data.data["timestamp"]
         motor_t = np.array([ulog_to_rel_sec(t) for t in motor_t_us])
@@ -133,8 +137,8 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
         # Calculate average of the 4 motors
         motor_avg_signal = (c0 + c1 + c2 + c3) / 4.0
 
-        # Define time windows based on collision/impact timestamp (from WP2 / closest approach)
-        t_impact = wp_events.get('WP2', None)
+        # Define time windows based on collision/impact timestamp (prioritizing exact Column Impact if detected)
+        t_impact = wp_events.get('Column Impact') or wp_events.get('WP2', None)
         if t_impact is None or np.isnan(t_impact):
             # If no impact, use the middle of the sweep pass (between WP1 and WP3)
             t_start = wp_events.get('WP1', 0.0)
@@ -156,6 +160,28 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
         else:
             avg_before = None
             max_before = None
+            
+        try:
+            # Find the active instance of actuator_outputs
+            actuator_output_datasets = [d for d in ulog_all.data_list if d.name == "actuator_outputs"]
+            best_actuator_outputs = None
+            max_val_found = -1.0
+            
+            for inst in actuator_output_datasets:
+                vals = [np.max(inst.data[f"output[{j}]"]) for j in range(4) if f"output[{j}]" in inst.data and len(inst.data[f"output[{j}]"]) > 0]
+                if vals:
+                    inst_max = float(np.max(vals))
+                    if inst_max > max_val_found:
+                        max_val_found = inst_max
+                        best_actuator_outputs = inst
+            
+            if best_actuator_outputs is not None:
+                # Convert standard PWM (1000-2000) to percentage: (PWM - 1000) / 10.0
+                motor_metrics['max_actuator_output'] = float((max_val_found - 1000.0) / 10.0)
+            else:
+                motor_metrics['max_actuator_output'] = None
+        except Exception as e:
+            print(f"  [WARN] Failed to extract actuator_outputs: {e}")
 
         if np.any(mask_after):
             avg_after = float(np.mean(motor_avg_signal[mask_after]))
@@ -196,26 +222,86 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
             t_px4_us = int(round((t_start - offset_sec + (bag_start_ns * 1e-9)) * 1e6))
 
         # Initialize default new metrics
-        allocator_saturation_duration_sec = None
+        allocator_saturation_duration_sec = 0.0
         max_unallocated_torque = None
         thrust_setpoint_achieved_pct = None
         roll_rate_error_rms = None
         pitch_rate_error_rms = None
         yaw_rate_error_rms = None
 
-        # Extract Control Allocator metrics
+        # Extract Control Allocator & Motor saturation metrics
+        try:
+            # 1. Compute true saturation duration from actuator_motors (10Hz)
+            motors_data = ulog_all.get_dataset("actuator_motors")
+            motor_t_us = motors_data.data["timestamp"]
+            motor_t = np.array([ulog_to_rel_sec(t) for t in motor_t_us])
+            mask_motors = (motor_t >= t_impact) & (motor_t <= (t_impact + 1.0))
+            if np.any(mask_motors):
+                sat_upper = np.any([motors_data.data[f"control[{i}]"] >= 0.999 for i in range(4)], axis=0)
+                sat_lower = np.any([motors_data.data[f"control[{i}]"] <= 0.001 for i in range(4)], axis=0)
+                sat_any = sat_upper | sat_lower
+                motor_dt = np.diff(motor_t)
+                motor_dt = np.append(motor_dt, motor_dt[-1] if len(motor_dt) > 0 else 0.0)
+                allocator_saturation_duration_sec = float(np.sum(motor_dt[mask_motors & sat_any]))
+        except Exception as e_motors:
+            print(f"  [WARN] Failed to compute saturation from actuator_motors: {e_motors}")
+            # 2. Try actuator_outputs
+            try:
+                o_ds = None
+                max_pts = -1
+                for d in ulog_all.data_list:
+                    if d.name == 'actuator_outputs':
+                        pts = len(d.data['timestamp'])
+                        if pts > max_pts:
+                            max_pts = pts
+                            o_ds = d
+                if o_ds is not None:
+                    o_t_us = o_ds.data["timestamp"]
+                    o_t = np.array([ulog_to_rel_sec(t) for t in o_t_us])
+                    mask_o = (o_t >= t_impact) & (o_t <= (t_impact + 1.0))
+                    if np.any(mask_o):
+                        o_outputs = [o_ds.data[f"output[{i}]"] for i in range(4)]
+                        max_val = max([out.max() for out in o_outputs if len(out) > 0])
+                        min_val = min([out.min() for out in o_outputs if len(out) > 0])
+                        
+                        if max_val > 1500 and min_val < 900:
+                            upper_limit = 1999.0
+                            lower_limit = 115.0
+                        else:
+                            upper_limit = 2000.0
+                            lower_limit = 1000.0
+                            
+                        o_sat_upper = np.any([o_ds.data[f"output[{i}]"] >= upper_limit for i in range(4)], axis=0)
+                        o_sat_lower = np.any([o_ds.data[f"output[{i}]"] <= lower_limit for i in range(4)], axis=0)
+                        o_sat_any = o_sat_upper | o_sat_lower
+                        
+                        o_dt = np.diff(o_t)
+                        o_dt = np.append(o_dt, o_dt[-1] if len(o_dt) > 0 else 0.0)
+                        allocator_saturation_duration_sec = float(np.sum(o_dt[mask_o & o_sat_any]))
+            except Exception as e_outputs:
+                print(f"  [WARN] Failed to compute saturation from actuator_outputs: {e_outputs}")
+                # 3. Fallback to control_allocator_status for saturation
+                try:
+                    ds_alloc = ulog_all.get_dataset("control_allocator_status")
+                    alloc_t_us = ds_alloc.data["timestamp"]
+                    alloc_t = np.array([ulog_to_rel_sec(t) for t in alloc_t_us])
+                    mask_alloc = (alloc_t >= t_impact) & (alloc_t <= (t_impact + 1.0))
+                    if np.any(mask_alloc):
+                        sat = [ds_alloc.data[f"actuator_saturation[{i}]"] for i in range(4)]
+                        sat_any = np.any([sat[i] != 0 for i in range(4)], axis=0)
+                        alloc_dt = np.diff(alloc_t)
+                        alloc_dt = np.append(alloc_dt, alloc_dt[-1] if len(alloc_dt) > 0 else 0.0)
+                        allocator_saturation_duration_sec = float(np.sum(alloc_dt[mask_alloc & sat_any]))
+                except Exception as e_alloc:
+                    print(f"  [WARN] Failed to compute saturation fallback: {e_alloc}")
+
+        # Extract other control allocator status metrics
         try:
             ds_alloc = ulog_all.get_dataset("control_allocator_status")
             alloc_t_us = ds_alloc.data["timestamp"]
             alloc_t = np.array([ulog_to_rel_sec(t) for t in alloc_t_us])
             mask_alloc = (alloc_t >= t_impact) & (alloc_t <= (t_impact + 1.0))
             if np.any(mask_alloc):
-                sat = [ds_alloc.data[f"actuator_saturation[{i}]"] for i in range(4)]
-                sat_any = np.any([sat[i] != 0 for i in range(4)], axis=0)
-                alloc_dt = np.diff(alloc_t)
-                alloc_dt = np.append(alloc_dt, alloc_dt[-1] if len(alloc_dt) > 0 else 0.0)
-                allocator_saturation_duration_sec = float(np.sum(alloc_dt[mask_alloc & sat_any]))
-
                 unallocated_torque_norm = np.sqrt(
                     ds_alloc.data["unallocated_torque[0]"]**2 +
                     ds_alloc.data["unallocated_torque[1]"]**2 +
@@ -224,7 +310,7 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
                 max_unallocated_torque = float(np.max(unallocated_torque_norm[mask_alloc]))
                 thrust_setpoint_achieved_pct = float(np.mean(ds_alloc.data["thrust_setpoint_achieved"][mask_alloc]) * 100.0)
         except Exception as e:
-            print(f"  [WARN] Failed to compute control allocator metrics: {e}")
+            print(f"  [WARN] Failed to compute control allocator status metrics: {e}")
 
         # Extract PID tracking metrics
         try:
@@ -249,7 +335,7 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
         except Exception as e:
             print(f"  [WARN] Failed to compute PID tracking metrics: {e}")
 
-        motor_metrics = {
+        motor_metrics.update({
             'motor_avg_before': avg_before,
             'motor_max_before': max_before,
             'motor_avg_after': avg_after,
@@ -268,7 +354,7 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
             'pitch_rate_error_rms': pitch_rate_error_rms,
             'yaw_rate_error_rms': yaw_rate_error_rms,
             'offset_sec': offset_sec
-        }
+        })
         if avg_before is not None and max_after is not None and thrust_surge is not None:
             print(f"  ⚡ Motor stats computed: avg_before={avg_before:.3f}, max_after={max_after:.3f}, surge={thrust_surge:.3f}")
         else:
@@ -375,7 +461,9 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                 df_imu = dfs.get('imu', pd.DataFrame())
                 df_column = dfs.get('column', pd.DataFrame())
                 arming_time = dfs['arming_time']
-                disarming_time = dfs['disarming_time']
+                disarming_time = dfs.get('disarming_time')
+                if disarming_time is None:
+                    disarming_time = arming_time + 10.0
                 mocap_rate = dfs.get('mocap_rate', 240.0)
                 dynamic_waypoints = dfs.get('dynamic_waypoints', [])
                 
@@ -477,8 +565,31 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     motor_metrics = get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events)
                     metrics.update(motor_metrics)
 
+                    # Calculate active flight time and battery consumption rates
+                    active_flight_time_sec = float(disarming_time - arming_time) if disarming_time and arming_time else None
+                    metrics['active_flight_time_sec'] = active_flight_time_sec
+
+                    if not df_bat.empty and active_flight_time_sec and active_flight_time_sec > 0:
+                        # Extract the exact active flight window
+                        df_bat_active = df_bat[(df_bat['t'] >= arming_time) & (df_bat['t'] <= disarming_time)]
+                        if not df_bat_active.empty:
+                            v_start = float(df_bat_active['voltage'].iloc[0])
+                            v_end = float(df_bat_active['voltage'].iloc[-1])
+                            c_start = float(df_bat_active['remaining'].iloc[0])
+                            c_end = float(df_bat_active['remaining'].iloc[-1])
+                            
+                            flight_time_min = active_flight_time_sec / 60.0
+                            metrics['voltage_drop_rate_v_per_min'] = (v_start - v_end) / flight_time_min
+                            metrics['capacity_drain_rate_pct_per_min'] = (c_start - c_end) / flight_time_min
+                        else:
+                            metrics['voltage_drop_rate_v_per_min'] = None
+                            metrics['capacity_drain_rate_pct_per_min'] = None
+                    else:
+                        metrics['voltage_drop_rate_v_per_min'] = None
+                        metrics['capacity_drain_rate_pct_per_min'] = None
+
                     # Skip if already cached in the database (idempotent runs, force-recompute if missing schema columns)
-                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms']):
+                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_sdld', 'imu_ax_spread_impact']):
                         print(f"⏭️  '{pass_name}' already in database, skipping insert.")
                     else:
                         insert_or_replace_flight(pass_name, condition_label, metrics)
@@ -834,6 +945,51 @@ if __name__ == "__main__":
 
     populated, skipped, errors = 0, 0, 0
 
+    global_battery_cache = {}
+    def _get_global_battery(flight_folder_path):
+        import glob as _glob
+        import os
+        ulg_files = _glob.glob(os.path.join(flight_folder_path, "*.ulg"))
+        if not ulg_files:
+            return None, None, None
+        try:
+            import pyulog
+            ulog = pyulog.ULog(ulg_files[0], message_name_filter_list=['vehicle_status', 'battery_status'])
+            
+            ds_bat = ulog.get_dataset('battery_status')
+            t_bat_us = ds_bat.data['timestamp']
+            voltage = ds_bat.data['voltage_v']
+            remaining = ds_bat.data['remaining']
+            
+            ds_stat = ulog.get_dataset('vehicle_status')
+            t_stat_us = ds_stat.data['timestamp']
+            arming_state = ds_stat.data['arming_state']
+            
+            arming_time_us = None
+            disarming_time_us = None
+            for i in range(len(t_stat_us)):
+                if arming_state[i] == 2 and arming_time_us is None:
+                    arming_time_us = t_stat_us[i]
+                elif arming_state[i] == 1 and arming_time_us is not None and disarming_time_us is None:
+                    disarming_time_us = t_stat_us[i]
+            
+            if arming_time_us is not None:
+                if disarming_time_us is None:
+                    disarming_time_us = t_bat_us[-1]
+                    
+                bat_mask = (t_bat_us >= arming_time_us) & (t_bat_us <= disarming_time_us)
+                if bat_mask.any():
+                    v_start = voltage[bat_mask][0]
+                    v_end = voltage[bat_mask][-1]
+                    c_start = remaining[bat_mask][0]
+                    c_end = remaining[bat_mask][-1]
+                    flight_time_sec = (disarming_time_us - arming_time_us) / 1e6
+                    if flight_time_sec > 0:
+                        flight_time_min = flight_time_sec / 60.0
+                        return float(flight_time_sec), float((v_start - v_end) / flight_time_min), float((c_start - c_end) * 100.0 / flight_time_min)
+        except Exception as e:
+            print(f"  [WARN] Failed to parse global battery metrics: {e}")
+        return None, None, None
     for folder_name, folder_path, pass_path in all_pass_files:
         pass_basename = os.path.basename(pass_path)
         # pass_name matches the DB primary key: "<folder_name> - Pass-XX"
@@ -873,7 +1029,9 @@ if __name__ == "__main__":
             df_imu    = dfs.get('imu', pd.DataFrame())
             df_column = dfs.get('column', pd.DataFrame())
             arming_time       = dfs['arming_time']
-            disarming_time    = dfs.get('disarming_time', arming_time + 10.0)
+            disarming_time    = dfs.get('disarming_time')
+            if disarming_time is None:
+                disarming_time = arming_time + 10.0
             mocap_rate        = dfs.get('mocap_rate', 240.0)
             dynamic_waypoints = dfs.get('dynamic_waypoints', [])
 
@@ -952,8 +1110,22 @@ if __name__ == "__main__":
             motor_metrics = get_ulog_motor_metrics(folder_path, pass_path, bag_start_ns, wp_events)
             metrics.update(motor_metrics)
 
+            # Load global battery rates from unsegmented log to avoid transient throttle bounce-backs
+            if folder_name not in global_battery_cache:
+                global_battery_cache[folder_name] = _get_global_battery(folder_path)
+                
+            gb_flight_time, gb_v_rate, gb_c_rate = global_battery_cache.get(folder_name, (None, None, None))
+            metrics['active_flight_time_sec'] = gb_flight_time
+            metrics['voltage_drop_rate_v_per_min'] = gb_v_rate
+            metrics['capacity_drain_rate_pct_per_min'] = gb_c_rate
+
             condition = _infer_condition(folder_name)
-            insert_or_replace_flight(pass_name, condition, metrics)
+            
+            # Skip if already cached
+            if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_sdld', 'imu_ax_spread_impact']):
+                print(f"⏭️  '{pass_name}' already in database, skipping insert.")
+            else:
+                insert_or_replace_flight(pass_name, condition, metrics)
 
             # Generate and save all 5 high-fidelity plots to the individual flight capsule directory
             if False:  # Temporarily disabled plot generation to speed up DB ingestion
