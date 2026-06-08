@@ -2,6 +2,62 @@
 
 This Single Source of Truth (SSoT) defines the directory architecture, coding standards, data processing, and visual formatting for the thesis experiments (Comparing `<Rotating Cage>` vs `<Fixed Cage>` collision dynamics and IMU/MoCap correlation).
 
+## 0. Walkthrough Document — Planning, Execution & Verification Protocol
+
+This project uses a **single shared roadmap document** for all telemetry analysis tasks. Everything flows through it.
+
+### 0.1 The Walkthrough Document
+
+| Property | Value |
+|---|---|
+| **Location** | `dev_logs/analysis/walkthrough_experiments.md` |
+| **Role** | SSoT for what to implement, what's pending, what's done |
+| **Structure** | Mirrors the notebook cell sequence: `experiments_analysis.ipynb` → `experiments_analysis_summary.ipynb` |
+| **Format** | Checkboxes `- [ ]` for pending, `- [x]` for done, with subsections per topic |
+
+> **When the user asks "where is that in the walkthrough?"** — answer with the exact section heading (e.g., "Under `### Advanced Thesis Highlights`"). Always anchor discussions in the walkthrough structure.
+
+### 0.2 The Skill File (This Document)
+
+| Property | Value |
+|---|---|
+| **Location** | `dev_logs/analysis/experiments_analysis_skill.md` |
+| **Role** | Coding standards, architecture rules, visual formatting SSoT |
+| **Ordering** | Sections 1–8 use the **same order** as `walkthrough_experiments.md` sections for quick look-up |
+| **Relation** | Skill file = *how* to implement; Walkthrough = *what* to implement next |
+
+### 0.3 Execution Protocol — Italic Execution Notes
+
+When the AI implements a task from the walkthrough, it **updates this skill file** at the relevant subsection with an **italic block** describing:
+
+```
+*[YYYY-MM-DD] **What was done:** <one-line summary of the implementation>
+**How to verify:** <exact steps to check the change works — run which cell, look for which output>
+**Where:** <file path and cell/section reference>*
+```
+
+This creates a persistent execution log that the user can scan later to pick up context without re-reading the full conversation.
+
+#### Example (after implementing task in `### Advanced Thesis Highlights`):
+
+```
+*[2026-06-08] **What was done:** Added comparative performance improvement printouts after the Recovery Area boxplot and Plot B scatter plot. Prints % reduction of Rotating Cage vs Fixed Cage for recovery_area and max_dev_after.
+**How to verify:** Run cells in Step 5 → look for "✅ Rotating Cage reduces recovery area by XX.X%" printed below the boxplot.
+**Where:** experiments_analysis_summary.ipynb, new code cells after the recovery boxplot cell and after Plot B cell.*
+```
+
+### 0.4 Quick-Reference: Section Mapping
+
+| Walkthrough Section → | Skill File Section → | Notebook |
+|---|---|---|
+| 1. Individual Flight Ingestion & Analysis | 1. Modular Workspace & Cleanliness Rules + 2. Core Data Processing | `experiments_analysis.ipynb` |
+| Telemetry Ingestion & Database | 3. SQLite Database + (pipeline details) | `db_pipeline.py` |
+| Individual Pass Visualizations | 5. Specific Plot References (items 1–4) | `experiments_analysis.ipynb` |
+| 2. Aggregate Comparative Dashboard | 4. Universal Plotting Standards + 5. Specific Plot References (items 5–6) | `experiments_analysis_summary.ipynb` |
+| Battery, Deceleration & Structural Dynamics | 3. SQLite Database (battery metrics) + (Step 11–12) | `experiments_analysis_summary.ipynb` |
+| Advanced Thesis Highlights | (freeform, per-task) | `experiments_analysis_summary.ipynb` |
+| Statistical Aggregate Performance | 5. Specific Plot References (Plot 17–18) | `experiments_analysis_summary.ipynb` |
+
 ## 1. Modular Workspace & Cleanliness Rules
 The workspace (`dev_logs/analysis/`) is strictly partitioned.
 * **`database/`**: Ingestion, MCAP slicing, and SQLite managers.
@@ -33,6 +89,9 @@ The workspace (`dev_logs/analysis/`) is strictly partitioned.
 * **SSHFS Filenames:** Never use the `°` symbol in filenames (use `deg`).
 * **Data Truncation:** Dynamically crop all timestamped plots to **1s before `Exp. Start-point` and 1s after `Exp. End-point`**.
 * **Strict Coordinate Ticks & Ranges:** All plots must use hardcoded, explicit axis limits and divisions (e.g., `set_xlim(0, 90)`) for visual repeatability.
+* **Y-Axis Truncation (Outlier Suppression):** When a high outlier compresses the meaningful data range, truncate the Y-axis to 6. Applies to:
+  - **Recovery area boxplot:** `ax.set_ylim(0, 6)` with ticks every 1 cm². One outlier >6 cm².
+  - **Deceleration vs Battery plots (both split & global):** `ax.set_ylim(0, 6)` with ticks every 1 m/s². One outlier at ~9.8 m/s². Truncating at 6 stretches the visible range so the Rotating vs Fixed trendline separation is clearly visible.
 * **Enclosure Line Styles & Trendlines:** **`<Rotating Cage>` = Dashed (`--`)**, **`<Fixed Cage>` = Solid (`-`)**. Trendlines must use standard linear regression ($y = mx + c$) computed via least-squares `np.polyfit`. All plots with trendlines must include the footnote/subtitle explaining how trendlines are calculated: `Trendlines calculated via linear regression (y = mx + c)` or similar.
 * **Data Origin Labeling:**
   * **Summary Outputs:** Every summary plot and comparative table must show the dynamic data configuration/origin in the bottom-right corner (or as a subtitle). It must explicitly declare the exact counts: `Comparison of Xx Rotating Cage and Yx Fixed Cage flights` (e.g., `Comparison of 67x Rotating Cage and 72x Fixed Cage flights`). The numbers must be dynamically computed from the active filtered dataset.
@@ -90,3 +149,25 @@ To prevent repeating past visualization attempts that yielded low-value, redunda
 * **PID Rate Controller Tracking (Plot 2)**: Individual pass plots mapping rate setpoint vs. angular velocity. Retired as it was redundant with aggregate rate tracking error RMS metrics in the database and cluttered individual flight directories.
 * **Motor Imbalance Profile (Plot F)**: Individual/aggregate post-impact motor signal variance. Found to be highly dependent on transient ground-effect interactions rather than cage-induced structural dynamics.
 * **Sweep Velocity vs. Impact Speed Scatter (`sweep_vs_impact_speed.png`)**: Aggregate plot showing commanded transit sweep speed vs. actual velocity at impact. Found to be redundant due to the high consistency of the feedforward guidance controller.
+
+## 9. Execution Log — Italic Notes (Most Recent First)
+
+### `### Battery, Deceleration & Structural Dynamics` — Deceleration Y-Axis Truncation
+
+*[2026-06-08] **What was done:** Added `ax.set_ylim(0, 6)` and `ax.set_yticks(np.arange(0, 7, 1))` to both deceleration plots — Cell 23 (split Rotating vs Fixed side-by-side, shared Y-axis via `ax1`) and Cell 24 (global comparison single `ax`). Suppresses the ~9.8 m/s² outlier so the 0–6 range is stretched and trendline separation is visible.
+**How to verify:** Run Cells 23 and 24 → both deceleration plots now show Y-axis 0–6 with ticks every 1 m/s². The outlier at ~9.8 is clipped off-screen.
+**Where:** `dev_logs/analysis/experiments_analysis_summary.ipynb` Cells 23 and 24.*
+
+Each entry records a completed implementation from the walkthrough, in italic, cross-referencing where in the walkthrough it lives.
+
+### `### Global Thesis Visualizations` — Recovery Area Boxplot Y-Axis Truncation
+
+*[2026-06-08] **What was done:** Added `ax.set_ylim(0, 6)` and `ax.set_yticks(np.arange(0, 7, 1))` to the recovery area boxplot (Cell 12) to truncate a high outlier (>6 cm²) and stretch the vertical range so the blue (Rotating) vs orange (Fixed) box distributions are clearly separated.
+**How to verify:** Run the recovery area boxplot cell → Y-axis now spans exactly 0–6 cm² with tick marks every 1 cm². The outlier is clipped off-screen, making the box separation visible.
+**Where:** `dev_logs/analysis/experiments_analysis_summary.ipynb` Cell 12 (before `plt.tight_layout()`). New rule added to Section 4 of this skill file.*
+
+### `### Advanced Thesis Highlights` — Comparative Performance Improvement Printouts
+
+*[2026-06-08] **What was done:** Added three code cells that dynamically print the % improvement of Rotating Cage over Fixed Cage for: (1) recovery area (after the boxplot), (2) max deviation (after Plot B scatter), (3) impact deceleration (after the deceleration vs battery plot). Also polished Plot 12: removed the retired 3rd Settling Times panel → now 2 panels, Y-axis label now includes [rad] units, and added a markdown cell below with the LaTeX formula and plain-English explanation.
+**How to verify:** Open `dev_logs/analysis/experiments_analysis_summary.ipynb`, run cells from Step 5 onward. Look for: "✅ Rotating Cage reduces recovery area by XX.X%" below the recovery boxplot, same for max deviation below Plot B, and for deceleration after the battery plots. Plot 12 shows 2 panels (not 3) and Rotational Energy Y-axis reads "Integrated Rotational Energy [rad]". Math markdown renders below the plot.
+**Where:** `dev_logs/analysis/experiments_analysis_summary.ipynb` — code cells after the recovery area boxplot (cell ~13), after Plot B (cell ~33), after the deceleration cell (cell ~25). Plot 12 cell (~28) modified. New markdown cell (~29) with math.*
