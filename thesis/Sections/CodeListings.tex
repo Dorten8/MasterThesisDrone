@@ -1,0 +1,19 @@
+\section{EXAMPLE Code Listings}
+
+You may want to highlight a piece of code. For this you can use the \verb|lstlisting| environment.
+
+Example of this can be found in \Cref{lst:bindings}.
+In the case of languages other than Python you can use the \verb|language| directive of the \verb|lstlisting| environment, which will fix the formatting and code highlighting accordingly.
+
+\begin{lstlisting}[language=Python, label={lst:bindings}, caption=Example Python listing (FizzBuzz)]
+for num in range(1, 101):
+    if num % 15 == 0:
+        print("FizzBuzz")
+    elif num % 3 == 0:
+        print("Fizz")
+    elif num % 5 == 0:
+        print("Buzz")
+    else:
+        print(num)
+\end{lstlisting}
+

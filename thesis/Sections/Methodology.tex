@@ -1,0 +1,568 @@
+\section{Methodology}
+The methodology for RATFLY project stands on development of drone to use for the various tests and implementations together with controlled environment to test the drone in. 
+As to the development, it consists of hardware choices, software choices and the constraints sprouting from these two which dictate much of the development. 
+\subsection{Design and Development}
+\subsubsection{Flight Type}
+A quadcopter design was a very clear choice as these are widely used and allow for very nimble and precise movement as opposed to fixed-wing designs which need to be in forward motion to generate upthrust for their flight. The Quadcopter design due to its symmetric nature make it very easy to predictably control it. 
+
+On figure \autoref{fig:drone_movement} you can see standard quadcopter setup. If front motors ($m_1$, $m_2$) spin comparatively more the drone pitches up, if side propelers ( $m_1$, $m_4$) spin comparatively faster, then the drone rolls towards its left side, and thanks to the setup of alternating spin direction if propellers diagonally from each other fx $m_1$ and $m_3$ will spin faster, while $m_2$ and $m_4$ will spin slower the drone will turn on around in the direction of the propolers which are faster, in this case turn towards its left. This is given by Newton's first law as the inertia of propellers spinning faster will induce the rotation in the propellers' direction.
+Opposingly, pitch and roll is achieved by spinning pairs of propellers on one side faster than on the other (left vs right, front vs back).
+This makes the control of quadcopter somewhat simple as it can be summarized in a mathematical model.
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{drone_movement_pareto.png}
+    \caption{typical quadrocopter setup 'props-in', yaw $\psi$ (turning around), pitch $\theta$ (nose up or down) and roll $\phi$ (tilting to sides) From \cite{gomezParetoOptimalPID2020}}
+    \label{fig:drone_movement}
+\end{figure}
+\subsubsection{Functional constraints and considerations}
+As this work is in certain sense a continuation of Lars \cite{lercheSpinFlyUAVSystem} Spinfly paper, lessons learned from his project were well considered. One of the largest limitations mentioned in the work and also by the author himself in person was insufficient weight headroom of the drone which had trouble taking off and maintaining the flight when fitted with the cage. Another one was insufficient battery life which did not allow for prolonged flight and made subsequent tests difficult to run. 
+Both of these problems are solved in tandem as battery capacity and its weight are directly proportional and can have diminishing returns if the battery has high capacity but get drain faster as the motors have to output more power. 
+Lerche also reflected on lack of robust autonomous controller on board and troubles with telemetry realying the communication. 
+[I want to make this more structured, maybe better extract the infomarion, maybe summup that was I needed to do was 
+\begin{enumerate}
+    \item Carry bigger load
+    \item Fly longer/more efficiently
+    \item Simpler and more robust flight control [FC]
+\end{enumerate}
+Size of 6C FC is substential enough to warrant a 4inch drone design, while typically drones of this size, 4inches is also the upper maximum size to be flown indoors \cite{FindYourPerfect}. 
+The ratio of trust-to-weight for common drones is between 4:1 to 3:1, meaning maximum thrust of the the motors combined should be 3-4times greater than the weight of the drone. Due to needed weight headroom, which by estimation and after discussion with Spinfly author, I set to be 800-1000g. I chose Emax ECOII 2004 1600KV motors. These are typically recommended for 4.5inch to 5inch ultalight drone builds, but similiar motor by a different company has been tested with 4inch propellers GF4023 propellers and proven to ~860g of thrust per motor, combined ~3440g per drone giving me 1:3.44-1:4.30 ratio depending on the total weight. This also means the whole drone can stay hovering with approximately 50\% of thrust which is recommended due to the motors being twice as efficient than at 100\% trust. Designation 2004 means it has 20mm diameter and 4mm in height, this is significant diameter in the class which makes it slower to respond and adjust RPMs, on the other hand it allows for higher trust at 50\% throttle. 1600KV metric is how many RPMs are produced when applying 1V. 1600KV is at the low end of KV spectrum and was selected in accordance with using a 6 cell battery which provides ~24V providing ca 38400RPM (1600 * 24) which falls well within recommended speeds for 4inch propellers. 6S battery is also an important choice from the efficiency perspective as running higher voltages draws less current and the whole settup keep a lower temperature as opposed to 4S setups. Additionally there is voltage sag phenomenmon (LLM here-> explain it for me pls) that is less of a factor with higher voltages settups
+To address this holistically with a focus on the my research question I choose PX4 standard for my autonomous flying solution. PX4 is a an open source standard with modular architecture uORB (Micro Object Request Broker) which is suited for plug-and-play development as it's high modularity allows for faster research, as the physical Flight Controller (FC) manufactured under this standard Pixhawk 6C, as opposed to most FCs, so the accompanying electronics can be quickly swapped, tried and iterated on. This Pixhawk 6C FC has been chosen as a solid FC solution with IMU and compass sensors already integrated, simplifying the drone development and allowing me to concentrate on the research question itself. 
+[I feel like this should be ]
+
+
+
+Iterative Learning from Predecessor Work
+
+The design began with critical constraints identified in the Spinfly platform \cite{lercheSpinFlyUAVSystem}. Two primary limitations directly shaped this work:
+
+\begin{enumerate}
+    \item \textbf{Insufficient weight headroom} -- The original platform struggled with takeoff and stable flight when equipped with the protection  cage, leaving no margin for component upgrades or mission adaptations.
+    
+    \item \textbf{Insufficient battery capacity} -- Limited flight time created operational friction; test iterations became difficult to schedule, reducing research throughput.
+\end{enumerate}
+
+These problems are \textbf{not independent}---they form a coupled system. Battery capacity and its mass are directly proportional, yet simply increasing capacity can create diminishing returns. A heavier battery forces motors to output more power, which accelerates discharge rate, potentially wasting the added capacity. The design needed to solve both simultaneously through systematic trade-off analysis.
+
+Lerche also highlighted secondary constraints: lack of robust autonomous flight control on the flight controller itself, and telemetry transmission reliability. These informed the autopilot platform selection.
+
+\paragraph{Design Objectives:}
+
+Based on these constraints, the design targets were clarified into three interconnected goals:
+
+\begin{enumerate}
+    \item \textbf{Carry larger payloads} -- The base payload must be much larger, to allow for cage development and to leave weight headroom for any additional development
+    
+    \item \textbf{Achieve longer flight duration} -- Extend mission time while maintaining efficient power consumption.
+    
+    \item \textbf{Simplify autonomous control} -- Use a proven, modular flight controller stack to reduce software complexity and improve reliability.
+\end{enumerate}
+
+\paragraph{Platform Selection: PX4 and Pixhawk 6C}
+
+To address these objectives holistically, PX4 was selected as the autonomous platform. PX4 is an open-source standard built on modular architecture using \textbf{uORB (microObject Request Broker)}---a publish-subscribe middleware layer suited for plug-and-play development.\cite{meierPX4NodebasedMultithreaded2015} This modularity enables rapid research iteration: novel autonomous behaviors can be implemented as independent modules without modifying the core flight stack.
+
+The \textbf{Pixhawk 6C flight controller} was chosen as the hardware instantiation of the PX4 standard. Critically, Pixhawk is not a monolithic design but represents standardized connector specifications, sensor integration points, and reference schematics managed by the Dronecode Foundation. This standardization means:
+
+\begin{itemize}
+    \item \textbf{Hardware swappability}: Sensors and peripheral electronics can be upgraded or replaced with components from different manufacturers (Holybro, ARK Electronics, CUAV) without redesigning integration.
+    
+    \item \textbf{Ecosystem maturity}: Over 1 million Pixhawk-based devices are deployed across commercial, research, and hobbyist applications.\cite{simpsonLatestPixhawkOpen2023}
+    
+    \item \textbf{Sensor integration}: The Pixhawk 6C includes integrated IMU and compass. Specifically, it features redundant inertial measurement units with onboard ICM-42688-P and BMI088 accelerometers/gyroscopes, plus an IST8310 magnetometer, with temperature-controlled operation via onboard heating resistors.\cite{TechnicalSpecificationHolybro2025, PX4Docs, Pixhawk6C6C} This eliminates the need for custom sensor fusion code---allowing focus on the research question rather than flight control tuning.
+\end{itemize}
+
+The 6C's form factor (84.8 \(\times\) 44 \(\times\) 12.4 mm) justifies the 4-inch drone design choice.\cite{TechnicalSpecificationHolybro2025} Four-inch platforms represent the upper practical limit for indoor flight while remaining large enough to carry meaningful payloads.
+
+\paragraph{Thrust-to-Weight Ratio: Balancing Performance and Efficiency}
+
+\textbf{Definition and Target Range}
+
+Thrust-to-weight (TWR) ratio expresses the total available thrust divided by drone mass. It directly determines hover efficiency and responsiveness. Industry guidelines establish a spectrum across applications.\cite{oscarHowChooseFPV2024}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{Application} & \textbf{TWR} & \textbf{Hover Throttle} & \textbf{Notes} \\
+\hline
+Aerial photography & 2:1 to 3:1 & 40--50\% & Stable, efficient \\
+\hline
+Research/cargo & 3:1 to 4:1 & 30--50\% & Responsive, good efficiency \\
+\hline
+Racing/freestyle & 5:1+ & 15--25\% & Aggressive maneuvers \\
+\hline
+\end{tabular}
+\end{table}
+
+\textbf{Why TWR Matters: Efficiency and Control Authority}
+
+Motor efficiency does not follow a simple linear relationship with throttle percentage. Instead, efficiency curves show a \textbf{peak efficiency at mid-range throttle} (typically 40--70\%), with degradation at both very low and very high throttle levels.\cite{UltimateFPVDrone} This is critical for autonomous drones.
+
+If a drone hovers at 100\% throttle, it has zero authority to climb, stabilize, or reject wind gusts---any disturbance forces maximum output, leaving no control margin and risking loss of stability during maneuvers.\cite{Innov8tive} Conversely, hovering at 40--50\% throttle reserves substantial available thrust for autonomous obstacle avoidance, gust rejection, and rapid maneuvers required during precision autonomous flight.\cite{roboticsDroneDesignCalculations}
+
+\paragraph{Motor Selection: EMAX ECOII 2004 1600KV}
+
+\textbf{Why This Motor?}
+
+The EMAX ECOII 2004 series is specified for 4--5 inch ultralight builds.\cite{EmaxECOII} The 2004 designation specifies stator dimensions: 20mm diameter and 4mm height.\cite{EmaxECOII} This dimensional choice has performance implications explained below.
+
+Pilot testing of a similar 2004-series motor (T-Motor F2004 1700KV, comparable in stator dimensions) paired with 4-inch GF4023 propellers and a 6S battery demonstrated approximately 860 grams of static thrust per motor.\cite{drone24hoursTMotorF20041700KV, oscarHowChooseFPV2024} With four motors, this yields combined thrust capacity of approximately 3,440 grams---establishing the system's TWR.
+
+\textbf{TWR Calculation} (estimated final weight 800--1,000g):
+\begin{itemize}
+    \item Total available thrust: 3,440g
+    \item Target weight: 900g (midpoint)
+    \item TWR = 3,440 / 900 = \textbf{3.82:1}
+\end{itemize}
+
+This places your design in the research/autonomous platform zone. A TWR of 3.8:1 means the drone can sustain controlled hovering well within the efficient mid-throttle operating range.
+
+\textbf{Understanding Motor Nomenclature}
+
+The \textbf{2004 designation} specifies 20mm stator diameter and 4mm height. Larger stator diameters generate more torque but have slower transient response (RPM changes take longer to complete) compared to smaller-diameter motors.\cite{mechtexUnderstandingRelationshipKV} This trade-off is deliberate: at mid-throttle operation, the 2004's larger stator sustains higher efficiency than smaller, higher-KV alternatives that must spin faster to produce equivalent thrust. For autonomous flight requiring smooth, predictable thrust response, this characteristic is desirable.
+
+The \textbf{1600 KV rating} indicates 1600 RPM per applied volt. This low-KV designation was selected specifically for your 6S battery voltage.
+
+\paragraph{Battery Selection: 6S LiPo}
+
+\textbf{Why 6S and Not 4S?}
+
+Battery voltage selection cascades through the entire drivetrain. The \textbf{6S (six-cell) LiPo pack} produces nominal voltage of 22.2V (6 cells \(\times\) 3.7V per cell).\cite{UnderstandingLiPoBattery2025} This voltage selection determines optimal motor KV and operating efficiency.
+
+\textbf{1600 KV with 6S Battery:}
+\begin{itemize}
+    \item Theoretical no-load RPM: 1600 KV \(\times\) 22.2V = \textbf{35,520 RPM}\cite{UltimateFPVDrone}
+    \item Practical RPM under propeller load: \textasciitilde24,000--28,000 RPM (typically 70--80\% of theoretical no-load speed due to air resistance and propeller drag)\cite{oscarHowChooseFPV2024}
+    \item This range is optimal for 4-inch propellers, avoiding excessive tip speeds that reduce aerodynamic efficiency
+\end{itemize}
+
+\textbf{Higher voltage = less current for equivalent thrust.} When motors operate on 4S (\textasciitilde14.8V nominal), they require significantly higher current draw to achieve the same thrust.\cite{oscarUsingLiPoBatteries2025} Higher current increases internal losses in battery, ESCs, and motor windings---manifesting as excess heat and reduced flight time. 6S draws proportionally less current for equivalent thrust, keeping system temperature lower. This is measurable: one study comparing 4S vs 6S motor systems on the same mechanical load found that 6S exhibits ``greater low-end control'' with lower current heat generation under identical thrust demands.\cite{recursionlabsRecursionLabs6s2021}
+
+\paragraph{Voltage Sag: The Critical Factor for Autonomous Control}
+
+\textbf{What is Voltage Sag and Why It Matters}
+
+Voltage sag refers to the \textbf{temporary voltage drop that occurs during high-current discharge events}. This drop is caused by battery internal resistance (IR). Ohm's Law describes this relationship: \textbf{Voltage Drop = Current \(\times\) Internal Resistance}.\cite{UnderstandingLiPoBattery}
+
+Every LiPo battery contains internal resistance---even high-quality cells. When you demand high current from the battery (e.g., during rapid acceleration), that current flowing through internal resistance creates a voltage drop.\cite{oscarUsingLiPoBatteries2025} For example:
+
+\begin{itemize}
+    \item A 4S battery (14.8V nominal) with typical internal resistance might sag from 14.8V down to \textbf{10.2V} during peak acceleration
+    \item A 6S battery (22.2V nominal) with equivalent quality, under the same peak current draw, experiences proportionally less sag (from 22.2V down to \textasciitilde16.5V)\cite{LiPoBatteriesFPV}
+\end{itemize}
+
+The absolute sag magnitude (difference in volts) may be similar between 4S and 6S. \textbf{But the percentage impact is vastly different:}
+
+\begin{itemize}
+    \item 4S sag example: 14.8V \(\to\) 10.2V is a \textbf{31\% voltage loss}
+    \item 6S sag example: 22.2V \(\to\) 16.5V is only a \textbf{26\% voltage loss}
+\end{itemize}
+
+\textbf{Why This Matters for Autonomous Flight Controllers}
+
+Your Pixhawk 6C relies on stable voltage to maintain consistent motor response during rapid maneuvering. The flight controller sends throttle commands expecting motors to accelerate at a predictable rate. \textbf{Excessive voltage sag introduces latency between commanded acceleration and actual motor output.} Here's the causal chain:
+
+\begin{enumerate}
+    \item Flight controller commands 70\% throttle for obstacle avoidance maneuver
+    \item Motor voltage sags unexpectedly from 22V to 16V due to high current draw
+    \item Motor RPM drops below what the controller expected
+    \item Actual thrust output is lower than the controller's state estimator predicted
+    \item The control loop detects the mismatch and must recalculate---introducing lag
+\end{enumerate}
+
+During high-speed autonomous maneuvers, this lag degrades control stability and can risk uncommanded behavior. Higher baseline voltage (6S) provides a larger voltage margin, reducing the percentage impact of sag on motor performance.\cite{oscarUsingLiPoBatteries2025}
+
+\textbf{6S Enables Efficient Hover at Higher Throttle Margin}
+
+Since 6S provides higher baseline voltage, your motor's hover throttle point is positioned differently on the efficiency curve compared to 4S. Hover throttle percentage depends on specific motor and load characteristics---\textbf{there is no direct proportionality between voltage and hover throttle}. However, empirical testing shows: \textbf{``6S is a clear winner in efficiency up to around 45 throttle [percentage].''}\cite{recursionlabsRecursionLabs6s2021}
+
+Your 1600KV motor on 6S should hover in the \textbf{45--50\% throttle range} based on your estimated drone weight and motor thrust.\cite{mechtexUnderstandingRelationshipKV} This operating point---hovering near the motor efficiency peak---means you extract maximum flight time from your battery while maintaining responsive control authority (50\% throttle reserves 50\% available thrust for maneuvers and environmental disturbances).
+
+\paragraph{System Integration: How Components Work Together}
+
+This configuration is tightly coupled---changing any single parameter cascades inefficiencies throughout the system:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|p{5cm}|}
+\hline
+\textbf{Parameter} & \textbf{Your Design} & \textbf{Rationale} \\
+\hline
+Frame size & 4-inch wheelbase & Pixhawk 6C form factor (84.8 \(\times\) 44 \(\times\) 12.4 mm) + indoor flight compliance \\
+\hline
+Motor KV & 1600 KV & Produces 24,000--28,000 RPM under load on 6S; optimal for 4-inch propellers\cite{oscarHowChooseFPV2024} \\
+\hline
+Battery voltage & 6S (22.2V nominal) & Reduces voltage sag percentage impact; improves efficiency at cruise throttle\cite{recursionlabsRecursionLabs6s2021} \\
+\hline
+Hover throttle & \textasciitilde45--50\% & Operates at motor efficiency peak; reserves 50\% available thrust\cite{mechtexUnderstandingRelationshipKV, recursionlabsRecursionLabs6s2021} \\
+\hline
+Estimated TWR & 3.82:1 & Responsive yet efficient for research autonomous missions \\
+\hline
+\end{tabular}
+\end{table}
+
+If you switched to 4S battery, for example, you would need lower-KV motors (e.g., 1100KV) to maintain similar RPM. But lower-KV motors produce less torque, potentially requiring larger propellers or higher current draw---both of which degrade efficiency. Every selection interconnects. Your component choices represent a validated system point.
+
+\section{Physical design and considerations}
+The 
+
+\section{Autonomous Drone Companion Computer Setup Workflow}
+
+\subsection{Overview}
+
+Setup a Raspberry Pi 5 running Ubuntu 24.04 with ROS2 Humble in Docker containers for autonomous drone development with PX4 flight controller integration. The containerized approach solves Ubuntu 22.04/Pi 5 kernel incompatibility while providing ROS2 Humble support.
+
+\subsection{Phase 1: OS and Network Setup}
+
+Flash Ubuntu 24.04 Desktop to microSD using Raspberry Pi Imager with the following configuration:
+\begin{itemize}
+    \item Hostname: \texttt{pi5drone} (appears as \texttt{dorten-pi5drone} in system)
+    \item Username and password configured
+    \item SSH enabled via Services tab (critical step)
+    \item Wi-Fi configured for local network
+    \item Locale: Europe/Copenhagen, Country: DK
+\end{itemize}
+
+\textbf{Note:} Raspberry Pi 5 uses micro-HDMI ports for display output, not USB-C. USB-C is power-only (27W PSU recommended).
+
+Boot the Pi and verify connectivity. SSH server is not auto-started despite Imager setting---manual installation and enablement is required:
+\begin{verbatim}
+sudo apt install openssh-server
+sudo systemctl enable --now ssh
+\end{verbatim}
+
+\subsection{Phase 2: mDNS Hostname Resolution}
+
+\textbf{Problem:} Connecting via \texttt{ssh dorten@dorten-pi5drone.local} failed with name resolution errors.
+
+\textbf{Solution:} Install Avahi daemon on both Pi and workstation for multicast DNS (mDNS) support.
+
+\textbf{On Raspberry Pi:}
+\begin{verbatim}
+sudo apt install avahi-daemon
+sudo systemctl enable --now avahi-daemon
+\end{verbatim}
+
+\textbf{On workstation (Ubuntu):}
+\begin{verbatim}
+sudo apt install avahi-daemon libnss-mdns
+sudo systemctl enable --now avahi-daemon
+\end{verbatim}
+
+Verify hostname resolution:
+\begin{verbatim}
+ping dorten-pi5drone.local
+\end{verbatim}
+
+\textbf{Optional enhancement---Passwordless SSH:} Execute \texttt{ssh-copy-id dorten@dorten-pi5drone.local} from workstation (one-time operation eliminates password prompts for subsequent connections).
+
+\subsection{Phase 3: Docker Installation}
+
+Install Docker Engine following official documentation \cite{InstallDockerEngine10:48:12+0200+0200}:
+\begin{verbatim}
+sudo apt install docker.io docker-ce docker-ce-cli containerd.io \
+  docker-buildx-plugin docker-compose-plugin
+\end{verbatim}
+
+\textbf{Known issue:} Ubuntu 24.04 ships with \texttt{containerd} package that conflicts with Docker's \texttt{containerd.io}. Remove before installation:
+\begin{verbatim}
+sudo apt remove containerd
+\end{verbatim}
+
+Configure rootless Docker to allow non-root user container execution \cite{PostinstallationSteps0200}:
+\begin{verbatim}
+sudo groupadd docker
+sudo usermod -aG docker $USER
+newgrp docker
+\end{verbatim}
+
+Verify installation:
+\begin{verbatim}
+docker run hello-world
+\end{verbatim}
+
+\subsection{Phase 4: Python Virtual Environment}
+
+Ubuntu 24.04 implements PEP 668 externally-managed-environment policy, blocking system-wide pip installations. Create isolated Python environment:
+\begin{verbatim}
+sudo apt install python3.12-venv
+python3 -m venv ~/ros2_env
+source ~/ros2_env/bin/activate
+pip3 install vcstool
+\end{verbatim}
+
+\textbf{Note:} Virtual environment activation required for each session, or can be configured in shell startup files.
+
+\subsection{Phase 5: ROS2 Humble in Docker Containers}
+
+\textbf{Rationale:} Ubuntu 22.04 is the official platform for ROS2 Humble binary packages. Direct installation on Raspberry Pi 5 running Ubuntu 24.04 is not officially supported due to kernel incompatibility with RP3A0-M1 hardware. Containerization provides Ubuntu 22.04 environment running inside the 24.04 host, enabling native ROS2 Humble support without source compilation.
+
+Create workspace structure:
+\begin{verbatim}
+mkdir -p ~/ws/.devcontainer
+cd ~/ws
+\end{verbatim}
+
+Create \texttt{Dockerfile} providing base image with Ubuntu 22.04 + ROS2 Humble (using official \texttt{ros:humble} image from Open Source Robotics Foundation), non-root user account with UID matching host system, passwordless sudo configuration, and development tool installation.
+
+Create \texttt{.devcontainer/devcontainer.json} defining Visual Studio Code container configuration. Key settings:
+\begin{itemize}
+    \item \texttt{--net=host}, \texttt{--pid=host}, \texttt{--ipc=host}: Required for ROS2 DDS discovery
+    \item \texttt{ms-iot.vscode-ros}: ROS2 syntax highlighting and tooling
+    \item \texttt{privileged: true}: Enables GPIO and UART access for PX4 flight controller communication
+    \item X11 forwarding mounts: Support for graphical applications (RViz2, rqt)
+    \item \texttt{postCreateCommand}: Executes rosdep dependency resolution, workspace permission fixes, and ROS2 environment setup
+\end{itemize}
+
+\subsection{Phase 6: VSCode Remote Development}
+
+On development workstation:
+
+\begin{enumerate}
+    \item Install ``Remote - SSH'' and ``Dev Containers'' extensions in Visual Studio Code
+    \item Command Palette (Ctrl+Shift+P) $\to$ ``Remote-SSH: Connect to Host'' $\to$ \texttt{dorten@dorten-pi5drone.local}
+    \item VSCode opens remote window connected to Pi
+    \item Open folder \texttt{/home/ws}
+    \item VSCode detects \texttt{.devcontainer/devcontainer.json}, prompts ``Reopen in Container''
+    \item VSCode builds Docker image (first execution: approximately 30--50 minutes on Raspberry Pi 5)
+    \item Container starts and initializes; development environment ready
+\end{enumerate}
+
+Verification of containerized environment:
+\begin{verbatim}
+lsb_release -a          # Expected: Ubuntu 22.04 LTS
+ros2 --version          # Expected: ROS 2 Humble
+echo $ROS_DISTRO        # Expected: humble
+\end{verbatim}
+
+\subsection{System Architecture}
+
+The complete development architecture is illustrated as a layered communication stack:
+
+\begin{verbatim}
+Development Laptop (VSCode)
+    |
+    +-- SSH connection
+    |
+Raspberry Pi 5 (Ubuntu 24.04)
+    |
+    +-- Docker Engine
+    |
+Docker Container (Ubuntu 22.04 + ROS2 Humble)
+    |
+    +-- ROS2 Nodes + Autonomous Logic
+    |
+    +-- uXRCE-DDS Agent (future)
+    |
+Pixhawk Flight Controller (PX4 Firmware, future)
+\end{verbatim}
+
+\subsection{Key References}
+
+\begin{itemize}
+    \item Docker installation: \url{https://docs.docker.com/engine/install/ubuntu/}
+    \item Rootless Docker configuration: \url{https://docs.docker.com/engine/install/linux-postinstall/}
+    \item ROS2 Docker VSCode guide: \url{https://docs.ros.org/en/humble/How-To-Guides/Setup-ROS-2-with-VSCode-and-Docker-Container.html}
+    \item VSCode Remote SSH: \url{https://code.visualstudio.com/docs/remote/ssh}
+    \item PX4 companion computer: \url{https://docs.px4.io/main/en/companion_computer/pixhawk_rpi}
+    \item uXRCE-DDS middleware: \url{https://docs.px4.io/main/en/middleware/uxrce_dds}
+\end{itemize}
+
+\section{Next Steps: PX4 Integration}
+
+\subsection{Hardware Setup: Pixhawk to Pi GPIO Connection}
+
+Connect Pixhawk TELEM2 port to Raspberry Pi GPIO pins for UART serial communication (921600 baud):
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{Pixhawk TELEM2} & \textbf{Pi GPIO Pin} & \textbf{Function} \\
+\hline
+TX (pin 2) & GPIO 15 / RXD (pin 10) & Receive data \\
+\hline
+RX (pin 3) & GPIO 14 / TXD (pin 8) & Send data \\
+\hline
+GND (pin 6) & Ground (pin 6) & Common ground \\
+\hline
+\end{tabular}
+\caption{Pixhawk TELEM2 to Raspberry Pi GPIO wiring for uXRCE-DDS communication}
+\end{table}
+
+Verify UART is enabled on Raspberry Pi and that device node \texttt{/dev/ttyAMA0} is accessible to the container user.
+
+\subsection{Install uXRCE-DDS Agent}
+
+Inside VSCode terminal (already within container):
+\begin{verbatim}
+sudo apt install ros-humble-micro-xrce-dds-agent
+\end{verbatim}
+
+The uXRCE-DDS Agent acts as a bridge between the PX4 flight controller (running uXRCE-DDS client) and the ROS2 middleware, translating between uORB messages and ROS2 topics.
+
+\subsection{Launch uXRCE-DDS Agent}
+
+Start serial connection to Pixhawk:
+\begin{verbatim}
+MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600
+\end{verbatim}
+
+Expected output: Agent status indicating successful session creation once Pixhawk boots and establishes connection.
+
+\subsection{Verify PX4-ROS2 Communication}
+
+In new VSCode terminal (container), list active ROS2 topics:
+\begin{verbatim}
+ros2 topic list
+ros2 topic echo /fmu/out/vehicle_odometry
+\end{verbatim}
+
+Expected: Topics from PX4 flight controller such as \texttt{/fmu/out/vehicle\_odometry}, \texttt{/fmu/out/vehicle\_status}, \texttt{/fmu/out/vehicle\_attitude}, etc.
+
+\subsection{Configure PX4 Parameters}
+
+Using QGroundControl on development workstation, configure PX4 firmware parameters to enable uXRCE-DDS middleware:
+\begin{itemize}
+    \item \texttt{UXRCE\_DDS\_CFG}: Set to TELEM2 (serial port configuration)
+    \item \texttt{SYS\_AUTOSTART}: Select appropriate vehicle type (quadcopter, fixed-wing, etc.)
+    \item Verify serial connection parameters match uXRCE-DDS Agent configuration (921600 baud)
+\end{itemize}
+
+\subsection{Develop ROS2 Autonomous Control Nodes}
+
+Implement mission planning and autonomous flight logic in ROS2:
+\begin{itemize}
+    \item Subscribe to PX4 telemetry topics: \texttt{/fmu/out/vehicle\_odometry}, \texttt{/fmu/out/vehicle\_status}
+    \item Publish control commands to PX4: \texttt{/fmu/in/offboard\_control\_mode}, \texttt{/fmu/in/trajectory\_setpoint}
+    \item Implement waypoint navigation, obstacle avoidance, and mission state machines in Python or C++
+    \item Integrate sensor inputs (GPS, IMU, cameras) from PX4 uORB message stream via ROS2 topics
+\end{itemize}
+
+\subsection{Testing Methodology}
+
+\begin{enumerate}
+    \item \textbf{Simulation First:} Use PX4 Software-in-the-Loop (SITL) simulator to test autonomous algorithms without real hardware risk
+    \item \textbf{Monitor Telemetry:} Subscribe to PX4 topics in ROS2 to verify correct message flow and telemetry accuracy
+    \item \textbf{Hardware Validation:} Deploy ROS2 nodes to Raspberry Pi container once simulation testing successful
+    \item \textbf{Flight Testing:} Monitor autonomous flights via MAVProxy or QGroundControl; collect flight logs for analysis
+\end{enumerate}
+
+\subsection{SSH Authentication Setup for Containerized Development}
+
+\textbf{Purpose:} Enable Git operations from within a Docker container using host SSH credentials.
+
+\textbf{Challenge:} Docker containers are isolated environments. By default, a container cannot access the host system's SSH keys needed for GitHub authentication.
+
+\textbf{Solution implemented in three steps:}
+
+\subsubsection{SSH Key Generation (Host System)}
+\begin{verbatim}
+ssh-keygen -t ed25519 -C "your-email@example.com"
+\end{verbatim}
+
+Generated an ED25519 key pair on the Raspberry Pi 5 host system. The public key (\texttt{id\_ed25519.pub}) was added to GitHub account settings under SSH keys, enabling passwordless authentication.
+
+\subsubsection{Container Configuration (devcontainer.json)}
+\begin{verbatim}
+"mounts": [
+  "source=${localEnv:HOME}/.ssh,target=/home/${localEnv:USER}/.ssh,
+   type=bind,readonly"
+]
+\end{verbatim}
+
+Mounted the host's \texttt{.ssh} directory into the container as read-only. This allows the container to access SSH keys without duplicating or exposing them.
+
+\subsubsection{SSH Client Installation (Dockerfile)}
+\begin{verbatim}
+RUN apt-get update && apt-get install -y openssh-client && \
+    rm -rf /var/lib/apt/lists/*
+\end{verbatim}
+
+Added OpenSSH client to the container image, enabling Git to use SSH protocol for remote operations.
+
+\textbf{Result:} The development container can authenticate with GitHub using the host's SSH keys, enabling seamless \texttt{git push}, \texttt{git pull}, and \texttt{git clone} operations without credential prompts.
+
+\textbf{Why SSH over HTTPS:} SSH keys provide secure, passwordless authentication and persist across sessions, eliminating the need to store tokens or enter credentials repeatedly during development.
+
+
+\subsection{Troubleshooting Reference}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{|p{3cm}|p{4cm}|p{4cm}|}
+\hline
+\textbf{Issue} & \textbf{Likely Cause} & \textbf{Resolution} \\
+\hline
+SSH connection fails & SSH daemon not running or Avahi not active & \texttt{sudo systemctl status ssh} and \texttt{sudo systemctl status avahi-daemon} \\
+\hline
+Docker build very slow & Normal on Pi 5 ARM64 architecture & First build 30--50 min; subsequent builds cached \\
+\hline
+ROS2 commands not found & Environment not sourced & Verify \texttt{postCreateCommand} in devcontainer.json \\
+\hline
+uXRCE-DDS won't connect & UART wiring, permissions, or baudrate mismatch & Check GPIO wiring, verify \texttt{/dev/ttyAMA0} exists, confirm 921600 baud \\
+\hline
+ROS2 topics empty & uXRCE-DDS client not running on Pixhawk & Verify PX4 parameters \texttt{UXRCE\_DDS\_CFG} set to TELEM2 \\
+\hline
+\end{tabular}
+\caption{Common issues and resolution strategies}
+\end{table}
+
+\section{Experiments}
+
+\subsection{Collision of Drone with Column}
+In this experiment, the primary objectives are to investigate the following:
+\begin{itemize}
+    \item Whether a freely rotating cage has a measurable effect on the drone's ability to maintain or recover its desired flight path post-collision, compared to an affixed control cage.
+    \item Whether the flight controller's internal Inertial Measurement Unit (IMU) can accurately predict the vector of impact, which could assist navigation by estimating the relative position of surrounding obstacles.
+\end{itemize}
+
+\subsubsection{Physical Environment and Setup}
+The physical experiments were conducted at the REALLAB at the IT University of Copenhagen (ITU). The environment utilizes an OptiTrack Motion Capture (MOCAP) system consisting of six cameras, which were recalibrated just few days prior to the testing sequence to ensure high-fidelity spatial ground truth.
+
+For the collision obstacle, a vertically oriented cylindrical column was constructed using a cardboard roll. This roll was internally reinforced with an aluminum profile secured directly to both the floor and the ceiling of the laboratory. While the column oscillates slightly when subjected to manual force, no additional structural supports were added; this strict constraint was necessary to prevent any occlusion of the MOCAP cameras, preserving their function as the Single Source of Truth (SSoT) for the drone's spatial positioning.
+
+% (*Include pictures of the setup here, perhaps one with drone in it as well*)
+
+\subsubsection{Software Architecture and Control Pipeline}
+The experimental platform relies on a custom software pipeline bridging high-level path planning with low-level flight mechanics. The low-level flight controller operates on PX4 firmware built on a NuttX real-time operating system (RTOS), with internal state estimation processed exclusively through an Extended Kalman Filter (EKF2).
+
+High-level position commanding and abstracted trajectory generation are managed via a ROS~2 abstraction layer running on an external offboard computer. This architecture requires the continuous streaming of setpoints to the flight controller. Critical topic communication and data serialization between the ROS~2 node graph and the internal PX4 controller are facilitated by a micro-XRCE-DDS agent acting as the requisite middleware bridge.
+
+\subsubsection{Mission Execution and Data Logging}
+Prior to the physical tests, a custom component named \texttt{flight\_director.py} was developed to take control of the execution of the different experimental missions. This director actively enforces geofence safety rules to constrain the drone within the testing volume.
+
+% (*INCLUDE DIAGRAM of Flight director architecture logic HERE*)
+
+The flight director automates the data collection pipeline by initializing synchronized telemetry recordings, saving the flight logs directly into \texttt{.mcap} files. To isolate specific events, these files are strictly segmented by individual mission loops. Post-flight data extraction is handled by a custom Python database pipeline, which parses the \texttt{.mcap} files to compute, filter, and structure the physical variables required for the resulting figures and plots.
+
+\subsubsection{Flight Trajectory Protocol}
+The standard flight protocol requires the drone to take off and transition from an Exp.\ Start-point to an Exp.\ End-point. These coordinates are mapped as a deliberate straight-line trajectory that strictly intersects the static coordinates of the obstacle column. The primary measurable data includes the adherence to the desired flight path (rotating vs. fixed cage) and the high-frequency disturbance of the IMU unit in both configurations. This protocol was executed across a predefined distribution of incident angles.
+
+\subsubsection{Data Categorization and Analytical Variables}
+Impact events are systematically categorized into four primary bins based on the angle of incidence: $30^\circ$--$40^\circ$, $40^\circ$--$50^\circ$, $50^\circ$--$60^\circ$, and $60^\circ$--$90^\circ$. The custom Python pipeline extracts the following core metrics to evaluate mechanical performance:
+
+\begin{itemize}
+    \item \textbf{Maximum Deceleration Profiles:} Evaluated at the onset of physical impact with the battery at nominal starting voltage. The fixed cage baseline establishes the instantaneous kinetic energy dissipation, determining if the rotating structure actively lowers peak deceleration forces transmitted to the core mass.
+    \item \textbf{IMU Peak Acceleration ($Z$-Axis) vs.\ Commanded Motor Speed (RPM):} Isolates vertical force transfer relative to motor output. Data indicates the rotating cage registers a higher mean $Z$-axis acceleration ($\sim 9.5$\,G) compared to the fixed cage control ($\sim 6.5$\,G), despite operating at lower commanded motor speeds.
+    \item \textbf{Acute Shock Phase Portrait:} Maps peak impact acceleration (X-axis) against the system's rotational energy (Y-axis). This evaluates the relationship between the kinetic energy absorbed by the cage's rotation and the residual shock transmitted to the central drone mass.
+    \item \textbf{Post-Impact $Y$-Axis Vibration Spread:} A standard deviation analysis of lateral acceleration ($A_y$ in units of G). The rotating cage demonstrates localized, tightly bound variances ($0.3$\,G--$0.6$\,G) compared to the high-amplitude jitter in the fixed cage ($0.6$\,G--$1.7$\,G), quantifying a distinct lateral stabilization effect from the independent rotating mass.
+    \item \textbf{Recovery Area Path Deviation:} Quantifies the spatial deviation from the commanded flight path post-impact. At shallow incident angles ($30^\circ$--$40^\circ$), the rotating cage yields a temporarily larger mean recovery area. This represents a mechanical ``rolling'' interaction: the rotating structure maintains continuous physical tracking along the column's circumference, pressing into the obstacle to fulfill the straight-line command. This induces a directional trajectory overshoot once the geometry is cleared. In contrast, the fixed cage exhibits immediate elastic rebound, bouncing away and allowing a mathematically quicker, albeit higher-shock, return to the path vector.
+\end{itemize}
+
+
+% TODO: Add Innov8tive and PX4Docs to Zotero -- still cited in .tex but missing from references.bib
+% The rest of the entries from the old thebibliography are now in references.bib (via Zotero sync)
+% Dead entries removed: RCDroneTop2024, MyFPVStore2025, EMAXDatasheet, AviationDrones
+
+
+
+\subsubsection{Frame design}
+Hypothesis as opposed to previous works, confirmed by mahmoud
+\subsubsection{Cage design}
+mahmoud veci
+\subsection{Hardware}
+
+\subsection{Software}
+\
