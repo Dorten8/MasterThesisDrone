@@ -337,25 +337,14 @@ echo $ROS_DISTRO        # Expected: humble
 
 \subsection{System Architecture}
 
-The complete development architecture is illustrated as a layered communication stack:
+The complete development architecture is illustrated in \autoref{fig:architecture}.
 
-\begin{verbatim}
-Development Laptop (VSCode)
-    |
-    +-- SSH connection
-    |
-Raspberry Pi 5 (Ubuntu 24.04)
-    |
-    +-- Docker Engine
-    |
-Docker Container (Ubuntu 22.04 + ROS2 Humble)
-    |
-    +-- ROS2 Nodes + Autonomous Logic
-    |
-    +-- uXRCE-DDS Agent (future)
-    |
-Pixhawk Flight Controller (PX4 Firmware, future)
-\end{verbatim}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/architecture.pdf}
+    \caption{Drone software stack architecture with PX4 flight controller, ROS2 middleware, MOCAP integration, and data analysis pipeline}
+    \label{fig:architecture}
+\end{figure}
 
 \subsection{Key References}
 
@@ -533,7 +522,7 @@ High-level position commanding and abstracted trajectory generation are managed 
 \subsubsection{Mission Execution and Data Logging}
 Prior to the physical tests, a custom component named \texttt{flight\_director.py} was developed to take control of the execution of the different experimental missions. This director actively enforces geofence safety rules to constrain the drone within the testing volume.
 
-% (*INCLUDE DIAGRAM of Flight director architecture logic HERE*)
+The mission control pipeline with flight director supervision, collision event recording, and telemetry flow is illustrated in \autoref{fig:architecture}.
 
 The flight director automates the data collection pipeline by initializing synchronized telemetry recordings, saving the flight logs directly into \texttt{.mcap} files. To isolate specific events, these files are strictly segmented by individual mission loops. Post-flight data extraction is handled by a custom Python database pipeline, which parses the \texttt{.mcap} files to compute, filter, and structure the physical variables required for the resulting figures and plots.
 

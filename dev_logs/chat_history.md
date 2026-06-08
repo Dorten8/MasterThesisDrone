@@ -115,3 +115,11 @@
 - Implemented robust **Huber Regressor** and **Theil-Sen estimator** trendlines for Deceleration vs. Battery Capacity, and filtered command speed outliers at 2000 RPM.
 - Cleaned the summary notebook figures (removing red dots and retiring Plot 14 and Plot 15).
 - Full technical breakdown in: [dev_logs/session_journals/2026-06-04-experiments-analysis-refinements.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-04-experiments-analysis-refinements.md)
+
+## Session: 2026-06-08 (Session 2 — Mermaid Diagram Pipeline Migration)
+- Standardized diagram source extensions: `architecture.md` → `architecture.mmd`, `experiments_pipeline.md` → `experiments_pipeline.mmd` (fences stripped, pure Mermaid source)
+- Rewrote `plot_diagrams.sh` from a 45-line awk/sed extraction script to a 26-line universal `*.mmd`→PDF batch renderer outputting to `thesis/Figures/`
+- Wired both diagrams into LaTeX: replaced ASCII-art stack in Methodology.tex and resolved TODO comments in both Methodology.tex and Experiments.tex with proper `\includegraphics` figure environments
+- Verified: both PDFs rendered (33 KB + 60 KB) and thesis compiled successfully (668 KB)
+- User flagged EKF filter implementation from another conversation as tomorrow's priority
+- Full breakdown: [dev_logs/session_journals/2026-06-08-diagram-pipeline-migration.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-08-diagram-pipeline-migration.md)

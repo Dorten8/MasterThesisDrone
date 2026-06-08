@@ -7,7 +7,14 @@ if the drone's flight controller's IMU is able to predict the vector of impact o
 
 The experiment has been conducted at REALLAB at ITU. For the experiment I used an Optitrack MOtion Capture system with 6 cameras which have been recalibrated less than 1 week prior to the testing. F
 
-Prior to the experiments flight\_director.py has been developed to (*INCLUDE DIAGRAM of Flight director architecture logic HERE*) to take control of execution of different experiments called missions. The Flight director included a call to record these flights and automatically save these logs as .mcap files which were then dissected, analyzed and are the data for all the figures and plots bellow
+Prior to the experiments flight\_director.py has been developed to take control of execution of different experiments called missions (\autoref{fig:experiments_pipeline}). The Flight director included a call to record these flights and automatically save these logs as .mcap files which were then dissected, analyzed and are the data for all the figures and plots bellow
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/experiments_pipeline.pdf}
+    \caption{Experiment pipeline showing hardware components, ROS2 software stack, data flow from MOCAP through the agent to PX4, and telemetry logging to MCAP storage}
+    \label{fig:experiments_pipeline}
+\end{figure}
 
 \subsubsection{Collision Experiment}
 The idea of this experiment was to test whether a rotating cage has a measurable impact on performance of the drone colliding with an obstacle. Due to this also affixed in place cage was used as control.
@@ -16,5 +23,5 @@ For simplicity a cylinder column vertically oriented was chosen. For the obstacl
 The Drone for this experiment needs to take off and then fly from Exp. Start-point to Exp. End-point which is delibrately chosen to be in a straight line where the drone if flown according to the desired waypoint must encounter the obstacle. As measurable data was chosen the adherence to the desired fly path of the drone with rotating cage vs with affixed cage and the disturbance of the IMU unit in both of these cases
 this experiment was executed on number of desired angles as well
 
-###LLM NOTES### 
+% ### LLM NOTES ### 
 

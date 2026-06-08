@@ -70,7 +70,7 @@ These links represent the different dimensions of the project. Reference them wh
 
 ## Key repository conventions
 
-- **CRITICAL SSHFS & GIT RULE (CORE MEMORY)**: This workspace is a network-mounted **SSHFS location** mapped from the Legion laptop to the drone. **NEVER RUN ANY GIT COMMITS, STAGING (git add), OR RESET COMMANDS DIRECTLY IN THIS HOST-SIDE WORKSPACE!** Running git commands here locks the index (`.git/index.lock`) over the network mount and blocks the user, who runs all commits exclusively from the drone's terminal side (`dorten@dorten-pi5drone:/home/ws`). The model's job is strictly to prepare SSoT changes, write session journals, and provide the raw verbose commit message/command text in the final chat response for the user to run.
+- **GIT & SSHFS RULE (CORE MEMORY)**: If the project directory path (e.g., `/home/dorten/pi_drone_sshfs/`) contains **the literal string `sshfs`** in its name, then it is the network-mounted SSHFS location — **NEVER RUN ANY GIT COMMITS, STAGING (git add), OR RESET COMMANDS IN AN SSHFS-MOUNTED WORKSPACE**, as it locks the index (`.git/index.lock`) over the network mount and blocks the user. In that case, prepare the raw commit command text for the user to run from the drone's terminal (`dorten@dorten-pi5drone:/home/ws`). If the path does **not** contain `sshfs`, then git operations are safe to run directly.
 - **CRITICAL DATABASE & PLOTTING PIPELINE RULE (CORE MEMORY)**: Running the complete telemetry database population pipeline (`db_pipeline.py` or executing the full `experiments_analysis.ipynb`) is extremely resource-intensive and takes significant time because it parses raw MCAP telemetry streams for over 170 passes. **NEVER execute a full database rebuild or run any batch population script directly, and NEVER ask the user to do so, without explicitly asking for permission first!** Always check if cached database entries can be reused or if only specific flights need to be re-analyzed before suggesting a full run. It is ALWAYS preferred to ask the user to run the script themselves in their terminal to ensure clear execution visibility.
 - Read `README.md` intro first before making architectural or workflow changes.
 - Treat this repository root as the ROS workspace root (`/home/ws`), not just a source checkout.
@@ -95,9 +95,15 @@ These links represent the different dimensions of the project. Reference them wh
 - **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
-## Current Session Status (Last Update: 2026-06-04 21:00 Local Time)
+## Current Session Status (Last Update: 2026-06-08 19:30 Local Time)
 
 ### 🎯 Mission Status
+- **Diagram pipeline transitioned to vector PDFs:** ✅ DONE.
+  - `.mmd` is now the standard diagram source format (pure Mermaid syntax, no markdown fences).
+  - `plot_diagrams.sh` rewritten as a universal `*.mmd` → `../Figures/*.pdf` batch renderer.
+  - Both diagrams (`architecture.mmd`, `experiments_pipeline.mmd`) render and compile into the thesis.
+  - EKF filter implementation is now in progress (see below).
+  - User needs a VS Code Mermaid extension for `.mmd` file preview.
 - **`ExpCollision75Deg` and `ExpCollision75DegV2` missions:** ✅ STABLE, HARDENED & TESTED.
   - Implemented **WP_stage** (U-turn pass-through at X=0.186, Y=1.200) to reverse northward approach to southward sweep. Drone arrives at the gate already heading south—**yaw-spinning/lateral drift issues resolved**.
   - Pulled **WP1 Gate** south to Y=0.950m (V1) or Y=1.100m (V2), combined with lowering default transit speed to **0.30 m/s**, allowing a generous 450mm braking buffer. **Geofence overshoot breaches completely resolved**.
@@ -111,10 +117,21 @@ These links represent the different dimensions of the project. Reference them wh
 - **Flight Recorder (`record_flight_bag.sh`):** ✅ HARDENED.
   - Added direct motor commands `/fmu/in/actuator_motors`, active ROS 2 event logs `/rosout`, and Flight Director waypoint status `/flight_director/active_waypoint` to the recorded ROS 2 bag topic list to log motor saturation, recoveries, and state sequences.
 
+### 🔬 KEY TECHNICAL FINDINGS — Fixed Cage Velocity Kinks & EKF Velocity Solution
+- **Root Cause: ~10 Hz MoCap dropout kinks vs ~4 Hz collision dynamics — only 1.3 octaves apart.** The MoCap `/poses` topic drops to ~10 Hz during Fixed Cage flights (nominal ~120–240 Hz). Linear interpolation to 100 Hz creates slope discontinuities at each dropout. Savitzky-Golay differentiation (window=19, polyorder=3) amplifies these discontinuities into visible velocity kinks.
+- **No linear time-invariant filter can fix this.** The 10 Hz kink frequency and 4 Hz collision dynamics (250 ms deceleration) are too close — a 1.3 octave separation is far less than any practical filter's transition bandwidth. This explains why months of attempts by multiple LLMs failed.
+- **Position pre-filtering attempted and failed** — a 12 Hz Butterworth on positions before SG differentiation, combined with relaxing velocity filter to 20 Hz, made the result *worse*. Fully rolled back, preserved as commented-out block in `kin_calculator.py:108-118`.
+- **SOLUTION: PX4 EKF velocity from `/fmu/out/vehicle_odometry`.** The onboard Extended Kalman Filter fuses MoCap position (low-rate, dropouts) with high-rate IMU acceleration (100–250 Hz), propagating velocity through MoCap gaps. The result is inherently smooth — no kinks at all.
+- **The velocity was already in the data — nobody extracted it.** `/fmu/out/vehicle_odometry.velocity[0,1,2]` was already being parsed in `db_loader.py` for clock synchronization in `db_pipeline.py`, but never exposed as velocity columns. Three additive lines added `vx_ekf_raw`, `vy_ekf_raw`, `vz_ekf_raw` to the `df_odom` DataFrame.
+- **Coordinate alignment confirmed**: Same NED→ENU sign convention as position: `vx=v[0], vy=-v[1], vz=-v[2]`.
+- **Dual comparison cells created** in `experiments_analysis.ipynb`: single-flight EKF vs MoCap viewer and Fixed vs Rotating Cage side-by-side (both at 45°). User confirmed EKF result is "absolute gold."
+- **Full MoCap velocity downstream dependency trace** completed — the 24.1% deceleration improvement claim, impact angle calculation, and sweep transit speed all depend on MoCap-derived velocity/acceleration.
+
 ### ⚠️ KNOWN LIMITATIONS & RESEARCH NOTES
 - **Bagfile size checks:** Flight bags should be sanity checked after recording to avoid MCAP indexing/header corruption.
 - **Heavy drone inertia:** The heavy 1.2kg 4-inch quadcopter has high linear inertia; keeping transit speeds at `0.30 m/s - 0.35 m/s` near geofence boundaries is mandatory.
 - **MicroXRCEAgent Stale Connection:** Do not kill the agent once it connects; doing so freezes the Flight Controller and requires a battery reboot.
+- **EKF velocity not yet in main pipeline** — currently only viewable in dedicated notebook cells. `calculate_metrics()`, `compare_all_angles()`, and the summary notebook still use MoCap-derived velocity/acceleration.
 
 ### ✅ Completed This Session (2026-06-04)
 - **IMU Timeline Alignment**: Aligned the collision timeline dynamically to the peak accelerometer gradient, resolving coordinate-based MoCap latency and sync offsets. Reprocessed and rebuilt the database cache for all 137 flights.
@@ -122,7 +139,16 @@ These links represent the different dimensions of the project. Reference them wh
 - **Notebook Figure Cleaning**: Removed `/poses` update rate red dots, retired the inconclusive Plot 14 and Plot 15, and split/filtered the motor speed commanded idle outliers at 2000 RPM.
 - **Robust Fitting**: Integrated Huber Regressor and Theil-Sen estimators for the Deceleration vs. Battery Capacity trendlines.
 
+### ✅ Completed This Session (2026-06-08)
+- **Fixed Cage velocity kink root cause diagnosed** — ~10 Hz MoCap dropout vs ~4 Hz collision dynamics, only 1.3 octaves apart. Proved no linear filter can separate them.
+- **Position pre-filtering attempted and rolled back** — 12 Hz Butterworth on positions before SG diff made results worse. Disabled block preserved in `kin_calculator.py:108-118`.
+- **PX4 EKF velocity extracted from `/fmu/out/vehicle_odometry`** — three additive lines in `db_loader.py:134-142` exposing `vx_ekf_raw`, `vy_ekf_raw`, `vz_ekf_raw`.
+- **EKF dual comparison notebook cells created** — single-flight viewer + Fixed vs Rotating side-by-side (45°). User confirmed "absolute gold."
+- **Complete MoCap velocity dependency trace mapped** — metrics engine, profile plots, comparison tables, impact angle all flow from MoCap-derived speed/accel.
+- **Plots backup created** — `dev_logs/analysis/plots_before_vel&acc_fix/` with all 1,117 current plots (33 graphics + 1,084 per-pass capsule PNGs, 955 MB total) before EKF integration.
+
 ### 📋 Next Priority Order
+0. **[IN PROGRESS] Integrate EKF velocity into main pipeline** — Replace MoCap-derived `speed`/`accel` in `calculate_metrics()` with EKF equivalents, re-run deceleration-vs-battery plots, generate thesis-ready dual EKF comparison figure.
 1. **Investigate Control Allocator Saturation**: Resolve why `allocator_saturation_duration_sec` is empty/zero for 177 flights. Verify active motor limit hits and alternate instances of `actuator_outputs` or `actuator_motors`.
 2. **Phase 6 - Motor Analysis**: Generate Plot 1, Plot 2, Plot 17, and Plot 18 comparative figures.
 3. **Phase 2 & 3 - Plot Polish**: Resolve Plot 16 Y-axis name, convert Plot 12 to 2-panels with mathematical descriptions, and implement the nominal vs. actual polar wedge geometry visualization.
