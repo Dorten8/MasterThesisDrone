@@ -498,52 +498,9 @@ ROS2 topics empty & uXRCE-DDS client not running on Pixhawk & Verify PX4 paramet
 \caption{Common issues and resolution strategies}
 \end{table}
 
-\section{Experiments}
-
-\subsection{Collision of Drone with Column}
-In this experiment, the primary objectives are to investigate the following:
-\begin{itemize}
-    \item Whether a freely rotating cage has a measurable effect on the drone's ability to maintain or recover its desired flight path post-collision, compared to an affixed control cage.
-    \item Whether the flight controller's internal Inertial Measurement Unit (IMU) can accurately predict the vector of impact, which could assist navigation by estimating the relative position of surrounding obstacles.
-\end{itemize}
-
-\subsubsection{Physical Environment and Setup}
-The physical experiments were conducted at the REALLAB at the IT University of Copenhagen (ITU). The environment utilizes an OptiTrack Motion Capture (MOCAP) system consisting of six cameras, which were recalibrated just few days prior to the testing sequence to ensure high-fidelity spatial ground truth.
-
-For the collision obstacle, a vertically oriented cylindrical column was constructed using a cardboard roll. This roll was internally reinforced with an aluminum profile secured directly to both the floor and the ceiling of the laboratory. While the column oscillates slightly when subjected to manual force, no additional structural supports were added; this strict constraint was necessary to prevent any occlusion of the MOCAP cameras, preserving their function as the Single Source of Truth (SSoT) for the drone's spatial positioning.
-
-% (*Include pictures of the setup here, perhaps one with drone in it as well*)
-
-\subsubsection{Software Architecture and Control Pipeline}
-The experimental platform relies on a custom software pipeline bridging high-level path planning with low-level flight mechanics. The low-level flight controller operates on PX4 firmware built on a NuttX real-time operating system (RTOS), with internal state estimation processed exclusively through an Extended Kalman Filter (EKF2).
-
-High-level position commanding and abstracted trajectory generation are managed via a ROS~2 abstraction layer running on an external offboard computer. This architecture requires the continuous streaming of setpoints to the flight controller. Critical topic communication and data serialization between the ROS~2 node graph and the internal PX4 controller are facilitated by a micro-XRCE-DDS agent acting as the requisite middleware bridge.
-
-\subsubsection{Mission Execution and Data Logging}
-Prior to the physical tests, a custom component named \texttt{flight\_director.py} was developed to take control of the execution of the different experimental missions. This director actively enforces geofence safety rules to constrain the drone within the testing volume.
-
-The mission control pipeline with flight director supervision, collision event recording, and telemetry flow is illustrated in \autoref{fig:architecture}.
-
-The flight director automates the data collection pipeline by initializing synchronized telemetry recordings, saving the flight logs directly into \texttt{.mcap} files. To isolate specific events, these files are strictly segmented by individual mission loops. Post-flight data extraction is handled by a custom Python database pipeline, which parses the \texttt{.mcap} files to compute, filter, and structure the physical variables required for the resulting figures and plots.
-
-\subsubsection{Flight Trajectory Protocol}
-The standard flight protocol requires the drone to take off and transition from an Exp.\ Start-point to an Exp.\ End-point. These coordinates are mapped as a deliberate straight-line trajectory that strictly intersects the static coordinates of the obstacle column. The primary measurable data includes the adherence to the desired flight path (rotating vs. fixed cage) and the high-frequency disturbance of the IMU unit in both configurations. This protocol was executed across a predefined distribution of incident angles.
-
-\subsubsection{Data Categorization and Analytical Variables}
-Impact events are systematically categorized into four primary bins based on the angle of incidence: $30^\circ$--$40^\circ$, $40^\circ$--$50^\circ$, $50^\circ$--$60^\circ$, and $60^\circ$--$90^\circ$. The custom Python pipeline extracts the following core metrics to evaluate mechanical performance:
-
-\begin{itemize}
-    \item \textbf{Maximum Deceleration Profiles:} Evaluated at the onset of physical impact with the battery at nominal starting voltage. The fixed cage baseline establishes the instantaneous kinetic energy dissipation, determining if the rotating structure actively lowers peak deceleration forces transmitted to the core mass.
-    \item \textbf{IMU Peak Acceleration ($Z$-Axis) vs.\ Commanded Motor Speed (RPM):} Isolates vertical force transfer relative to motor output. Data indicates the rotating cage registers a higher mean $Z$-axis acceleration ($\sim 9.5$\,G) compared to the fixed cage control ($\sim 6.5$\,G), despite operating at lower commanded motor speeds.
-    \item \textbf{Acute Shock Phase Portrait:} Maps peak impact acceleration (X-axis) against the system's rotational energy (Y-axis). This evaluates the relationship between the kinetic energy absorbed by the cage's rotation and the residual shock transmitted to the central drone mass.
-    \item \textbf{Post-Impact $Y$-Axis Vibration Spread:} A standard deviation analysis of lateral acceleration ($A_y$ in units of G). The rotating cage demonstrates localized, tightly bound variances ($0.3$\,G--$0.6$\,G) compared to the high-amplitude jitter in the fixed cage ($0.6$\,G--$1.7$\,G), quantifying a distinct lateral stabilization effect from the independent rotating mass.
-    \item \textbf{Recovery Area Path Deviation:} Quantifies the spatial deviation from the commanded flight path post-impact. At shallow incident angles ($30^\circ$--$40^\circ$), the rotating cage yields a temporarily larger mean recovery area. This represents a mechanical ``rolling'' interaction: the rotating structure maintains continuous physical tracking along the column's circumference, pressing into the obstacle to fulfill the straight-line command. This induces a directional trajectory overshoot once the geometry is cleared. In contrast, the fixed cage exhibits immediate elastic rebound, bouncing away and allowing a mathematically quicker, albeit higher-shock, return to the path vector.
-\end{itemize}
-
-
-% TODO: Add Innov8tive and PX4Docs to Zotero -- still cited in .tex but missing from references.bib
-% The rest of the entries from the old thebibliography are now in references.bib (via Zotero sync)
-% Dead entries removed: RCDroneTop2024, MyFPVStore2025, EMAXDatasheet, AviationDrones
+% TODO citations:
+% - Verify all citation keys in this file resolve to references.bib or references_non_zotero.bib
+% - The following were resolved from old thebibliography: RCDroneTop2024, MyFPVStore2025, EMAXDatasheet, AviationDrones
 
 
 

@@ -45,3 +45,12 @@ Zotero's auto-generated keys may use snake_case — if so, note the mismatch and
 - Docker container citations (`docker:install`, `docker:postinstall`) get auto-generated Zotero keys with timestamps
 - The Italian/EU thrust test site entry is T-Motor, not EMAX — used for "comparable motor" claim
 - Oscar Liang URLs are two separate entries in Zotero (motors guide + LiPo guide)
+
+## Placeholder Markers
+
+For sections/content that are incomplete but should remain visible in the PDF (not LaTeX comments):
+
+- `***NEED TO ADD A SOURCE***` — when a citation/source is still missing
+- `***HERE NEEDS TO BE SECTION ON <TOPIC>***` — when a section stub needs content
+
+These render as bold monospace in the PDF, so both humans and LLMs can spot them on a regen pass.

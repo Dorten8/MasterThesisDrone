@@ -7,12 +7,38 @@ import pandas as pd
 from IPython.display import display, HTML
 
 from dev_logs.analysis.database.db_loader import load_drone_metadata, load_mcap, build_dataframes
-from dev_logs.analysis.kinematics.kin_calculator import compute_velocity, find_waypoint_events, build_events_log, calculate_metrics
+from dev_logs.analysis.kinematics.kin_calculator import compute_velocity, compute_ekf_kinematics, find_waypoint_events, build_events_log, calculate_metrics
 from dev_logs.analysis.kinematics.kin_plot_trajectory import plot_trajectory
 from dev_logs.analysis.kinematics.kin_plot_kinematics import plot_velocity_profile, plot_battery_sag, plot_imu_dynamics, plot_imu_xyz_components
 from dev_logs.analysis.kinematics.kin_plot_actuators import plot_actuators_and_status, plot_control_allocator_saturation, plot_pid_rate_tracking
 from dev_logs.analysis.kinematics.kin_plot_statistics import plot_angle_boxplots
-from dev_logs.analysis.database.db_manager import insert_or_replace_flight, get_database_summary_markdown, is_already_cached
+from dev_logs.analysis.database.db_manager import insert_or_replace_flight, get_database_summary_markdown, is_already_cached, get_battery_efficiency_df
+
+
+# ── Battery rate lookup (flight-level, from flights_battery_efficiency) ──────────────
+# Per-pass MCAP windows are too short (~10 s) for meaningful battery drain rates;
+# the flights_battery_efficiency table provides flight-level rates computed from
+# the full-flight takeoff→landing window using unsliced MCAPs.
+_battery_lookup = None
+
+
+def _get_battery_rates(flight_folder_name):
+    """Return (capacity_drain_rate_flying, voltage_drop_rate_flying) for a flight."""
+    global _battery_lookup
+    if _battery_lookup is None:
+        try:
+            df = get_battery_efficiency_df()
+            if not df.empty:
+                _battery_lookup = df.set_index('flight_name').to_dict('index')
+            else:
+                _battery_lookup = {}
+        except Exception:
+            _battery_lookup = {}
+    entry = _battery_lookup.get(flight_folder_name, {})
+    return (
+        entry.get('capacity_drain_rate_flying'),
+        entry.get('voltage_drop_rate_flying'),
+    )
 
 
 def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
@@ -470,6 +496,21 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                 # Compute both raw and smoothed velocity derivative signals
                 df_mocap_raw = compute_velocity(df_mocap.copy(), resample=False)
                 df_mocap = compute_velocity(df_mocap, resample=True)
+
+                # === ENABLED: EKF Kinematics (2026-06-09) ===
+                # Compute velocity/acceleration from PX4 EKF odometry (vehicle_odometry).
+                # EKF fuses MoCap + IMU at 100-250 Hz — inherently smooth even during
+                # Fixed Cage MoCap dropouts. Passed to calculate_metrics() as df_ekf_kin.
+                df_odom = dfs.get('odom', pd.DataFrame())
+                df_ekf_kin = compute_ekf_kinematics(df_odom, df_mocap)
+                if df_ekf_kin is not None:
+                    print(f"  ⚡ EKF kinematics computed: {len(df_ekf_kin)} samples @ 100 Hz")
+                else:
+                    print(f"  ⚡ EKF kinematics: not available (no vehicle_odometry data)")
+                # === RETIRED: MoCap-only velocity ===
+                # Previously, all velocity/accel came from SG differentiation of MoCap
+                # positions. Works for Rotating Cage (120 Hz) but produces dropout kinks
+                # for Fixed Cage (~10 Hz). EKF replaces this when available.
                 
                 # Determine column position for this flight dynamically
                 if df_column is not None and not df_column.empty:
@@ -517,7 +558,8 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     print(f"🔄 Segmented implicit pass: {pass_name}")
 
                     # Calculate physical metrics with dynamic column coordinates
-                    metrics = calculate_metrics(df_mocap, wp_events, col_x_flight, col_y_flight, column_radius, cage_radius, df_imu=df_imu)
+                    # EKF kinematics replaces MoCap-derived velocity for the metric computation
+                    metrics = calculate_metrics(df_mocap, wp_events, col_x_flight, col_y_flight, column_radius, cage_radius, df_imu=df_imu, df_ekf_kin=df_ekf_kin)
                     closest_clearance = metrics.get('closest_clearance')
                     metrics['impact_detected'] = 1 if (closest_clearance is not None and closest_clearance < 0.0) else 0
 
@@ -565,28 +607,17 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     motor_metrics = get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events)
                     metrics.update(motor_metrics)
 
-                    # Calculate active flight time and battery consumption rates
-                    active_flight_time_sec = float(disarming_time - arming_time) if disarming_time and arming_time else None
+                    # Per-pass active flight time (takeoff → disarming, from MCAP)
+                    active_flight_time_sec = float(disarming_time - takeoff_time) if disarming_time and takeoff_time else None
                     metrics['active_flight_time_sec'] = active_flight_time_sec
 
-                    if not df_bat.empty and active_flight_time_sec and active_flight_time_sec > 0:
-                        # Extract the exact active flight window
-                        df_bat_active = df_bat[(df_bat['t'] >= arming_time) & (df_bat['t'] <= disarming_time)]
-                        if not df_bat_active.empty:
-                            v_start = float(df_bat_active['voltage'].iloc[0])
-                            v_end = float(df_bat_active['voltage'].iloc[-1])
-                            c_start = float(df_bat_active['remaining'].iloc[0])
-                            c_end = float(df_bat_active['remaining'].iloc[-1])
-                            
-                            flight_time_min = active_flight_time_sec / 60.0
-                            metrics['voltage_drop_rate_v_per_min'] = (v_start - v_end) / flight_time_min
-                            metrics['capacity_drain_rate_pct_per_min'] = (c_start - c_end) / flight_time_min
-                        else:
-                            metrics['voltage_drop_rate_v_per_min'] = None
-                            metrics['capacity_drain_rate_pct_per_min'] = None
-                    else:
-                        metrics['voltage_drop_rate_v_per_min'] = None
-                        metrics['capacity_drain_rate_pct_per_min'] = None
+                    # Battery consumption rates — flight-level, from flights_battery_efficiency
+                    # Per-pass MCAP windows are ~10 s, far too short for meaningful rates.
+                    # The battery efficiency table provides rates computed from the full
+                    # unsliced MCAP takeoff→landing window.
+                    cap_drain, v_drop = _get_battery_rates(base_folder)
+                    metrics['capacity_drain_rate_pct_per_min'] = cap_drain
+                    metrics['voltage_drop_rate_v_per_min'] = v_drop
 
                     # Skip if already cached in the database (idempotent runs, force-recompute if missing schema columns)
                     if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_sdld', 'imu_ax_spread_impact']):
@@ -1028,6 +1059,7 @@ if __name__ == "__main__":
             df_bat    = dfs['battery']
             df_imu    = dfs.get('imu', pd.DataFrame())
             df_column = dfs.get('column', pd.DataFrame())
+            df_odom   = dfs.get('odom', pd.DataFrame())
             arming_time       = dfs['arming_time']
             disarming_time    = dfs.get('disarming_time')
             if disarming_time is None:
@@ -1042,6 +1074,9 @@ if __name__ == "__main__":
 
             df_mocap_raw = compute_velocity(df_mocap.copy(), resample=False)
             df_mocap = compute_velocity(df_mocap, resample=True)
+
+            # EKF kinematics (same as main pipeline above)
+            df_ekf_kin = compute_ekf_kinematics(df_odom, df_mocap)
 
             takeoff_mask = df_mocap['z'] > 0.15
             takeoff_time = df_mocap.loc[takeoff_mask, 't'].iloc[0] if takeoff_mask.any() else arming_time + 2.0
@@ -1063,7 +1098,7 @@ if __name__ == "__main__":
 
             wp_events = wp_events_list[0]  # Pass file contains exactly one pass
 
-            metrics = calculate_metrics(df_mocap, wp_events, col_x, col_y, column_radius, cage_radius, df_imu=df_imu)
+            metrics = calculate_metrics(df_mocap, wp_events, col_x, col_y, column_radius, cage_radius, df_imu=df_imu, df_ekf_kin=df_ekf_kin)
             closest_clearance = metrics.get('closest_clearance')
             metrics['impact_detected'] = 1 if (closest_clearance is not None and closest_clearance < 0.0) else 0
 
@@ -1110,14 +1145,14 @@ if __name__ == "__main__":
             motor_metrics = get_ulog_motor_metrics(folder_path, pass_path, bag_start_ns, wp_events)
             metrics.update(motor_metrics)
 
-            # Load global battery rates from unsegmented log to avoid transient throttle bounce-backs
-            if folder_name not in global_battery_cache:
-                global_battery_cache[folder_name] = _get_global_battery(folder_path)
-                
-            gb_flight_time, gb_v_rate, gb_c_rate = global_battery_cache.get(folder_name, (None, None, None))
-            metrics['active_flight_time_sec'] = gb_flight_time
-            metrics['voltage_drop_rate_v_per_min'] = gb_v_rate
-            metrics['capacity_drain_rate_pct_per_min'] = gb_c_rate
+            # Per-pass active flight time (takeoff → disarming, from MCAP)
+            active_flight_time_sec = float(disarming_time - takeoff_time) if disarming_time and takeoff_time else None
+            metrics['active_flight_time_sec'] = active_flight_time_sec
+
+            # Battery consumption rates — flight-level, from flights_battery_efficiency
+            cap_drain, v_drop = _get_battery_rates(folder_name)
+            metrics['capacity_drain_rate_pct_per_min'] = cap_drain
+            metrics['voltage_drop_rate_v_per_min'] = v_drop
 
             condition = _infer_condition(folder_name)
             

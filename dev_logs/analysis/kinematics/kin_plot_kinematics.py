@@ -156,7 +156,7 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
     ax_vel.grid(True)
 
     cond_suffix = f" <{condition}>" if condition else ""
-    ax_vel.set_title(f'Thesis Flight Kinetic Profile: Filtered Velocity & Event Timeline{cond_suffix}', pad=15)
+    ax_vel.set_title(f'Flight Kinetic Profile: Filtered Velocity & Event Timeline{cond_suffix}', pad=15)
 
     # ---------------- 2. Middle Panel: continuous tangential acceleration ----------------
     if ax_acc is not None:

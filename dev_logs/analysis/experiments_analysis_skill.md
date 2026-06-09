@@ -152,6 +152,118 @@ To prevent repeating past visualization attempts that yielded low-value, redunda
 
 ## 9. Execution Log — Italic Notes (Most Recent First)
 
+### `### MoCap Frame Rate & Velocity Filtering` — Fixed Cage Velocity Profile Kinks — Root Cause & Attempted Fix — FAILED & REVERTED
+
+*[2026-06-08] **What was done:** Full diagnostic analysis and an attempted fix for persistent velocity/acceleration profile kinks in Fixed Cage flights. The attempted fix (position pre-filtering) made results worse and was reverted.*
+
+**Attempt 1 — Position Pre-Filtering (2026-06-08) — FAILED:**
+Applied a 12 Hz Butterworth low-pass to positions before SG differentiation, and relaxed the velocity Butterworth from 4 Hz → 20 Hz. **Result: way worse than original.**
+
+**Why it failed:**
+1. The 12 Hz position cutoff is too close to the ~10 Hz dropout kink frequency — barely any attenuation
+2. The 4 Hz velocity Butterworth was doing ALL the smoothing work. Relaxing it to 20 Hz removed the only effective filter
+3. The 12 Hz position filter doesn't compensate for the lost 4 Hz velocity filter — fundamentally different filtering stages
+
+**What remains on disk:**
+- `prefilter_position_fc=None` parameter on `compute_velocity()` (harmless, defaults off)
+- Position pre-filter block commented out with failure explanation
+- `_prefilter_fc` column stored in dataframe (0.0 when off)
+- Notebook interactive cell reverted to original Rotating Cage example
+- Filter info box reverted to original display
+
+**Updated understanding of the problem:**
+The pipeline has TWO stages that matter for Fixed Cage:
+1. Linear interpolation → 100 Hz grid (creates kinks at segment boundaries)
+2. SG deriv=1 → velocity (amplifies kinks)
+3. 4 Hz Butterworth on velocity (blurs everything to hide the kinks)
+
+The 4 Hz filter on velocity is a crude but effective hammer. The real challenge is: **how to smooth the kinks without smearing the collision dynamics.** The kinks are at ~10 Hz (from 100ms dropout segments), the collision is at ~4 Hz (250ms deceleration). These are barely separated in frequency. No linear filter can cleanly separate them — that's the fundamental DSP limitation.
+
+**Potential next approaches (NOT implemented):**
+- **Time-domain dropout detection:** Detect dropout segments, compute velocity within good segments using raw finite differences, bridge gaps with physically-plausible velocity (constant or linearly changing)
+- **Kalman smoother:** Use a constant-acceleration motion model with process noise adapted to dropout probability — inherently band-limits velocity to physically realizable drone dynamics
+- **Total Variation Regularization:** Formulate as optimization problem — find velocity signal that fits position derivatives while penalizing total variation (L1 regularization on acceleration changes), which preserves sharp collision edges while removing dropout kinks
+
+**How to verify future attempts:** Run the interactive kinematics viewer cell in `experiments_analysis.ipynb` with a Fixed Cage flight. Compare velocity smoothness and collision edge sharpness against the original pipeline output.
+
+**Root Cause:**
+The velocity pipeline works as follows:
+
+```
+Raw MoCap /poses (irregular ~10-120Hz, median ~120Hz Rotating, as low as ~4Hz Fixed)
+  → 1. Linear interpolation to 100Hz uniform grid     ← CREATES piecewise-linear kinks
+  → 2. SG filter (w=19, p=3, deriv=1) on position     ← AMPLIFIES kinks into velocity spikes
+  → 3. 4Hz Butterworth on velocity                    ← BLURS real collision dynamics
+  → 4. Surgical ringing removal at dropout boundaries ← CREATES new kinks at boundaries
+```
+
+**Step 1 is the root cause.** Linear interpolation between irregularly-spaced MoCap samples produces a piecewise-linear position signal. Every raw data point becomes a slope discontinuity (C⁰ continuous, not C¹). When the Fixed Cage rate drops to ~10 Hz, segments are 100ms straight lines — the position looks like a connect-the-dots polygon.
+
+**Step 2 faithfully amplifies those kinks.** The SG differentiator is designed to preserve signal features — it correctly amplifies the artificial slope discontinuities into velocity spikes. This is not an SG bug, it's working as intended.
+
+**Steps 3-4 fight symptoms, not the cause.** A 4 Hz Butterworth on velocity is so aggressive it smears real collision deceleration dynamics (a 250ms impact spans the filter's entire passband). The surgical ringing removal at dropout boundaries creates abrupt transitions between "doctored" and "clean" segments, producing new visible kinks.
+
+**Why previous attempts failed:**
+1. The June 1 session journal proposed cubic spline interpolation instead of linear — this would give C¹ continuity at data points. But the current code comment reads *"Simple linear interpolation for all columns (preserves raw data feel, no PCHIP jitter)"* — suggesting cubic/PCHIP interpolation was tested but produced overshoot ringing at gap boundaries (Runge phenomenon with sparse data).
+2. Tuning the SG window and polynomial order (w=19, p=3) only trades off noise suppression against temporal resolution — it cannot fix the fundamental issue that the position signal fed to the differentiator contains artificial high-frequency content.
+3. The adaptive jitter logic (low-margin for high-dropout Fixed Cage flights) correctly identifies the problem as packet-loss related but attacks it from the wrong direction (masking ringing regions instead of preventing ringing from being generated).
+
+**Proposed Solution — Position Pre-Filtering:**
+The key physical insight: **a 1.5 kg rigid-body drone's position trajectory has negligible power above ~12 Hz.** It cannot teleport or change direction instantaneously — its dynamics are fundamentally band-limited by motor thrust (~0.5s rise time) and inertia.
+
+The correct fix is to **low-pass filter the uniformly-resampled position signal before SG differentiation.** This removes the artificial high-frequency content from linear interpolation while preserving ALL real flight dynamics:
+
+```python
+# NEW PATH: Position Pre-Filtering (band-limit before differentiation)
+# 12 Hz cutoff — band-limits position to physically realizable drone dynamics
+# Prevents linear interpolation kinks from being amplified by SG deriv=1
+from scipy.signal import butter, filtfilt
+b_pre, a_pre = butter(2, 12.0, fs=100.0, btype='low')
+for col in ['x', 'y', 'z']:
+    df_mocap[col] = filtfilt(b_pre, a_pre, df_mocap[col])
+```
+
+Then SG differentiation operates on already-smooth positions → inherently smooth velocity. The existing 4 Hz velocity Butterworth can be relaxed to 15-20 Hz (light cleanup only, not primary smoothing), preserving real collision dynamics at 250ms resolution.
+
+**Mathematical justification:**
+- Drone mass ≈ 1.5 kg, max thrust ≈ 40 N → max acceleration ≈ 26.7 m/s²
+- At max acceleration, the velocity changes by at most ~13 m/s in 0.5s
+- For comparison: 12 Hz position filtering attenuates features below ~83 ms
+- A 250 ms impact deceleration (4 Hz) is in the passband — preserved
+- Artifacts from 100 ms linear interpolation segments (10 Hz) are in the stopband — removed
+
+**Implementation Plan (route through, keep old path intact):**
+1. Add a new parameter `prefilter_position_fc=None` (default = None = off) to `compute_velocity()` in `kin_calculator.py`
+2. After the resampling + interpolation step, if `prefilter_position_fc` is set, apply Butterworth low-pass to x, y, z columns before SG differentiation
+3. Relax the existing 4 Hz velocity filter to 20 Hz when position pre-filtering is active
+4. Comment the old paths with markers, keep them intact
+5. The interactive notebook cell passes `prefilter_position_fc=12.0` to route through the new path
+6. Default behavior unchanged — only new calls that opt in get the new filter
+
+**How to verify:** Run the interactive kinematics viewer cell in `experiments_analysis.ipynb` with a Fixed Cage flight. The velocity and acceleration profiles should show smooth curves with no visible kinks, while preserving real collision deceleration events. Compare side-by-side with a Rotating Cage flight — both should now look similarly smooth.
+
+**Where:** `dev_logs/analysis/kinematics/kin_calculator.py` — `compute_velocity()` function. Notebook: `dev_logs/analysis/experiments_analysis.ipynb` — interactive cell. Plot rendering: `dev_logs/analysis/kinematics/kin_plot_kinematics.py` — filter info box.*
+
+### `### EKF Velocity & Battery Truncation` — EKF Velocity Integration + Battery Window Fix
+
+*[2026-06-09] **What was done:** Two changes integrated into the analysis pipeline.*
+
+**Change 1 — EKF Velocity Integration:**
+- Added `compute_ekf_kinematics(df_odom, df_mocap)` to `kin_calculator.py` — resamples PX4 EKF velocity from `vehicle_odometry` to 100 Hz, applies NED→ENU coordinate alignment, computes speed + SG-differentiated acceleration.
+- Modified `calculate_metrics()` with optional `df_ekf_kin=None` parameter. When provided, velocity/acceleration columns in the MoCap DataFrame are overwritten with EKF-interpolated values before metric computation.
+- Wired `df_odom → compute_ekf_kinematics → calculate_metrics()` in both pipeline sections of `db_pipeline.py`.
+- Old MoCap velocity derivation path is commented out with `=== RETIRED: MoCap Velocity ===` markers.
+
+**Change 2 — Battery Window Truncation:**
+- Changed `active_flight_time_sec` and `df_bat_active` window from `arming_time → disarming_time` to `takeoff_time → disarming_time` in `db_pipeline.py` (both pipeline sections).
+- Old arming_time-based code is commented out with `=== RETIRED: arming_time window ===` markers.
+- Fixes artificially low drain rates caused by including ground idle time in the denominator.
+
+**How to verify:** Run any flight through the pipeline — EKF kinematics DataFrame is printed with sample count. Compare `impact_accel` values between MoCap and EKF paths (EKF should show lower peaks, especially for Fixed Cage). For battery: pick a flight with long ground idle and check that `voltage_drop_rate` increased vs the old value.
+**Where:** `kin_calculator.py` (new `compute_ekf_kinematics()` function, modified `calculate_metrics()`), `db_pipeline.py` (EKF wiring at lines ~474-482, battery truncation at lines ~585-615, secondary pipeline at lines ~1060-1090).*
+
+Each entry records a completed implementation from the walkthrough, in italic, cross-referencing where in the walkthrough it lives.
+
 ### `### Battery, Deceleration & Structural Dynamics` — Deceleration Y-Axis Truncation
 
 *[2026-06-08] **What was done:** Added `ax.set_ylim(0, 6)` and `ax.set_yticks(np.arange(0, 7, 1))` to both deceleration plots — Cell 23 (split Rotating vs Fixed side-by-side, shared Y-axis via `ax1`) and Cell 24 (global comparison single `ax`). Suppresses the ~9.8 m/s² outlier so the 0–6 range is stretched and trendline separation is visible.

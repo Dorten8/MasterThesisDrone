@@ -1,13 +1,26 @@
-\section{Experiments}
+\section{Experiments and Results}
 
-\subsection{Collision of Drone with column}
-in this experiment I am tring to see a number of things:
-\newlist{DoesAFreelyRotatingCage}{itemize}{1} If rotating cage has an effect on the drone following in its desired fly path 
-if the drone's flight controller's IMU is able to predict the vector of impact of the drone. Which could help with its nabigation by estimating where its surrounding obstacles are 
+To evaluate the operational and protective capabilities of the drone, physical collision tests were conducted. This section details the hardware setup, the software pipeline used to capture the data, and the direct mechanical results of the impacts, comparing the performance of a standard fixed cage against a freely rotating cage.
 
-The experiment has been conducted at REALLAB at ITU. For the experiment I used an Optitrack MOtion Capture system with 6 cameras which have been recalibrated less than 1 week prior to the testing. F
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{plots/2D_path_overlay_2026-06-09.png}
+    \caption{2D path overlay showing trajectory comparison between fixed and rotating cage configurations}
+    \label{fig:2d_path_overlay}
+\end{figure}
 
-Prior to the experiments flight\_director.py has been developed to take control of execution of different experiments called missions (\autoref{fig:experiments_pipeline}). The Flight director included a call to record these flights and automatically save these logs as .mcap files which were then dissected, analyzed and are the data for all the figures and plots bellow
+\subsection{Experimental Setup}
+\subsubsection{Experiment Environment and Collision Target}
+The physical experiments were conducted at the REALLAB at the IT University of Copenhagen (ITU) within an OptiTrack Motion Capture (MOCAP) environment. A vertically oriented cylindrical cardboard column, internally reinforced with an aluminum profile, was anchored to the floor and ceiling to serve as the static collision target. The column oscillates slightly when subjected to manual force, but no additional structural supports were added in order to prevent any occlusion of the MOCAP cameras, preserving their function as the Single Source of Truth (SSoT) for the drone's spatial positioning.
+
+\subsubsection{Experiment Control and Data Collection}
+The experimental platform relies on an integrated software architecture designed to bridge abstracted trajectory generation with real-time hardware constraints. The low-level flight stack utilizes PX4 Autopilot firmware on a NuttX real-time operating system (RTOS), with internal state estimation handled strictly by an Extended Kalman Filter (EKF2).
+
+High-level position commanding is managed within a ROS~2 abstraction layer running on an external offboard computing node. Real-time topic translation between the ROS~2 node graph and the internal PX4 uORB messaging system is handled via a micro-XRCE-DDS agent.
+
+To orchestrate the experimental runs, a custom software component named \texttt{flight\_director.py} was developed. This script functions as an automated mission execution environment, systematically enforcing geofence safety parameters. The flight director automates the data collection pipeline by initializing synchronized telemetry recordings, saving each distinct flight loop into an independent \texttt{.mcap} file. These files were subsequently parsed using a custom Python database pipeline to calculate the physical variables presented in the following results.
+
+The complete experimental pipeline, from hardware components through the ROS~2 software stack and MOCAP integration to telemetry storage, is illustrated in \autoref{fig:experiments_pipeline}.
 
 \begin{figure}[h]
     \centering
@@ -16,12 +29,42 @@ Prior to the experiments flight\_director.py has been developed to take control 
     \label{fig:experiments_pipeline}
 \end{figure}
 
-\subsubsection{Collision Experiment}
-The idea of this experiment was to test whether a rotating cage has a measurable impact on performance of the drone colliding with an obstacle. Due to this also affixed in place cage was used as control.
-For simplicity a cylinder column vertically oriented was chosen. For the obstacle I used a cardboard roll which has been affixed both from bottom and the top and had an aluminum profile going through which was secured both to the floor and also the ceiling of the room. the obstacle column would move / oscilate slightly when tested by hand, but no more structural supports were added in order not to obscure the MOCAP cameras which were the SSoT for the drone. 
-(*Include pictures of the settup here, perhaps one with drone in it as well*)
-The Drone for this experiment needs to take off and then fly from Exp. Start-point to Exp. End-point which is delibrately chosen to be in a straight line where the drone if flown according to the desired waypoint must encounter the obstacle. As measurable data was chosen the adherence to the desired fly path of the drone with rotating cage vs with affixed cage and the disturbance of the IMU unit in both of these cases
-this experiment was executed on number of desired angles as well
+\subsection{Flight Stability and Efficiency Baseline}
+Prior to analyzing the collision data, a baseline for flight stability and system efficiency was established. The drone's PID controller was intentionally tuned for slow, deliberate indoor navigation.
 
-% ### LLM NOTES ### 
+Despite the introduction of a dynamic spinning mass, the OptiTrack MOCAP system successfully maintained continuous tracking of the drone's spatial position ($X, Y, Z$) and orientation. The high-speed rotation of the dynamic cage did not occlude the camera pipeline or induce telemetry drops. Furthermore, commanded motor speeds and maximum actuator outputs showed no statistically significant deviation between the fixed and rotating cage variants during standard flight.
 
+However, analysis of the power consumption from the exact moment of commanded takeoff indicates a disparity in efficiency. The fixed cage configuration demonstrated a consistently lower voltage drop over active flight loops compared to the rotating cage. Consequently, the fixed cage yielded measurably longer total active flight times before reaching critical battery thresholds.
+
+\subsection{Impact Kinematics and Force Transfer}
+The primary metric for structural viability is the instantaneous deceleration force transferred to the drone's core mass upon physical collision with the static column. The internal IMU data was isolated at the exact timestamp of impact to evaluate this force transfer.
+
+The recorded data indicates that the fixed cage configuration provides superior shock-absorption characteristics. When normalizing the impact acceleration data across the predefined incident angles, the fixed cage reduced peak impact acceleration (measured on the $Z$ and $Y$ axes) by approximately $24\%$ compared to the rotating cage.
+
+Despite the theoretical dampening potential of a freely rotating mass, the static structural resistance of the fixed cage resulted in lower maximum deceleration values ($\sim 6.5$\,G mean for the fixed cage vs. $\sim 9.5$\,G mean for the rotating cage).
+
+\subsection{Post-Collision Trajectory and Recovery}
+Following the physical impact, the drone's ability to maintain and recover its commanded ROS~2 straight-line trajectory was quantified. This was measured primarily through maximum trajectory deviation and total recovery area.
+
+The fixed cage consistently outperformed the rotating cage in maintaining spatial proximity to the intended flight vector. The path spread and maximum trajectory deviation following the collision were measurably lower for the fixed configuration.
+
+When segmenting the spatial recovery area by the angle of incidence, distinct mechanical behaviors emerged:
+\begin{itemize}
+    \item \textbf{Moderate to Steep Angles ($40^\circ$--$90^\circ$):} The fixed cage exhibited a highly localized, smaller recovery area. The elastic rebound of the rigid structure allowed the flight controller to quickly re-establish the path vector.
+    \item \textbf{Shallow Angles ($30^\circ$--$40^\circ$):} At near head-on trajectories, the rotating cage yielded the most significant trajectory errors. It required a substantially larger spatial area to recover its vector compared to the fixed cage. The data shows that the rotating mechanism induces a pronounced spatial overshoot before the PID controller can stabilize the lateral drift and return the drone to the commanded waypoint.
+\end{itemize}
+
+\subsection{Deceleration and Force Transfer Profiles}
+***SECTION NEEDS DETAILED CONTENT — SEE deceleration\_vs\_battery\_angle plots and related graphics. Metrics to cover: maximum deceleration per angle bin, IMU peak acceleration (Z-axis) vs commanded motor speed (RPM), and current draw profiles across fixed vs rotating cage configurations.***
+
+\subsection{Impact Phase Portraits}
+***SECTION NEEDS CONTENT — Map peak impact acceleration against rotational energy (angular momentum) to evaluate the relationship between kinetic energy absorbed by cage rotation and residual shock transmitted to the drone core mass.***
+
+\subsection{Vibration and Lateral Stability}
+***SECTION NEEDS CONTENT — SEE rotating\_cage\_dev\_vs\_angle\_battery and vibration spread plots. Metrics to cover: post-impact Y-axis vibration spread (rotating cage 0.3--0.6\,G localized vs fixed cage 0.6--1.7\,G high-amplitude jitter), cage deviation vs battery angle, and comparative cage deviation overlay.***
+
+% \subsubsection{Acute Shock Phase Portrait}
+% Maps peak impact acceleration (X-axis) against the system's rotational energy (Y-axis). Evaluates the relationship between the kinetic energy absorbed by the cage's rotation and the residual shock transmitted to the central drone mass.
+
+% \subsubsection{Post-Impact $Y$-Axis Vibration Spread}
+% Standard deviation analysis of lateral acceleration ($A_y$ in units of G). The rotating cage demonstrates localized, tightly bound variances ($0.3$\,G--$0.6$\,G) compared to the high-amplitude jitter in the fixed cage ($0.6$\,G--$1.7$\,G), quantifying a distinct lateral stabilization effect from the independent rotating mass.

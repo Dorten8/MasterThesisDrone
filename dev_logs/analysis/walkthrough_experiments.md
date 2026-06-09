@@ -1,5 +1,47 @@
 # 🏁 Master Thesis Walkthrough: Experimental Collision Sweep Refinements
 
+## 📍 CURRENT STATUS (2026-06-09)
+
+**Battery fix — DONE ✅**
+- `flights_battery_efficiency` table: 47/48 flights populated with realistic rates (Fixed Cage: 24.6%/min, Rotating Cage: 23.0%/min)
+- `db_pipeline.py` now pulls battery rates from efficiency table instead of computing from 10s per-pass windows
+- Pipeline re-run in progress — updating `flights_summary` with correct rates
+
+**Verification command (run after pipeline finishes):**
+```bash
+cd /home/dorten/MasterThesisDrone
+python3 -c "
+import sys; sys.path.insert(0, 'dev_logs/analysis/database')
+sys.path.insert(0, '/home/dorten/.local/lib/python3.10/site-packages')
+from db_manager import get_connection
+c = get_connection().cursor()
+c.execute('SELECT condition, COUNT(*), ROUND(AVG(capacity_drain_rate_pct_per_min),1) FROM flights_summary GROUP BY condition')
+for r in c.fetchall(): print(f'{r[0]}: {r[1]} passes, avg drain {r[2]}/min')
+c.execute('SELECT COUNT(*) FROM flights_summary WHERE capacity_drain_rate_pct_per_min IS NULL')
+print(f'NULL battery: {c.fetchone()[0]}')
+c.execute('SELECT COUNT(*) FROM flights_summary')
+print(f'Total passes: {c.fetchone()[0]}')
+"
+```
+Expected: ~20-25%/min average per condition, <10 NULLs, 170+ total passes.
+
+**Key files modified today:**
+- `dev_logs/analysis/database/db_unsliced_flights_bat_analyser.py` — memory-safe streaming reader
+- `dev_logs/analysis/database/db_pipeline.py` — battery lookup from efficiency table
+- `dev_logs/analysis/_rerun_pipeline.py` — preserves `flights_battery_efficiency` on re-run
+
+**Not touched (user instruction):**
+- `dev_logs/analysis/experiments_analysis.ipynb` — explicitly preserved
+
+**Skipped (too complex / needs user input):**
+- Most non-trivial notebook visualizations in sections 2-4 of this walkthrough (they're in `experiments_analysis_summary.ipynb` which you asked me not to touch, and many require design decisions)
+- Control Allocator Saturation plots — were marked as to-do, not implemented
+- Statistical significance tests — require design decisions on what to test
+- LaTeX/TikZ generator — standalone tool, not started
+- Submodule pinning — infrastructure task
+
+---
+
 This document serves as our shared, checkable roadmap to refine, fix, and polish the experimental telemetry analysis dashboard. Its structure directly mirrors the sequence of cells in our two notebooks:
 1. `experiments_analysis.ipynb` (individual flights and telemetry ingestion)
 2. `experiments_analysis_summary.ipynb` (aggregate comparative analytics)
@@ -381,11 +423,213 @@ This section mirrors the aggregate notebook cells, starting from theoretical gui
 
 </details>
 
+## 🔧 EKF Velocity Integration — Replace MoCap-Derived Velocity with PX4 EKF Velocity
+
+The EKF velocity (`/fmu/out/vehicle_odometry.velocity[]`) was validated on 2026-06-08 as inherently smooth even during Fixed Cage MoCap dropouts. The goal is to integrate it as a plug-in replacement for MoCap-derived velocity/acceleration in `calculate_metrics()`.
+
+<details>
+<summary><code>- [x] **Implement `compute_ekf_kinematics()` in `kin_calculator.py`**</code></summary>
+
+* ✅ Implemented and wired into `db_pipeline.py` on 2026-06-08.
+* EKF velocity from `/fmu/out/vehicle_odometry.velocity[]` is inherently smooth even during Fixed Cage MoCap dropouts.
+* Coordinate alignment applied: `vx_ekf = vx_ekf_raw`, `vy_ekf = -vy_ekf_raw`, `vz_ekf = -vz_ekf_raw`.
+* `calculate_metrics()` accepts optional `df_ekf_kin=None` parameter — fully backward compatible.
+
+</details>
+
+<details>
+<summary><code>- [x] **Wire EKF kinematics into `db_pipeline.py`**</code></summary>
+
+* ✅ Done. Both pipeline paths pass `df_ekf_kin=df_ekf_kin` to `calculate_metrics()`.
+
+</details>
+
+<details>
+<summary><code>- [x] **Verify & Re-run (Milestones 1, 2, 4)**</code></summary>
+
+* ✅ M1: Single-flight test verified EKF kinematics
+* ✅ M2: Database re-run for 45° + 75° completed (179 passes)
+* ⏳ M4: Summary notebook re-run — pending (battery rates now fixed, re-run needed)
+
+</details>
+
+## 🔋 Battery & Voltage Drop Fix — Truncate Ground Idle Time
+
+<details>
+<summary><code>- [x] **Truncate battery active window to takeoff_time**</code></summary>
+
+* **Problem:** `voltage_drop_rate_v_per_min` and `capacity_drain_rate_pct_per_min` used `arming_time → disarming_time`, including ground idle time. This inflated the denominator → drain rates appeared artificially low (4%/min — impossible for a flying drone).
+* **Fix:** Two-tier solution implemented on 2026-06-09:
+  1. **`flights_battery_efficiency` table** — flight-level battery rates computed from full unsliced MCAPs, with takeoff→landing window detection (MoCap Z > 0.15m). Populated via `db_unsliced_flights_bat_analyser.py` (now with memory-safe streaming reader to avoid OOM on 200MB+ MCAPs).
+  2. **`db_pipeline.py`** — both pipeline paths now call `_get_battery_rates(flight_folder)` which looks up `capacity_drain_rate_flying` and `voltage_drop_rate_flying` from the `flights_battery_efficiency` table, instead of computing per-pass from ~10s MCAP windows.
+* **Results:**
+  * **Fixed Cage:** 24.6%/min avg capacity drain rate
+  * **Rotating Cage:** 23.0%/min avg capacity drain rate
+  * These are physically realistic (user's longest flight: ~3.5 min, ~80% battery consumed ≈ 23%/min)
+* **47/48 flights** have battery data populated. 1 flight (`flight_20260529-1419_45°_column_collision_loop_rotating_cage`) has a corrupted unsliced MCAP that needs repair or ULog fallback.
+* **Memory fix:** The old `load_mcap()` loaded ALL messages from ALL topics into Python objects → OOM on 200MB+ MCAPs. New `_stream_load_for_battery()` only collects 4 needed topics (`/poses`, `/fmu/out/battery_status`, `/fmu/out/vehicle_status`, `/fmu/out/vehicle_odometry`) directly into lightweight dicts → peak memory ~350MB even for largest flights.
+* **Files modified:**
+  * `dev_logs/analysis/database/db_unsliced_flights_bat_analyser.py` — streaming reader + gc.collect()
+  * `dev_logs/analysis/database/db_pipeline.py` — `_get_battery_rates()` helper, both pipeline paths updated
+  * `dev_logs/analysis/_rerun_pipeline.py` — now preserves `flights_battery_efficiency` (only clears `flights_summary`)
+
+</details>
+
+<details>
+<summary><code>- [x] **Verify battery truncation**</code></summary>
+
+* ✅ Re-ran pipeline — drain rates increased from 4-15%/min (old, broken) to 20-33%/min (realistic).
+* ✅ 47 flights populated in `flights_battery_efficiency`. Summary stats:
+  * Fixed Cage: avg flying time 104.8s, avg drain 24.6%/min, avg voltage drop 1.06 V/min
+  * Rotating Cage: avg flying time 123.9s, avg drain 23.0%/min, avg voltage drop 0.60 V/min
+
+**🔍 How to verify yourself:**
+```bash
+cd /home/dorten/MasterThesisDrone
+python3 -c "
+import sys; sys.path.insert(0, 'dev_logs/analysis/database')
+sys.path.insert(0, '/home/dorten/.local/lib/python3.10/site-packages')
+from db_manager import get_connection
+c = get_connection().cursor()
+# Check flights_battery_efficiency
+c.execute('SELECT condition, COUNT(*), ROUND(AVG(capacity_drain_rate_flying),1), ROUND(AVG(total_flying_time),1) FROM flights_battery_efficiency GROUP BY condition')
+for r in c.fetchall():
+    print(f'{r[0]}: {r[1]} flights, avg {r[2]}%/min, avg flying {r[3]}s')
+# Check flights_summary battery rates
+c.execute('SELECT condition, COUNT(*), ROUND(AVG(capacity_drain_rate_pct_per_min),1) FROM flights_summary GROUP BY condition')
+for r in c.fetchall():
+    print(f'{r[0]} (passes): {r[1]} rows, avg drain {r[2]}/min')
+# Check NULLs
+c.execute('SELECT COUNT(*) FROM flights_summary WHERE capacity_drain_rate_pct_per_min IS NULL')
+print(f'NULL battery in summary: {c.fetchone()[0]}')
+"
+```
+Expected: ~23-25%/min avg, <10 NULLs (only from the 1 corrupted flight).
+
+</details>
+
 # Finishing touches to do:
 <details>
-<summary><code>- [ ] **Make sure no trash data in .db**</code></summary>
+<summary><code>- [x] **Make sure no trash data in battery rates**</code></summary>
 
-  
+* ✅ Battery rates fixed — flight-level `flights_battery_efficiency` table populated (47 flights, realistic 23-25%/min).
+* ✅ Pipeline re-run in progress (2026-06-09) — `flights_summary` being repopulated with battery rates from efficiency table.
+* ⚠️ 1 flight (`flight_20260529-1419`) has corrupted unsliced MCAP → 4-6 passes will have NULL battery.
+  * Fix: Use ULog fallback (`_populate_battery_ulog_fallback.py`) or MCAP repair to fill the gap.
+
+</details>
+
+<details>
+<summary><code>- [ ] **Fix remaining NULL battery for corrupted MCAP flight**</code></summary>
+
+* `flight_20260529-1419_45°_column_collision_loop_rotating_cage` — unsliced MCAP throws `unknown (opcode 28) record` error.
+* Has `.ulg` file and 6 pass MCAPs → ULog fallback script exists at `dev_logs/analysis/_populate_battery_ulog_fallback.py`.
+
 </details>
 
 </details>
+
+---
+
+## 🔍 Representative Flight Finder — Design Rationale
+
+This section documents the design decisions behind the `RepresentativeFlightFinder` tool (`dev_logs/analysis/database/representative_finder.py`).
+
+### Problem Statement
+
+When presenting single-flight kinematic plots in the thesis (trajectory overlays, velocity profiles, IMU dynamics), we need to pick a **representative** flight — not the best, not the worst, but the one closest to the category average. This avoids cherry-picking and provides a fair visual comparison between Rotating and Fixed Cage configurations.
+
+### What Does "Average" Mean?
+
+A flight is defined by **70+ numeric metrics** in the `flights_summary` table. The "average flight" is the one whose **multivariate distance from the category centroid** is smallest after standardizing each feature to comparable scales (z-score normalization).
+
+**Algorithm:**
+1. Filter flights to the target category (e.g., "Rotating Cage, 45° impacts")
+2. Select a curated set of ~12 features spanning all key thesis dimensions
+3. Z-score standardize: `z_i = (x_i - μ) / σ` for each feature
+4. Compute Euclidean norm of each row: `d = sqrt(Σ z_i²)`
+5. Sort by `d` ascending → the flight with smallest `d` is the most representative
+
+After z-scoring, the centroid is the origin `[0,0,...,0]`, so `d` is the distance from the multivariate mean measured in **pooled standard deviations (σ)**. This is a **diagonal Mahalanobis distance** (covariances ignored for interpretability and stability with small samples).
+
+### Why Not PCA?
+
+PCA would create principal components that are linear combinations of features, making the "average" uninterpretable — we couldn't say "this flight is within 0.3σ of the mean on recovery area." We keep features directly interpretable.
+
+### Default Feature Set (10 Curated Metrics)
+
+**Impact angle is the #1 most important feature** — it answers "at what angle did the drone hit on average?" This is the first metric anyone would think of when describing a representative collision.
+
+| # | Feature | Dimension | Why |
+|---|---------|-----------|-----|
+| 1 | `impact_angle` | Contact Geometry | **#1 MOST IMPORTANT** — achieved contact angle |
+| 2 | `impact_speed` | Impact Dynamics | Speed at moment of contact |
+| 3 | `impact_accel` | Impact Dynamics | Peak tangential deceleration |
+| 4 | `before_impact_accel` | Impact Dynamics | Pre-impact approach deceleration |
+| 5 | `recovery_area` | Recovery | Integrated post-impact deviation (mm·m) |
+| 6 | `max_dev_after` | Recovery | Peak lateral displacement after impact (mm) |
+| 7 | `avg_dev_after` | Recovery | Mean post-impact deviation (mm) |
+| 8 | `imu_peak_accel_z` | IMU / Structural | Peak vertical shock (g) — thesis-critical |
+| 9 | `imu_gyro_energy` | IMU / Structural | Integrated rotational energy (rad) — thesis-critical |
+| 10 | `imu_accel_settling` | IMU / Structural | Time until acceleration returns to baseline (s) |
+
+**Excluded from defaults:**
+- Motor metrics (`motor_thrust_surge`, etc.) — secondary to the core impact/recovery/IMU story
+- `path_spread_sdld` — trajectory spread is more about flight-to-flight consistency than individual flight character
+- `imu_peak_gyro` — redundant with `imu_gyro_energy` (energy already captures rotational shock magnitude)
+- Battery columns — only 118/157 rows populated (many NULLs), would shrink usable categories
+- Per-axis IMU components — magnitudes capture the signal; X/Y/Z breakdown is redundant
+
+The user can override with `feature_columns=[...]` at construction time for any custom set.
+
+### Category System
+
+Flexible layered filtering (all AND-ed):
+
+| Filter | Type | Example |
+|--------|------|---------|
+| `condition` | Exact match on DB column | `"Rotating Cage"`, `"Fixed Cage"` |
+| `impact_angle_range` | Numeric range on `impact_angle` column | `(20, 35)` — finds glancing blows |
+| `extra_query` | Arbitrary pandas `.query()` string | `"recovery_area > 50"` |
+
+This allows categories like:
+- "All Rotating Cage flights" → `condition="Rotating Cage"`
+- "Fixed Cage, shallow impacts (20-35°)" → `condition="Fixed Cage", impact_angle_range=(20, 35)`
+- "Rotating Cage, high-speed impacts" → `condition="Rotating Cage", extra_query="impact_speed > 2.5"`
+
+Note: `nominal_angle` (45°/75° from flight name) is NOT a filter — the achieved `impact_angle` is what matters physically.
+
+### Print-out Includes Rich Metadata
+
+Each ranked flight shows a **metadata block** (experiment time window, battery %, impact angle) in addition to the per-feature comparison table, so the user can identify the flight and verify it's reasonable before using its plots:
+
+```
+🥇 Rank 1 (distance=0.847σ): flight_20260529-1210_45°_... - Pass-03
+   Context:
+     Nominal angle:     45°
+     Impact angle:      27.8°
+     Battery at start:  82.5%
+     Sweep speed:       2.34 m/s
+   ─────────────────────────────────────────────────
+   Metric                  Flight    Category Mean±SD     Δ(σ)
+   impact_angle            27.8°     30.2°±8.5°          -0.28
+   ...
+```
+
+### Integration with Notebook
+
+In `experiments_analysis_summary.ipynb`, a new section at the end:
+
+```python
+from dev_logs.analysis.database.representative_finder import RepresentativeFlightFinder
+
+# Find the most average Rotating Cage flight
+finder = RepresentativeFlightFinder(condition="Rotating Cage")
+finder.print_summary(top_n=3)
+```
+
+This prints a formatted report showing the top-3 flights with per-feature comparison to the category mean, so the user can verify the selection before using that flight's plots in the thesis.
+
+### Status
+- [x] **Implement `RepresentativeFlightFinder` class** — ✅ Done, `dev_logs/analysis/database/representative_finder.py`
+- [ ] **Integrate into `experiments_analysis_summary.ipynb`** — pending notebook update

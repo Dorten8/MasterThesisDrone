@@ -128,14 +128,18 @@ def build_dataframes(topic_data, drone_tracker_name, bag_start_ns):
         })
     df_bat = pd.DataFrame(bat_list)
 
-    # Odom (EKF)
+    # Odom (EKF) — position + velocity
     odom_list = []
     for m in odom_msgs:
         odom_list.append({
             't': to_rel_time(m.log_time_ns),
             'x_ekf': m.ros_msg.position[0],
             'y_ekf': -m.ros_msg.position[1],
-            'z_ekf': -m.ros_msg.position[2]
+            'z_ekf': -m.ros_msg.position[2],
+            # EKF velocity (raw NED — coordinate alignment applied downstream)
+            'vx_ekf_raw': m.ros_msg.velocity[0],
+            'vy_ekf_raw': m.ros_msg.velocity[1],
+            'vz_ekf_raw': m.ros_msg.velocity[2]
         })
     df_odom = pd.DataFrame(odom_list)
 

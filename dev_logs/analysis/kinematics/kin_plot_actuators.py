@@ -139,7 +139,8 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
     ax3.legend(lines + lines2, labels_lines + labels2, loc='upper left')
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    if output_path is not None:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
     if show_plot:
         plt.show()
     plt.close()
@@ -250,8 +251,9 @@ def plot_control_allocator_saturation(ulg_path, offset_sec, bag_start_ns, wp_eve
         a.set_xlim(t_min, t_max)
 
     plt.tight_layout()
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    if output_path is not None:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
     if show_plot:
         plt.show()
     plt.close()
@@ -343,8 +345,9 @@ def plot_pid_rate_tracking(ulg_path, offset_sec, bag_start_ns, wp_events, flight
         a.set_xlim(t_min, t_max)
 
     plt.tight_layout()
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    if output_path is not None:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
     if show_plot:
         plt.show()
     plt.close()

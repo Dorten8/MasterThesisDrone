@@ -3,14 +3,14 @@ import os
 import glob
 import re
 import datetime
+import gc
 import numpy as np
 import pandas as pd
 
 # Self-healing path boilerplate for Python package discovery
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../" if "__file__" in locals() or "__file__" in globals() else "")))
 
-from dev_logs.analysis.database.db_loader import load_drone_metadata, build_dataframes
-from dev_logs.analysis.database.db_mcap_event_segmenter import try_load_mcap
+from dev_logs.analysis.database.db_loader import load_drone_metadata
 from dev_logs.analysis.database.db_manager import insert_or_replace_battery_efficiency, get_connection, init_db
 
 def _infer_condition(folder_name):
@@ -20,6 +20,97 @@ def _infer_condition(folder_name):
     elif "fixed" in name:
         return "Fixed Cage"
     return "Unknown"
+
+def _stream_load_for_battery(mcap_path, drone_tracker_name):
+    """Memory-safe streaming MCAP reader: only collects the 4 topics needed for
+    battery analysis directly into lightweight lists, then builds DataFrames.
+
+    A full unsliced MCAP (200MB+) can hold 1M+ messages across dozens of topics.
+    Loading every message into Python objects triggers OOM on machines with <32GB RAM.
+    By filtering to just battery/poses/status/odom and building DataFrames inline,
+    peak memory stays under ~300MB even for the largest flights.
+    """
+    from mcap_ros2.reader import read_ros2_messages
+
+    NEEDED_TOPICS = [
+        '/poses',
+        '/fmu/out/battery_status',
+        '/fmu/out/vehicle_status',
+        '/fmu/out/vehicle_odometry',
+    ]
+
+    bag_start_ns = None
+    pose_rows = []         # {t, x, y, z}
+    bat_rows = []          # {t, voltage, remaining}
+    odom_rows = []         # {t, x_ekf, y_ekf, z_ekf, vx_ekf_raw, vy_ekf_raw, vz_ekf_raw}
+    arming_time = None
+    disarming_time = None
+
+    for msg in read_ros2_messages(mcap_path, topics=NEEDED_TOPICS):
+        if bag_start_ns is None:
+            bag_start_ns = msg.log_time_ns
+
+        t_rel = (msg.log_time_ns - bag_start_ns) * 1e-9
+        topic = msg.channel.topic
+
+        if topic == '/poses':
+            for p in msg.ros_msg.poses:
+                if p.name.lower() == drone_tracker_name.lower():
+                    pose_rows.append({'t': t_rel, 'x': p.pose.position.x,
+                                      'y': p.pose.position.y, 'z': p.pose.position.z})
+                    break
+        elif topic == '/fmu/out/battery_status':
+            bat_rows.append({'t': t_rel, 'voltage': msg.ros_msg.voltage_v,
+                             'remaining': msg.ros_msg.remaining * 100.0})
+        elif topic == '/fmu/out/vehicle_status':
+            if msg.ros_msg.arming_state == 2 and arming_time is None:
+                arming_time = t_rel
+            elif msg.ros_msg.arming_state == 1 and arming_time is not None and disarming_time is None:
+                disarming_time = t_rel
+        elif topic == '/fmu/out/vehicle_odometry':
+            odom_rows.append({'t': t_rel,
+                              'x_ekf': msg.ros_msg.position[0],
+                              'y_ekf': -msg.ros_msg.position[1],
+                              'z_ekf': -msg.ros_msg.position[2],
+                              'vx_ekf_raw': msg.ros_msg.velocity[0],
+                              'vy_ekf_raw': msg.ros_msg.velocity[1],
+                              'vz_ekf_raw': msg.ros_msg.velocity[2]})
+
+    # Build DataFrames
+    df_mocap = pd.DataFrame(pose_rows)
+    if not df_mocap.empty:
+        df_mocap = df_mocap.drop_duplicates(subset=['t']).sort_values('t').reset_index(drop=True)
+
+    df_bat = pd.DataFrame(bat_rows)
+    df_odom = pd.DataFrame(odom_rows)
+
+    if arming_time is None:
+        arming_time = 0.0
+
+    # Compute EKF-to-MoCap alignment offset (same logic as build_dataframes)
+    transform_offset_x = 0.0
+    transform_offset_y = 0.0
+    if not df_mocap.empty and not df_odom.empty:
+        df_merged = pd.merge_asof(
+            df_mocap[['t', 'x', 'y']].sort_values('t'),
+            df_odom[['t', 'x_ekf', 'y_ekf']].sort_values('t'),
+            on='t', direction='nearest'
+        )
+        if not df_merged.empty:
+            transform_offset_x = (df_merged['x_ekf'] - df_merged['x']).median()
+            transform_offset_y = (-df_merged['y_ekf'] + df_merged['y']).median()
+
+    return {
+        'df_mocap': df_mocap,
+        'df_bat': df_bat,
+        'df_odom': df_odom,
+        'arming_time': arming_time,
+        'disarming_time': disarming_time,
+        'transform_offset_x': transform_offset_x,
+        'transform_offset_y': transform_offset_y,
+        'bag_start_ns': bag_start_ns,
+    }
+
 
 def get_battery_floats(df_bat, t_query):
     """Helper to find nearest voltage and SOC % at t_query."""
@@ -101,14 +192,13 @@ def main(force_recompute=False):
             
         print(f"🔄 Processing unsliced flight: {flight_name}")
         try:
-            topic_data, bag_start_ns, _ = try_load_mcap(os.path.dirname(mcap_path))
-            dfs = build_dataframes(topic_data, drone_tracker_name, bag_start_ns)
-            
-            df_mocap = dfs['mocap']
-            df_bat = dfs['battery']
-            df_odom = dfs['odom']
-            df_imu = dfs.get('imu', pd.DataFrame())
-            
+            # 🧠 Memory-safe streaming load: only 4 topics, no full-message-object storage
+            stream = _stream_load_for_battery(mcap_path, drone_tracker_name)
+
+            df_mocap = stream['df_mocap']
+            df_bat = stream['df_bat']
+            df_odom = stream['df_odom']
+
             # 2. Determine Log boundaries
             max_t = 0.0
             if not df_bat.empty:
@@ -117,13 +207,11 @@ def main(force_recompute=False):
                 max_t = max(max_t, df_mocap['t'].max())
             if not df_odom.empty:
                 max_t = max(max_t, df_odom['t'].max())
-            if not df_imu.empty:
-                max_t = max(max_t, df_imu['t'].max())
             log_duration = max_t if max_t > 0 else 60.0
-            
+
             # 3. Determine Arm/Disarm relative times
-            arming_time = dfs.get('arming_time', 0.0)
-            disarming_time = dfs.get('disarming_time')
+            arming_time = stream.get('arming_time', 0.0)
+            disarming_time = stream.get('disarming_time')
             if disarming_time is None:
                 # Fallback to log end time if disarm message was truncated or not caught
                 disarming_time = log_duration
@@ -239,6 +327,9 @@ def main(force_recompute=False):
             print(f"   ❌ Error processing {flight_name}: {e}")
             import traceback; traceback.print_exc()
             error_count += 1
+        finally:
+            # Force garbage collection between flights to keep memory footprint low
+            gc.collect()
             
     print(f"\n📦 SQLite Processing complete: {inserted_count} processed/inserted, {skipped_count} skipped, {error_count} errors.")
     
