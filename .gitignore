@@ -19,3 +19,23 @@ dev_logs/analysis/*_dump.txt
 graphics/
 
 
+
+# LaTeX build artifacts
+thesis/main.aux
+thesis/main.bbl
+thesis/main.blg
+thesis/main.fdb_latexmk
+thesis/main.fls
+thesis/main.log
+thesis/main.out
+thesis/main.toc
+*.synctex.gz
+
+# Desktop trash
+.Trash-*
+
+# Accidental root log
+texput.log
+
+# Generated A3 PDF
+dev_logs/scratch/all_passes_a3.pdf

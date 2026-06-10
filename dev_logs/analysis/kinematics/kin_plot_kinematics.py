@@ -11,9 +11,9 @@ def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False,
     """Draws perfectly aligned, standard timeline event markers on the given axis (General Plot Rule 6)."""
     y_min, y_max = y_lims
     
-    t_start = wp_events.get('WP1')
+    esp_time = wp_events.get('WP2')   # refined experiment start (actual forward movement)
     t_impact = wp_events.get('Column Impact')
-    t_end = wp_events.get('WP4')
+    eep_time = wp_events.get('WP3')   # experiment end (sweep end achievement)
     t_passed = wp_events.get('Column Center Passed') or wp_events.get('Column Passed')
     
     # Draw Shared Impact Window Shading (General Plot Rule 7 / SSoT)
@@ -22,15 +22,15 @@ def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False,
         ax.axvspan(t_rel_impact - 0.05, t_rel_impact + 0.35, color='#D62728', alpha=0.10, zorder=3)
         
     events = []
-    if t_start is not None:
-        events.append(('Exp. Start-point', t_start, '#9467BD', ':', 1.8, '#444444'))
+    if esp_time is not None:
+        events.append(('Exp. Start-point', esp_time, '#9467BD', ':', 1.8, '#444444'))
     if t_passed is not None:
         events.append(('Column Center Passed', t_passed, '#FF9900', '--', 1.8, '#995C00'))
     if t_impact is not None:
         angle_str = f" ({achieved_angle:.1f}°)" if achieved_angle is not None else ""
         events.append((f'Impact{angle_str}', t_impact, '#D62728', '-.', 2.5, '#7F0000'))
-    if t_end is not None:
-        events.append(('Exp. End-point', t_end, '#9467BD', ':', 1.8, '#444444'))
+    if eep_time is not None:
+        events.append(('Exp. End-point', eep_time, '#9467BD', ':', 1.8, '#444444'))
         
     for idx, (name, t_abs, color, style, width, text_color) in enumerate(events):
         t_val = t_abs if is_absolute else (t_abs - arming_time)
@@ -57,20 +57,20 @@ def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False,
                     color=text_color, bbox=dict(facecolor='white', alpha=0.90, edgecolor=color, pad=1.5), zorder=6)
 
 def get_timeline_limits(wp_events, arming_time, df_t, is_absolute=False):
-    """Calculates the strict [T_start - 1.0s, T_end + 1.0s] display limits (General Plot Rule 3 / SSoT)."""
-    t_start = wp_events.get('WP1')
-    t_end = wp_events.get('WP4')
-    
+    """Calculates the strict [exp_start - 1.0s, exp_end + 1.0s] display limits (General Plot Rule 3 / SSoT)."""
+    esp_time = wp_events.get('WP2')   # experiment start point (refined forward movement)
+    eep_time = wp_events.get('WP3')   # experiment end point (sweep end achievement)
+
     if is_absolute:
         t_min = df_t.min() if not df_t.empty else 0.0
         t_max = df_t.max() if not df_t.empty else 20.0
-        crop_min = max(t_min, t_start - 1.0) if t_start is not None else t_min
-        crop_max = min(t_max, t_end + 1.0) if t_end is not None else t_max
+        crop_min = max(t_min, esp_time - 1.0) if esp_time is not None else t_min
+        crop_max = min(t_max, eep_time + 1.0) if eep_time is not None else t_max
     else:
         t_max_rel = (df_t.max() - arming_time) if not df_t.empty else 20.0
-        crop_min = max(0.0, (t_start - arming_time) - 1.0) if t_start is not None else 0.0
-        crop_max = (t_end - arming_time) + 1.0 if t_end is not None else t_max_rel
-        
+        crop_min = max(0.0, (esp_time - arming_time) - 1.0) if esp_time is not None else 0.0
+        crop_max = (eep_time - arming_time) + 1.0 if eep_time is not None else t_max_rel
+
     return crop_min, crop_max
 
 def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, ax=None, label="", flight_name=None, achieved_angle=None, mocap_rate=240.0, condition=None, output_path=None, show_plot=True, df_raw=None, is_raw=False):
@@ -146,17 +146,14 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         ax_vel.hlines(y=avg_v, xmin=t_p, xmax=t_c, colors='#2CA02C', linestyles='--', linewidth=2.0, label=lbl)
         has_avg_legend = True
 
-    y_max_vel = df_plot['speed'].max() if not df_plot.empty else 1.0
-    if np.isnan(y_max_vel) or y_max_vel <= 0:
-        y_max_vel = 1.0
-
     ax_vel.set_ylabel('Velocity (m/s)')
-    ax_vel.set_ylim(-0.05, y_max_vel * 1.15)
+    ax_vel.set_ylim(-0.05, 1.25)
+    ax_vel.set_yticks(np.arange(0, 1.3, 0.2))
     ax_vel.legend(loc='upper right', frameon=True, facecolor='white', edgecolor='#EAEAEA')
     ax_vel.grid(True)
 
     cond_suffix = f" <{condition}>" if condition else ""
-    ax_vel.set_title(f'Flight Kinetic Profile: Filtered Velocity & Event Timeline{cond_suffix}', pad=15)
+    ax_vel.set_title(f'Flight Kinetic Profile: Filtered Velocity & Event Timeline{cond_suffix}', pad=15, fontweight='bold')
 
     # ---------------- 2. Middle Panel: continuous tangential acceleration ----------------
     if ax_acc is not None:
@@ -261,7 +258,7 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         ax_vel.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
 
     # Draw timeline markers. Draw labels only on top plot to prevent overlapping text labels.
-    draw_timeline_markers(ax_vel, wp_events, arming_time, (-0.05, y_max_vel * 1.15), is_absolute=False, achieved_angle=achieved_angle, draw_labels=True)
+    draw_timeline_markers(ax_vel, wp_events, arming_time, (-0.05, 1.25), is_absolute=False, achieved_angle=achieved_angle, draw_labels=True)
     if ax_acc is not None:
         draw_timeline_markers(ax_acc, wp_events, arming_time, (-12.0, 12.0), is_absolute=False, achieved_angle=achieved_angle, draw_labels=False)
     if ax_rate is not None:
@@ -323,7 +320,7 @@ def plot_battery_sag(df_bat, takeoff_time, wp_events, arming_time, label="", fli
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2, loc='lower left')
     
-    ax1.set_title(f'6S LiPo Dynamic Battery Depletion & Motor Load Sag Profile ({label})')
+    ax1.set_title(f'6S LiPo Dynamic Battery Depletion & Motor Load Sag Profile <{label}>', fontweight='bold')
     ax1.grid(True)
 
     # Draw standard timeline markers on Battery plot (relative time)
@@ -407,7 +404,8 @@ def plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_ti
     ax2.plot(t_rel, df_plot['g_mag'], color='#1F77B4', linestyle='-.', alpha=0.7, label='Gyro Rotational Surge (rad/s)')
     ax2.set_ylabel('Gyro Magnitude (rad/s)', color='#1F77B4')
     ax2.tick_params(axis='y', labelcolor='#1F77B4')
-    ax2.set_ylim(0, max(10.0, df_plot['g_mag'].max() * 1.1) if not df_plot.empty else 10.0)
+    ax2.set_ylim(0, 10)
+    ax2.set_yticks(np.arange(0, 11, 1))
     
     # Combine legends - keep upper right but shift slightly left to prevent interference with final marker line
     lines1, labels1 = ax1.get_legend_handles_labels()
@@ -417,7 +415,7 @@ def plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_ti
     cond_str = label
     if cond_str and not cond_str.startswith('<'):
         cond_str = f"<{cond_str}>"
-    ax1.set_title(f'IMU Collision Dynamic {cond_str}', fontsize=12)
+    ax1.set_title(f'IMU Collision Dynamic {cond_str}', fontsize=12, fontweight='bold')
     ax1.grid(True)
 
     # Draw standard timeline markers (relative time)
@@ -502,7 +500,16 @@ def plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarm
         ax_gyr.set_ylabel(gyro_lbl, color=c_gyr)
         ax_gyr.tick_params(axis='y', labelcolor=c_gyr)
         
-        ax_gyr.set_ylim(df_plot[g_col].min() - 0.5, df_plot[g_col].max() + 0.5)
+        # Gyro Y-limits — fixed per axis for visual consistency across flights
+        if i == 0:      # X-Axis (Lateral / Roll)
+            ax_gyr.set_ylim(-1.5, 1.5)
+            ax_gyr.set_yticks(np.arange(-1.5, 1.6, 0.5))
+        elif i == 1:    # Y-Axis (Longitudinal / Pitch)
+            ax_gyr.set_ylim(-1.5, 1.5)
+            ax_gyr.set_yticks(np.arange(-1.5, 1.6, 0.5))
+        else:           # Z-Axis (Vertical / Yaw/Heave)
+            ax_gyr.set_ylim(-1.0, 5.0)
+            ax_gyr.set_yticks(np.arange(-1.0, 5.1, 1.0))
 
         # Draw standard timeline markers (relative time). Draw labels only on top plot (index 0) to prevent text collision.
         draw_timeline_markers(ax, wp_events, arming_time, (y_min, y_max), is_absolute=False, achieved_angle=achieved_angle, draw_labels=(i == 0), label_pos='bottom')
@@ -527,7 +534,7 @@ def plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarm
                      ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
                      bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA', boxstyle='round,pad=0.2'))
     
-    fig.suptitle(f'Raw IMU X/Y/Z Components ({label})\n[X = Lateral/Roll, Y = Longitudinal/Pitch, Z = Vertical/Yaw]', fontsize=14, y=0.98)
+    fig.suptitle(f'Raw IMU X/Y/Z Components <{label}>\n[X = Lateral/Roll, Y = Longitudinal/Pitch, Z = Vertical/Yaw]', fontsize=14, fontweight='bold', y=0.98)
     
     plt.tight_layout()
     if output_path:
@@ -537,4 +544,121 @@ def plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarm
     if show_plot:
         plt.show()
     plt.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  EKF Kinetic Profile (2-panel: EKF velocity + tangential accel, no MoCap rate)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def plot_ekf_kinetic_profile(ekf_t, ekf_speed, ekf_rate, df_mocap, wp_events,
+                              arming_time, flight_name="", condition="",
+                              achieved_angle=None, output_path=None,
+                              show_plot=True):
+    """2-panel EKF-based kinetic profile: velocity + tangential accel.
+
+    Parameters
+    ----------
+    ekf_t : np.ndarray
+        Time array (seconds, aligned to arming=0 via ``ekf_t - arming_time``).
+    ekf_speed : np.ndarray
+        Speed magnitude array (m/s), same length as *ekf_t*.
+    ekf_rate : float
+        EKF update rate (Hz) — shown in the completion printout.
+    df_mocap : pd.DataFrame
+        MoCap DataFrame (used only for timeline limit computation).
+    wp_events : dict
+        Waypoint events dict (from :func:`find_waypoint_events`).
+    arming_time : float
+        System arming timestamp for relative time conversion.
+    flight_name, condition : str
+        Plot metadata.
+    achieved_angle : float or None
+        Impact angle for marker annotation.
+    output_path : str or None
+        Save to file if set.
+    show_plot : bool
+        Display interactively if True (default).
+    """
+    if len(ekf_t) < 2 or len(ekf_speed) < 2:
+        print("[WARN] EKF data too short, skipping EKF kinetic profile.")
+        return
+
+    # ── Tangential acceleration via finite difference ──
+    t_rel = ekf_t - arming_time
+    accel = np.gradient(ekf_speed, ekf_t)
+
+    # ── Timeline limits ──
+    t_min_crop, t_max_crop = get_timeline_limits(
+        wp_events, arming_time, df_mocap["t"], is_absolute=False
+    )
+    duration = t_max_crop - t_min_crop
+    fig_width = max(6.0, duration * 1.5)
+
+    fig, (ax_vel, ax_acc) = plt.subplots(
+        2, 1, figsize=(fig_width, 8), sharex=True,
+        gridspec_kw={"height_ratios": [2.5, 2.5]},
+    )
+
+    cond_suffix = f" <{condition}>" if condition else ""
+    fig.suptitle(
+        f"Flight Kinetic Profile: EKF Velocity & Tangential Accel{cond_suffix}",
+        fontsize=13, fontweight="bold", y=0.98,
+    )
+
+    # ── Top panel: EKF velocity (fixed 0-1.2 m/s, ticks every 0.2) ──
+    ax_vel.plot(t_rel, ekf_speed, color=C_MOCAP, linewidth=2.2,
+                label="EKF Velocity (vehicle_odometry)")
+    ax_vel.set_ylabel("Velocity (m/s)")
+    ax_vel.set_ylim(-0.05, 1.25)
+    ax_vel.set_yticks(np.arange(0, 1.3, 0.2))
+    ax_vel.legend(loc="upper right", frameon=True, facecolor="white",
+                  edgecolor="#EAEAEA")
+    ax_vel.grid(True)
+
+    # ── Bottom panel: tangential acceleration (fixed ±12 m/s², ticks every 4) ──
+    ax_acc.fill_between(t_rel, accel, 0,
+                        where=(accel >= 0),
+                        color="#2CA02C", alpha=0.18, label="_nolegend_")
+    ax_acc.fill_between(t_rel, accel, 0,
+                        where=(accel < 0),
+                        color="#D62728", alpha=0.18, label="_nolegend_")
+    ax_acc.plot(t_rel, accel, color="#D62728", linewidth=1.8,
+                label="Tangential Acceleration (m/s²)")
+    ax_acc.axhline(0.0, color="black", linewidth=1.6, linestyle="-", zorder=5,
+                   label="Zero Acceleration (Steady State)")
+    ax_acc.set_ylim(-12.0, 12.0)
+    ax_acc.set_yticks(np.arange(-12.0, 12.1, 4.0))
+    ax_acc.set_ylabel("Tangential Accel (m/s²)\n← Decel | Accel →")
+    ax_acc.legend(loc="upper right", frameon=True, facecolor="white",
+                  edgecolor="#EAEAEA")
+    ax_acc.set_xlabel("Time Since Arming (seconds)")
+    ax_acc.grid(True)
+
+    # ── Timeline markers + 1.0s ticks ──
+    ax_vel.set_xlim(t_min_crop, t_max_crop)
+    ax_vel.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
+    draw_timeline_markers(ax_vel, wp_events, arming_time,
+                          (-0.05, 1.25), is_absolute=False,
+                          achieved_angle=achieved_angle, draw_labels=True)
+    draw_timeline_markers(ax_acc, wp_events, arming_time,
+                          (-12.0, 12.0), is_absolute=False,
+                          achieved_angle=achieved_angle, draw_labels=False)
+
+    # Data origin label (bottom-right)
+    if flight_name:
+        ax_acc.text(0.98, 0.02, f"{flight_name}",
+                    transform=ax_acc.transAxes,
+                    ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                    bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
+                              boxstyle='round,pad=0.2'))
+
+    plt.tight_layout()
+    if output_path:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path, dpi=300)
+        print(f"[INFO] EKF kinetic profile saved to: {output_path}")
+    if show_plot:
+        plt.show()
+    plt.close()
+    print(f"✅ EKF kinetic profile — EKF rate ≈ {ekf_rate:.0f} Hz")
 

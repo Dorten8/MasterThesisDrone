@@ -16,12 +16,18 @@ DB_PATH = os.path.abspath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "experiments_summary.db"))
 FLIGHTS_DIR = os.path.join(PROJECT_ROOT, "dev_logs", "flights")
 
+# Import SSoT cutoff from db_manager
+from dev_logs.analysis.database.db_manager import is_approved_flight
+
 # ── 1. Discover flights (match _45°_ and _75°_ precisely) ──────────
 rotating_45, fixed_45 = [], []
 rotating_75, fixed_75 = [], []
 
 for folder in sorted(os.listdir(FLIGHTS_DIR)):
     if not folder.startswith("flight_"):
+        continue
+    # ── Gate: approved date cutoff (SSoT from db_manager) ──
+    if not is_approved_flight(folder):
         continue
     name_lower = folder.lower()
     if "rotating" in name_lower:

@@ -37,10 +37,11 @@ if current_dir not in sys.path:
 
 from dev_logs.analysis.database.db_loader import load_drone_metadata, load_mcap, build_dataframes
 from dev_logs.analysis.kinematics.kin_calculator import compute_velocity, find_waypoint_events
+from dev_logs.analysis.database.db_manager import APPROVED_CUTOFF, is_approved_flight
 
 # ── Approved flight cutoff ────────────────────────────────────────────────────
-# Only flights with a timestamp >= this value (YYYYMMDD-HHMM) are eligible.
-APPROVED_CUTOFF = "20260524-1904"
+# SSoT lives in db_manager.py — imported above. Local _is_approved() kept as
+# a thin wrapper for backward compatibility within this module only.
 
 
 def _flight_timestamp(folder_name):
@@ -50,11 +51,9 @@ def _flight_timestamp(folder_name):
 
 
 def _is_approved(folder_name):
-    """Returns True if the flight is at or after the approved cutoff."""
-    ts = _flight_timestamp(folder_name)
-    if ts is None:
-        return False
-    return ts >= APPROVED_CUTOFF
+    """Returns True if the flight is at or after the approved cutoff.
+    Delegates to the SSoT function in db_manager."""
+    return is_approved_flight(folder_name)
 
 
 def repair_mcap(source_path):

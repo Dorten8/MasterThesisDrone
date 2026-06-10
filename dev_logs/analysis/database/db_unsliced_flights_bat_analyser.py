@@ -11,7 +11,7 @@ import pandas as pd
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../" if "__file__" in locals() or "__file__" in globals() else "")))
 
 from dev_logs.analysis.database.db_loader import load_drone_metadata
-from dev_logs.analysis.database.db_manager import insert_or_replace_battery_efficiency, get_connection, init_db
+from dev_logs.analysis.database.db_manager import insert_or_replace_battery_efficiency, get_connection, init_db, is_approved_flight
 
 def _infer_condition(folder_name):
     name = folder_name.lower()
@@ -152,10 +152,14 @@ def main(force_recompute=False):
         repaired = [f for f in unsliced if ".repaired.mcap" in f]
         mcap_path = repaired[0] if repaired else unsliced[0]
         
+        # ── Gate: approved date cutoff (SSoT from db_manager) ──
+        if not is_approved_flight(folder):
+            continue
+
         condition = _infer_condition(folder)
         if condition == "Unknown":
             continue # Skip non-cage or miscellaneous test profiles
-            
+
         all_flights.append({
             'folder': folder,
             'path': mcap_path,

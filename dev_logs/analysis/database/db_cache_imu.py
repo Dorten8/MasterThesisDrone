@@ -88,7 +88,7 @@ def extract_and_cache_imu():
                 continue
                 
             wp_events = wp_events_list[0]
-            impact_t = wp_events.get('WP2')
+            impact_t = wp_events.get('Column Impact') or wp_events.get('WP2')
             if impact_t is None:
                 continue
                 
@@ -101,7 +101,7 @@ def extract_and_cache_imu():
                 print(f"Skipping {flight_name} (No IMU data near impact)")
                 continue
                 
-            # Align the collision timeline to MoCap closest approach (WP2)
+            # Align the collision timeline to MoCap closest approach (Column Impact)
             true_impact_t = impact_t
             
             # Recalculate relative time based on the true high-frequency shock

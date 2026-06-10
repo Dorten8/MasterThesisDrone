@@ -26,6 +26,7 @@ import glob
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 
 from mcap_ros2.reader import read_ros2_messages
 
@@ -45,6 +46,9 @@ from dev_logs.analysis.kinematics.kin_plot_kinematics import (
     plot_battery_sag,
     plot_imu_dynamics,
     plot_imu_xyz_components,
+    draw_timeline_markers,
+    get_timeline_limits,
+    C_MOCAP,
 )
 from dev_logs.analysis.kinematics.kin_plot_actuators import (
     plot_actuators_and_status,
@@ -413,23 +417,29 @@ def plot_ekf_velocity_from(data):
         return
 
     df          = data["df_mocap"]
-    impact_time = data["wp_events"].get("Column Impact")
+    wp_events   = data["wp_events"]
+    arming_time = data["arming_time"]
+    impact_time = wp_events.get("Column Impact")
     cond        = data["condition"]
     name        = data["flight_name"]
 
     fig, axes = plt.subplots(3, 2, figsize=(16, 10),
                              sharex="col", sharey="row")
-    fig.suptitle(f"EKF vs MoCap Velocity — {cond}\n{name}",
+    fig.suptitle(f"EKF vs MoCap Velocity — <{cond}>\n{name}",
                  fontsize=13, fontweight="bold", y=0.98)
 
     for row, (ax_l, ax_r) in enumerate(axes):
         axis  = ["vx", "vy", "vz"][row]
         ylbl  = ["VX (East) [m/s]", "VY (North) [m/s]", "VZ (Up) [m/s]"][row]
 
+        # Fixed Y limits for side-by-side visual consistency
+        ylim = (-0.4, 0.6)
+
         # MoCap (left)
         ax_l.plot(ekf["t"], df[axis].values, "b-", lw=0.8, alpha=0.85,
                   label="MoCap SG")
         ax_l.set_ylabel(ylbl)
+        ax_l.set_ylim(ylim)
         ax_l.set_title(f"MoCap-derived {axis.upper()}", fontsize=11, color="blue")
         ax_l.grid(True, alpha=0.3)
         if impact_time is not None:
@@ -437,6 +447,7 @@ def plot_ekf_velocity_from(data):
 
         # EKF (right)
         ax_r.plot(ekf["t"], ekf[axis], "green", lw=1.0, alpha=0.9, label="EKF")
+        ax_r.set_ylim(ylim)
         ax_r.set_title(f"EKF {axis.upper()} (vehicle_odometry)",
                        fontsize=11, color="green")
         ax_r.grid(True, alpha=0.3)
@@ -454,6 +465,14 @@ def plot_ekf_velocity_from(data):
                     bbox=dict(boxstyle="round,pad=0.2", facecolor="white",
                               alpha=0.7))
 
+    # Timeline limits + 1.0s tick spacing (same standard as all other plots)
+    t_min_crop, t_max_crop = get_timeline_limits(
+        wp_events, arming_time, df["t"], is_absolute=False
+    )
+    for ax in axes[-1, :]:       # bottom row only (sharex propagates upward)
+        ax.set_xlim(t_min_crop, t_max_crop)
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
+
     # ── Speed magnitude subplot ──
     fig_sp, ax_sp = plt.subplots(1, 1, figsize=(14, 4))
     ax_sp.plot(ekf["t"], df["speed"].values, "b-", lw=0.8, alpha=0.7,
@@ -461,6 +480,10 @@ def plot_ekf_velocity_from(data):
     ax_sp.plot(ekf["t"], ekf["speed"], "green", lw=1.2, alpha=0.85,
                label="EKF Speed")
     ax_sp.set_ylabel("Speed [m/s]")
+    ax_sp.set_ylim(-0.05, 1.25)
+    ax_sp.set_yticks(np.arange(0, 1.3, 0.2))
+    ax_sp.set_xlim(t_min_crop, t_max_crop)
+    ax_sp.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
     ax_sp.set_xlabel("Time [s]")
     ax_sp.set_title(f"Speed Comparison — {cond}")
     ax_sp.legend(loc="upper right")
@@ -471,6 +494,33 @@ def plot_ekf_velocity_from(data):
     plt.tight_layout()
     plt.show()
     print(f"✅ EKF velocity done — MoCap rate ≈ {ekf['rate']} Hz")
+
+
+def plot_ekf_kinetic_from(data):
+    """EKF-based kinetic profile: velocity + tangential accel (no MoCap rate panel).
+
+    Thin wrapper that delegates to :func:`plot_ekf_kinetic_profile` in
+    ``kin_plot_kinematics.py`` — extracts arrays from the *data* dict.
+    """
+    ekf = compute_ekf_velocity(data)
+    if ekf is None:
+        return
+
+    from dev_logs.analysis.kinematics.kin_plot_kinematics import (
+        plot_ekf_kinetic_profile,
+    )
+    plot_ekf_kinetic_profile(
+        ekf_t=ekf["t"],
+        ekf_speed=ekf["speed"],
+        ekf_rate=ekf["rate"],
+        df_mocap=data["df_mocap"],
+        wp_events=data["wp_events"],
+        arming_time=data["arming_time"],
+        flight_name=data["flight_name"],
+        condition=data["condition"],
+        achieved_angle=data.get("achieved_angle"),
+        show_plot=True,
+    )
 
 
 def plot_ekf_dual_comparison(rot_data, fix_data):
@@ -488,17 +538,42 @@ def plot_ekf_dual_comparison(rot_data, fix_data):
         fontsize=14, fontweight="bold", y=0.98,
     )
 
+    # ── Timeline limits for each cage (independent, per classic convention) ──
+    t_min_fix, t_max_fix = get_timeline_limits(
+        fix_data["wp_events"], fix_data["arming_time"],
+        fix_data["df_mocap"]["t"], is_absolute=False,
+    )
+    t_min_rot, t_max_rot = get_timeline_limits(
+        rot_data["wp_events"], rot_data["arming_time"],
+        rot_data["df_mocap"]["t"], is_absolute=False,
+    )
+
+    def _flight_label(data, ax):
+        """Add flight name annotation in bottom-right corner."""
+        name = data.get("flight_name", "")
+        if name:
+            ax.text(0.98, 0.02, name,
+                    transform=ax.transAxes,
+                    ha="right", va="bottom", fontsize=8, alpha=0.7, zorder=10,
+                    bbox=dict(facecolor="white", alpha=0.8, edgecolor="#EAEAEA",
+                              boxstyle="round,pad=0.2"))
+
     # ── Speed: Fixed Cage (top-left) ──
     ax = axes[0, 0]
     ax.plot(ekf_fix["t"], fix_data["df_mocap"]["speed"].values,
             "b-", lw=0.8, alpha=0.7, label="MoCap SG")
     ax.plot(ekf_fix["t"], ekf_fix["speed"],
             "green", lw=1.3, alpha=0.9, label="EKF (PX4)")
+    ax.set_ylim(-0.05, 1.25)
+    ax.set_yticks(np.arange(0, 1.3, 0.2))
     ax.set_title(f"Fixed Cage — Representative (MoCap ≈ {ekf_fix['rate']} Hz)",
                  fontsize=12, color="#cc3300")
     ax.set_ylabel("Speed [m/s]")
+    ax.set_xlim(t_min_fix, t_max_fix)
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
     ax.legend(loc="upper right", fontsize=9)
     ax.grid(True, alpha=0.3)
+    _flight_label(fix_data, ax)
 
     # ── Speed: Rotating Cage (top-right) ──
     ax = axes[0, 1]
@@ -506,13 +581,18 @@ def plot_ekf_dual_comparison(rot_data, fix_data):
             "b-", lw=0.8, alpha=0.7, label="MoCap SG")
     ax.plot(ekf_rot["t"], ekf_rot["speed"],
             "green", lw=1.3, alpha=0.9, label="EKF (PX4)")
+    ax.set_ylim(-0.05, 1.25)
+    ax.set_yticks(np.arange(0, 1.3, 0.2))
     ax.set_title(f"Rotating Cage — Representative (MoCap ≈ {ekf_rot['rate']} Hz)",
                  fontsize=12, color="#006600")
     ax.set_ylabel("Speed [m/s]")
+    ax.set_xlim(t_min_rot, t_max_rot)
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
     ax.legend(loc="upper right", fontsize=9)
     ax.grid(True, alpha=0.3)
+    _flight_label(rot_data, ax)
 
-    # ── Per-axis: Fixed Cage (bottom-left) ──
+    # ── Per-axis: Fixed Cage (bottom-left, fixed Y: -0.4 to 0.6) ──
     ax = axes[1, 0]
     ax.plot(ekf_fix["t"], fix_data["df_mocap"]["vx"].values, "b-", lw=0.7,
             alpha=0.6, label="MoCap VX")
@@ -526,12 +606,16 @@ def plot_ekf_dual_comparison(rot_data, fix_data):
             ls="--", label="EKF VY")
     ax.plot(ekf_fix["t"], ekf_fix["vz"], "brown", lw=1.2, alpha=0.85,
             ls=":", label="EKF VZ")
+    ax.set_ylim(-0.4, 0.6)
+    ax.set_xlim(t_min_fix, t_max_fix)
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("Velocity [m/s]")
     ax.legend(loc="upper right", fontsize=7, ncol=2)
     ax.grid(True, alpha=0.3)
+    _flight_label(fix_data, ax)
 
-    # ── Per-axis: Rotating Cage (bottom-right) ──
+    # ── Per-axis: Rotating Cage (bottom-right, fixed Y: -0.4 to 0.6) ──
     ax = axes[1, 1]
     ax.plot(ekf_rot["t"], rot_data["df_mocap"]["vx"].values, "b-", lw=0.7,
             alpha=0.6, label="MoCap VX")
@@ -545,10 +629,14 @@ def plot_ekf_dual_comparison(rot_data, fix_data):
             ls="--", label="EKF VY")
     ax.plot(ekf_rot["t"], ekf_rot["vz"], "brown", lw=1.2, alpha=0.85,
             ls=":", label="EKF VZ")
+    ax.set_ylim(-0.4, 0.6)
+    ax.set_xlim(t_min_rot, t_max_rot)
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("Velocity [m/s]")
     ax.legend(loc="upper right", fontsize=7, ncol=2)
     ax.grid(True, alpha=0.3)
+    _flight_label(rot_data, ax)
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.show()

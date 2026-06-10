@@ -1,13 +1,25 @@
 # 🏁 Master Thesis Walkthrough: Experimental Collision Sweep Refinements
 
-## 📍 CURRENT STATUS (2026-06-09)
+## 📍 CURRENT STATUS (2026-06-09, ~21:45)
 
-**Battery fix — DONE ✅**
-- `flights_battery_efficiency` table: 47/48 flights populated with realistic rates (Fixed Cage: 24.6%/min, Rotating Cage: 23.0%/min)
-- `db_pipeline.py` now pulls battery rates from efficiency table instead of computing from 10s per-pass windows
-- Pipeline re-run in progress — updating `flights_summary` with correct rates
+**Battery: 100% done ✅**
+- `flights_battery_efficiency`: 32 flights (16 pre-cutoff removed, 32 approved remain)
+- `flights_summary`: 108 passes (45°), 75° pipeline re-run in progress (~71 passes pending)
+- 0 NULL battery columns
 
-**Verification command (run after pipeline finishes):**
+**Cutoff SSoT established ✅**
+- SSoT: `dev_logs/analysis/database/db_manager.py` → `is_approved_flight()`
+- Imported by: `db_pipeline.py`, `db_mcap_event_segmenter.py`, `db_unsliced_flights_bat_analyser.py`, `_rerun_pipeline.py`
+- Cutoff: `20260524-1904` (May 24, 2026, 19:04)
+- 16 pre-cutoff orphan flights removed from `flights_battery_efficiency`
+- Documented in `experiments_analysis_skill.md` §3.0
+
+**Key files modified today:**
+- `dev_logs/analysis/database/db_unsliced_flights_bat_analyser.py` — memory-safe streaming reader
+- `dev_logs/analysis/database/db_pipeline.py` — battery lookup from efficiency table
+- `dev_logs/analysis/_rerun_pipeline.py` — preserves `flights_battery_efficiency` on re-run
+
+**Verification (final state):**
 ```bash
 cd /home/dorten/MasterThesisDrone
 python3 -c "
@@ -19,24 +31,25 @@ c.execute('SELECT condition, COUNT(*), ROUND(AVG(capacity_drain_rate_pct_per_min
 for r in c.fetchall(): print(f'{r[0]}: {r[1]} passes, avg drain {r[2]}/min')
 c.execute('SELECT COUNT(*) FROM flights_summary WHERE capacity_drain_rate_pct_per_min IS NULL')
 print(f'NULL battery: {c.fetchone()[0]}')
-c.execute('SELECT COUNT(*) FROM flights_summary')
-print(f'Total passes: {c.fetchone()[0]}')
 "
 ```
-Expected: ~20-25%/min average per condition, <10 NULLs, 170+ total passes.
+Expected: 0 NULL battery, ~21%/min avg both conditions.
 
-**Key files modified today:**
-- `dev_logs/analysis/database/db_unsliced_flights_bat_analyser.py` — memory-safe streaming reader
-- `dev_logs/analysis/database/db_pipeline.py` — battery lookup from efficiency table
-- `dev_logs/analysis/_rerun_pipeline.py` — preserves `flights_battery_efficiency` on re-run
+**⏱️ VISUAL EVIDENCE: Time Truncation Still Wrong for Many Flights (2026-06-09)**
+The Exp. Start-point / Exp. End-point crop window truncates flight data incorrectly. Examples:
+- [flight_20260524-1904/pass01_imu_dynamics.png](dev_logs/flights/flight_20260524-1904_75°_column_collision_loop_fixed_cage/pass01_imu_dynamics.png) — IMU window clipped, impact dynamics cut off
+- [flight_20260524-1904/pass04_kinetic_profile.png](dev_logs/flights/flight_20260524-1904_75°_column_collision_loop_fixed_cage/pass04_kinetic_profile.png) — kinetic profile cropped, missing sweep data
+- [flight_20260531-1112/pass02_trajectory_top_down.png](dev_logs/flights/flight_20260531-1112_45°_column_collision_loop_fixed_cage/pass02_trajectory_top_down.png) — trajectory plot looks physically impossible, star-point mismatch likely to blame
+
+Root cause: The "Exp. Start-point" vertical line comes from WP1 (command transition time), not the actual moment the drone starts moving. Fix is designed (see `.github/copilot-instructions.md` → "Experiment Start-Point Timing — SSoT Knowledge").
 
 **Not touched (user instruction):**
 - `dev_logs/analysis/experiments_analysis.ipynb` — explicitly preserved
 
 **Skipped (too complex / needs user input):**
-- Most non-trivial notebook visualizations in sections 2-4 of this walkthrough (they're in `experiments_analysis_summary.ipynb` which you asked me not to touch, and many require design decisions)
-- Control Allocator Saturation plots — were marked as to-do, not implemented
-- Statistical significance tests — require design decisions on what to test
+- Most non-trivial notebook visualizations in sections 2-4 of this walkthrough
+- Control Allocator Saturation plots — marked as to-do, not implemented
+- Statistical significance tests — require design decisions
 - LaTeX/TikZ generator — standalone tool, not started
 - Submodule pinning — infrastructure task
 
@@ -508,6 +521,81 @@ Expected: ~23-25%/min avg, <10 NULLs (only from the 1 corrupted flight).
 
 </details>
 
+## ⏱️ Experiment Start/End-Point Timing Architecture (2026-06-10)
+
+This section defines the Single Source of Truth for experiment timing — when the sweep starts, when it ends, and how those timestamps flow from the mission code through the pipeline into the database and onto plots.
+
+### Waypoint Numbering — ⚠️ FRAGILE
+
+The WP numbering in `find_waypoint_events()` (`kin_calculator.py:424-435`) differs from what the mission terminal output prints. This offset-by-one is intentional and currently works, but it is the **first thing to investigate** if timing breaks after any mission refactor.
+
+| `find_waypoint_events()` | Mission attr | Terminal prints as | Physical meaning |
+|--------------------------|-------------|-------------------|------------------|
+| WP1 | `wp_stage` | WP_stage | U-turn staging (pass-through) |
+| **WP2** / **WP2_cmd** | `exp_sp` | **WP1** | Gate (PAUSE, 5cm) — **EXPERIMENT START** |
+| **WP3** | `exp_ep` | **WP2** | Sweep end (post-column) — **EXPERIMENT END** |
+| WP4 | `wp3` | WP3 | Recovery (auto-loops to WP_stage) |
+
+### WP2 Refinement
+
+At `kin_calculator.py:563-587`, WP2 is overwritten from the **command transition time** (when PX4 switched to commanding `exp_sp`) to the **refined forward-movement time** (last MoCap sample with speed < 0.10 m/s before crossing Y=0.70m). The original command time is preserved as `WP2_cmd`.
+
+### Database Timestamp Columns
+
+Stored in `flights_summary` table, computed once during pipeline ingestion:
+
+| Column | Type | Source | Meaning |
+|--------|------|--------|---------|
+| `timestamp_db` | TEXT | `datetime.datetime.now()` | Wall-clock time when DB row was written |
+| `e_sp_timestamp_PX4` | INTEGER | `WP2_cmd` | PX4 µs — command transition to gate |
+| `e_sp_timestamp_PX4_forw` | INTEGER | `WP2` refined | PX4 µs — actual forward movement start. NULL if `|forw − cmd| < 50ms` |
+| `e_ep_timestamp_PX4` | INTEGER | `WP3` | PX4 µs — sweep end achievement |
+
+**Reader pattern:** Use `COALESCE(e_sp_timestamp_PX4_forw, e_sp_timestamp_PX4)` to always get the best available experiment start time.
+
+### Plot Timeline Markers
+
+`kin_plot_kinematics.py` `draw_timeline_markers()` and `get_timeline_limits()` now use:
+- **Exp. Start-point** → `wp_events['WP2']` (refined forward movement)
+- **Exp. End-point** → `wp_events['WP3']` (actual sweep end)
+- Timeline crop window: `[esp_time - 1.0s, eep_time + 1.0s]`
+
+### 50ms Threshold Rationale
+
+If the drone springs forward immediately after the gate command (typical for most passes), storing two identical timestamps adds noise. The 50ms threshold suppresses `forw` when command and movement are effectively simultaneous. Only passes with a meaningful pause (>50ms) between command and movement get a distinct `forw` value.
+
+### Verification
+
+```bash
+cd /home/dorten/MasterThesisDrone
+python3 -c "
+import sys, sqlite3
+sys.path.insert(0, 'dev_logs/analysis/database')
+sys.path.insert(0, '/home/dorten/.local/lib/python3.10/site-packages')
+from db_manager import get_connection
+c = get_connection().cursor()
+# Check new columns exist
+c.execute('PRAGMA table_info(flights_summary)')
+cols = [r[1] for r in c.fetchall()]
+for col in ['timestamp_db', 'e_sp_timestamp_PX4', 'e_sp_timestamp_PX4_forw', 'e_ep_timestamp_PX4']:
+    print(f'  {col}: {\"✅\" if col in cols else \"❌ MISSING\"} ')
+
+# Check data migrated
+c.execute('SELECT COUNT(*) FROM flights_summary WHERE timestamp_db IS NOT NULL')
+print(f'  timestamp_db populated: {c.fetchone()[0]} rows')
+c.execute('SELECT COUNT(*) FROM flights_summary WHERE \"e_sp_timestamp_PX4\" IS NOT NULL')
+print(f'  e_sp_timestamp_PX4 populated: {c.fetchone()[0]} rows')
+c.execute('SELECT COUNT(*) FROM flights_summary WHERE \"e_sp_timestamp_PX4_forw\" IS NOT NULL')
+print(f'  e_sp_timestamp_PX4_forw populated (distinct forw): {c.fetchone()[0]} rows')
+c.execute('SELECT COUNT(*) FROM flights_summary WHERE \"e_ep_timestamp_PX4\" IS NOT NULL')
+print(f'  e_ep_timestamp_PX4 populated: {c.fetchone()[0]} rows')
+"
+```
+
+Expected: all 4 columns present, `timestamp_db` and `e_sp_timestamp_PX4` fully populated (179 rows), `e_sp_timestamp_PX4_forw` with fewer rows (only passes where drone paused >50ms), `e_ep_timestamp_PX4` fully populated.
+
+</details
+
 # Finishing touches to do:
 <details>
 <summary><code>- [x] **Make sure no trash data in battery rates**</code></summary>
@@ -520,10 +608,41 @@ Expected: ~23-25%/min avg, <10 NULLs (only from the 1 corrupted flight).
 </details>
 
 <details>
-<summary><code>- [ ] **Fix remaining NULL battery for corrupted MCAP flight**</code></summary>
+<summary><code>- [x] **Fix remaining NULL battery for corrupted MCAP flight**</code></summary>
 
 * `flight_20260529-1419_45°_column_collision_loop_rotating_cage` — unsliced MCAP throws `unknown (opcode 28) record` error.
 * Has `.ulg` file and 6 pass MCAPs → ULog fallback script exists at `dev_logs/analysis/_populate_battery_ulog_fallback.py`.
+
+</details>
+
+<details>
+<summary><code>- [x] **ULog fallback executed for corrupted flight**</code> (2026-06-09)</summary>
+
+* ✅ Ran targeted ULog fallback — parsed `14_13_41.ulg` for `vehicle_status` + `battery_status`.
+* Armed: 242.9s → Disarmed: 461.4s (218.4s total armed).
+* Battery: 24.5V / 100% at arm → 22.7V / 40.6% at landing.
+* **Result: 16.6%/min capacity drain, 0.47 V/min voltage drop** (slightly lower than average — this was a Rotating Cage flight, consistent).
+* Inserted into `flights_battery_efficiency` — now 48/48 flights populated.
+* **Note:** Pass MCAPs show drone already at Z=0.50m (mid-flight), so takeoff/landing used arm+2s / disarm-2s fallback. The 16.6%/min rate may be slightly lower than true flying rate because the 4s ground-idle buffer dilutes the denominator.
+
+</details>
+
+<details>
+<summary><code>- [ ] **Investigate 2000 RPM command speed outliers**</code> — diagnosed (2026-06-09)</summary>
+
+* **Investigation:** The outliers at 2000 RPM (idle speed) in `IMU Peak Acceleration Z vs Commanded Motor Speed` likely come from collision detection picking up pre-takeoff or post-landing states where motors are at idle but no actual flight/impact occurred.
+* **Likely cause:** `impact_detected = 1` is triggered by `closest_clearance < 0.0` (column proximity detection in `calculate_metrics()`). If the drone is on the ground near the column during pre-flight checks, this can fire with idle motors.
+* **Suggested fix (in notebook/data loading):** Filter `flights_summary` with `WHERE motor_avg_before > 5000` or `WHERE active_flight_time_sec > 5` to exclude ground-idle false positives. This can be done in the notebook cell without modifying the pipeline.
+* **Location in notebook:** `experiments_analysis_summary.ipynb` → `IMU Peak Acceleration Z vs Commanded Motor Speed (RPM)` (Line 1927)
+
+<details>
+<summary><code>⚠️ Correction (2026-06-09): motor_avg_before is actuator output (0-1), not RPM</code></summary>
+
+* The `motor_avg_before` column stores **normalized actuator output** (0.0–1.0), not RPM. Values cluster tightly at 0.7–0.8 across all impacts.
+* The 2000 RPM outliers observed in the notebook plot likely come from a different RPM derivation path (possibly from ULog `actuator_motors` data) not from the `motor_avg_before` DB column.
+* To diagnose this properly: check how the notebook's RPM values are computed, and whether the low-RPM datapoints correspond to passes with `active_flight_time_sec < 5` (likely ground-idle false positives).
+
+</details>
 
 </details>
 
@@ -633,3 +752,58 @@ This prints a formatted report showing the top-3 flights with per-feature compar
 ### Status
 - [x] **Implement `RepresentativeFlightFinder` class** — ✅ Done, `dev_logs/analysis/database/representative_finder.py`
 - [ ] **Integrate into `experiments_analysis_summary.ipynb`** — pending notebook update
+
+<details>
+<summary><code>💡 Integration Note (2026-06-09)</code></summary>
+
+* The `RepresentativeFlightFinder` class is fully functional at `dev_logs/analysis/database/representative_finder.py`.
+* To integrate: add a cell at the end of `experiments_analysis_summary.ipynb` that imports the finder, runs it for 4 category combinations (Rotating/Fixed × 45°/75°), and prints the top-ranked flight for each.
+* **Verified working** (2026-06-09): Finder ran against live DB — 52 Rotating Cage flights matched, category system works. `category_label` and `n_flights` are `@property`, not methods (no `()` needed).
+* **Verification command:**
+```bash
+cd /home/dorten/MasterThesisDrone
+python3 -c "
+import sys; sys.path.insert(0,'dev_logs/analysis/database')
+sys.path.insert(0,'/home/dorten/.local/lib/python3.10/site-packages')
+from representative_finder import RepresentativeFlightFinder
+for cond in ['Rotating Cage', 'Fixed Cage']:
+    finder = RepresentativeFlightFinder(condition=cond)
+    print(f'=== {finder.category_label} ({finder.n_flights} flights) ===')
+    finder.print_summary(top_n=1)
+    print()
+"
+```
+* The `print_summary()` output is formatted markdown — it renders naturally in a notebook markdown cell (wrap in a `print('```') ... print('```')` block for monospace formatting).
+
+</details>
+
+<details>
+<summary><code>💡 Pipeline Clean-Up Helper (2026-06-09)</code></summary>
+
+If any passes end up with NULL battery (the 6 from the corrupted flight were inserted before the ULog fallback fixed the battery table), run this to backfill:
+
+```bash
+cd /home/dorten/MasterThesisDrone
+python3 -c "
+import sys; sys.path.insert(0,'.')
+sys.path.insert(0,'/home/dorten/.local/lib/python3.10/site-packages')
+from dev_logs.analysis.database.db_manager import get_battery_efficiency_df, get_connection
+df = get_battery_efficiency_df()
+if not df.empty:
+    db = get_connection()
+    for _, row in df.iterrows():
+        db.execute('''UPDATE flights_summary SET
+            capacity_drain_rate_pct_per_min = ?,
+            voltage_drop_rate_v_per_min = ?
+            WHERE pass_name LIKE ? || '%'
+            AND capacity_drain_rate_pct_per_min IS NULL''',
+            (row['capacity_drain_rate_flying'], row['voltage_drop_rate_flying'], row['flight_name']))
+    db.commit()
+    # Report
+    c = db.cursor()
+    c.execute('SELECT COUNT(*) FROM flights_summary WHERE capacity_drain_rate_pct_per_min IS NULL')
+    print(f'Remaining NULL: {c.fetchone()[0]}')
+    db.close()
+"
+```
+</details>

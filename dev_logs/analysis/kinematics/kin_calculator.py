@@ -558,6 +558,7 @@ def find_waypoint_events(df_mocap, df_setpoint, takeoff_time=None, label=None, c
     for wp_evs in passes_events:
         if 'WP2' in wp_evs and 'WP3' in wp_evs:
             t_wp2_cmd = wp_evs['WP2']
+            wp_evs['WP2_cmd'] = wp_evs['WP2']  # preserve command time before refinement overwrites WP2
             t_wp3 = wp_evs['WP3']
             
             # Refine WP2 to be the actual start of sweep (when it locks and goes) rather than the command transition time.

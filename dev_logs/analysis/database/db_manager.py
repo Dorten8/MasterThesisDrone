@@ -1,10 +1,41 @@
 import sqlite3
 import os
+import re
 import datetime
 
 # Resolve database path dynamically relative to the package location
 current_dir = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.abspath(os.path.join(current_dir, "..", "experiments_summary.db"))
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SSoT: Approved Flight Cutoff
+# ══════════════════════════════════════════════════════════════════════════════
+# Only flights with a folder timestamp >= this value (YYYYMMDD-HHMM) are
+# eligible for analysis. Flights before this date were conducted before the
+# MoCap tracking quality was stabilised (Fixed Cage flights suffered severe
+# tracking dropouts at ~10 Hz, Rotating Cage at ~30 Hz), making their
+# telemetry unreliable for comparative analysis.
+#
+# IMPORTED BY: db_pipeline.py, db_mcap_event_segmenter.py,
+#              db_unsliced_flights_bat_analyser.py, _rerun_pipeline.py
+APPROVED_CUTOFF = "20260524-1904"
+
+
+def get_approved_cutoff():
+    """Return the SSoT approved flight cutoff string (YYYYMMDD-HHMM)."""
+    return APPROVED_CUTOFF
+
+
+def _extract_flight_timestamp(folder_name):
+    """Extract YYYYMMDD-HHMM from a flight folder name, or None if unparseable."""
+    m = re.search(r'flight_(\d{8}-\d{4})', folder_name)
+    return m.group(1) if m else None
+
+
+def is_approved_flight(folder_name):
+    """Return True if the flight folder timestamp is >= the approved cutoff."""
+    ts = _extract_flight_timestamp(folder_name)
+    return ts is not None and ts >= APPROVED_CUTOFF
 
 def get_connection():
     """Establishes a resilient SQLite connection, preventing network mount locking conflicts."""
@@ -68,8 +99,9 @@ def init_db():
             imu_vib_gx       REAL,
             imu_vib_gy       REAL,
             imu_vib_gz       REAL,
-            timestamp        TEXT,
-            timestamp_PX4    INTEGER,
+            timestamp_db                   TEXT,
+            "e_sp_timestamp_PX4"            INTEGER,
+            "e_impact_timestamp_PX4"        INTEGER,
             allocator_saturation_duration_sec REAL,
             max_unallocated_torque REAL,
             thrust_setpoint_achieved_pct REAL,
@@ -113,7 +145,7 @@ def init_db():
             capacity_drain_rate_flying      REAL,
             total_capacity_consumed_pct     REAL,
             total_voltage_dropped           REAL,
-            timestamp                       TEXT
+            timestamp_db                    TEXT
         )
     """)
     # Migrate: add new columns if they don't yet exist (backwards compat with old DB)
@@ -168,7 +200,11 @@ def init_db():
         ("motor_m2_avg_after", "REAL"),
         ("motor_m3_avg_after", "REAL"),
         ("motor_m4_avg_after", "REAL"),
-        ("timestamp_PX4", "INTEGER"),
+        ("timestamp_db", "TEXT"),
+        ("e_sp_timestamp_PX4", "INTEGER"),
+        ("e_sp_timestamp_PX4_forw", "INTEGER"),
+        ("e_ep_timestamp_PX4", "INTEGER"),
+        ("e_impact_timestamp_PX4", "INTEGER"),
         ("allocator_saturation_duration_sec", "REAL"),
         ("max_unallocated_torque", "REAL"),
         ("thrust_setpoint_achieved_pct", "REAL"),
@@ -190,6 +226,22 @@ def init_db():
             cursor.execute(f"ALTER TABLE flights_summary ADD COLUMN {col} {coltype}")
         except sqlite3.OperationalError:
             pass  # Column already exists
+    # Migrate data: copy old column values to renamed columns (flights_summary)
+    for old, new in [("timestamp", "timestamp_db"),
+                     ("timestamp_PX4", "e_sp_timestamp_PX4")]:
+        try:
+            cursor.execute(f'UPDATE flights_summary SET "{new}" = {old} WHERE "{new}" IS NULL')
+        except sqlite3.OperationalError:
+            pass
+    # Migrate battery table: timestamp → timestamp_db
+    try:
+        cursor.execute("ALTER TABLE flights_battery_efficiency ADD COLUMN timestamp_db TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("UPDATE flights_battery_efficiency SET timestamp_db = timestamp WHERE timestamp_db IS NULL")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -273,7 +325,10 @@ def insert_or_replace_flight(flight_name, condition, metrics):
     motor_m2_avg_after = metrics.get('motor_m2_avg_after')
     motor_m3_avg_after = metrics.get('motor_m3_avg_after')
     motor_m4_avg_after = metrics.get('motor_m4_avg_after')
-    timestamp_PX4      = metrics.get('timestamp_PX4')
+    timestamp_PX4      = metrics.get('e_sp_timestamp_PX4')
+    timestamp_PX4_forw = metrics.get('e_sp_timestamp_PX4_forw')
+    e_ep_timestamp_PX4 = metrics.get('e_ep_timestamp_PX4')
+    e_impact_timestamp_PX4 = metrics.get('e_impact_timestamp_PX4')
 
     allocator_saturation_duration_sec = metrics.get('allocator_saturation_duration_sec')
     max_unallocated_torque = metrics.get('max_unallocated_torque')
@@ -309,7 +364,7 @@ def insert_or_replace_flight(flight_name, condition, metrics):
     act_sp = metrics.get('act_sp', (None, None, None))
     act_ep = metrics.get('act_ep', (None, None, None))
 
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp_db = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -332,7 +387,7 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         "motor_avg_before", "motor_max_before", "motor_avg_after", "motor_max_after",
         "motor_thrust_surge", "motor_imbalance_after",
         "motor_m1_avg_after", "motor_m2_avg_after", "motor_m3_avg_after", "motor_m4_avg_after",
-        "timestamp", "timestamp_PX4",
+        "timestamp_db", "e_sp_timestamp_PX4", "e_sp_timestamp_PX4_forw", "e_ep_timestamp_PX4", "e_impact_timestamp_PX4",
         "allocator_saturation_duration_sec", "max_unallocated_torque", "thrust_setpoint_achieved_pct",
         "roll_rate_error_rms", "pitch_rate_error_rms", "yaw_rate_error_rms",
         "active_flight_time_sec", "voltage_drop_rate_v_per_min", "capacity_drain_rate_pct_per_min",
@@ -360,7 +415,7 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         motor_avg_before, motor_max_before, motor_avg_after, motor_max_after,
         motor_thrust_surge, motor_imbalance_after,
         motor_m1_avg_after, motor_m2_avg_after, motor_m3_avg_after, motor_m4_avg_after,
-        timestamp, timestamp_PX4,
+        timestamp_db, timestamp_PX4, timestamp_PX4_forw, e_ep_timestamp_PX4, e_impact_timestamp_PX4,
         allocator_saturation_duration_sec, max_unallocated_torque, thrust_setpoint_achieved_pct,
         roll_rate_error_rms, pitch_rate_error_rms, yaw_rate_error_rms,
         active_flight_time_sec, voltage_drop_rate_v_per_min, capacity_drain_rate_pct_per_min,
@@ -455,7 +510,7 @@ def get_database_df():
 def insert_or_replace_battery_efficiency(flight_name, condition, metrics):
     """Inserts or replaces raw flight battery and efficiency metrics in SQLite."""
     init_db()
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp_db = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -469,7 +524,7 @@ def insert_or_replace_battery_efficiency(flight_name, condition, metrics):
             voltage_drop_rate_armed, capacity_drain_rate_armed,
             voltage_drop_rate_flying, capacity_drain_rate_flying,
             total_capacity_consumed_pct, total_voltage_dropped,
-            timestamp
+            timestamp_db
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         flight_name, condition,
@@ -482,7 +537,7 @@ def insert_or_replace_battery_efficiency(flight_name, condition, metrics):
         metrics.get('voltage_drop_rate_armed'), metrics.get('capacity_drain_rate_armed'),
         metrics.get('voltage_drop_rate_flying'), metrics.get('capacity_drain_rate_flying'),
         metrics.get('total_capacity_consumed_pct'), metrics.get('total_voltage_dropped'),
-        timestamp
+        timestamp_db
     ))
     conn.commit()
     conn.close()

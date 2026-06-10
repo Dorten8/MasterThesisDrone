@@ -9,10 +9,10 @@ from IPython.display import display, HTML
 from dev_logs.analysis.database.db_loader import load_drone_metadata, load_mcap, build_dataframes
 from dev_logs.analysis.kinematics.kin_calculator import compute_velocity, compute_ekf_kinematics, find_waypoint_events, build_events_log, calculate_metrics
 from dev_logs.analysis.kinematics.kin_plot_trajectory import plot_trajectory
-from dev_logs.analysis.kinematics.kin_plot_kinematics import plot_velocity_profile, plot_battery_sag, plot_imu_dynamics, plot_imu_xyz_components
+from dev_logs.analysis.kinematics.kin_plot_kinematics import plot_velocity_profile, plot_battery_sag, plot_imu_dynamics, plot_imu_xyz_components, plot_ekf_kinetic_profile
 from dev_logs.analysis.kinematics.kin_plot_actuators import plot_actuators_and_status, plot_control_allocator_saturation, plot_pid_rate_tracking
 from dev_logs.analysis.kinematics.kin_plot_statistics import plot_angle_boxplots
-from dev_logs.analysis.database.db_manager import insert_or_replace_flight, get_database_summary_markdown, is_already_cached, get_battery_efficiency_df
+from dev_logs.analysis.database.db_manager import insert_or_replace_flight, get_database_summary_markdown, is_already_cached, get_battery_efficiency_df, APPROVED_CUTOFF, is_approved_flight
 
 
 # ── Battery rate lookup (flight-level, from flights_battery_efficiency) ──────────────
@@ -56,7 +56,10 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
         'motor_max_after': None,
         'motor_thrust_surge': None,
         'motor_imbalance_after': None,
-        'timestamp_PX4': None,
+        'e_sp_timestamp_PX4': None,
+        'e_sp_timestamp_PX4_forw': None,
+        'e_ep_timestamp_PX4': None,
+        'e_impact_timestamp_PX4': None,
         'max_actuator_output': None
     }
 
@@ -241,11 +244,21 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
         else:
             thrust_surge = None
 
-        # Compute timestamp_PX4 for start of sweep (WP2 transition)
-        t_start = wp_events.get('WP2') or wp_events.get('WP1')
-        t_px4_us = None
-        if t_start is not None:
-            t_px4_us = int(round((t_start - offset_sec + (bag_start_ns * 1e-9)) * 1e6))
+        # Compute experiment start (PX4 command), forward start (refined), and end timestamps in PX4 µs
+        def _to_px4_us(t_sec):
+            if t_sec is None:
+                return None
+            return int(round((t_sec - offset_sec + (bag_start_ns * 1e-9)) * 1e6))
+
+        e_sp_px4      = _to_px4_us(wp_events.get('WP2_cmd') or wp_events.get('WP2'))
+        e_sp_px4_forw = _to_px4_us(wp_events.get('WP2'))
+        e_ep_px4      = _to_px4_us(wp_events.get('WP3'))
+        e_impact_px4  = _to_px4_us(wp_events.get('Column Impact'))
+
+        # 50ms threshold: if command and refined forward differ by less than 50ms, suppress forw
+        if e_sp_px4 is not None and e_sp_px4_forw is not None:
+            if abs(e_sp_px4_forw - e_sp_px4) < 50000:   # < 50 ms in µs
+                e_sp_px4_forw = None
 
         # Initialize default new metrics
         allocator_saturation_duration_sec = 0.0
@@ -372,7 +385,10 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
             'motor_m2_avg_after': m2_avg_after,
             'motor_m3_avg_after': m3_avg_after,
             'motor_m4_avg_after': m4_avg_after,
-            'timestamp_PX4': t_px4_us,
+            'e_sp_timestamp_PX4': e_sp_px4,
+            'e_sp_timestamp_PX4_forw': e_sp_px4_forw,
+            'e_ep_timestamp_PX4': e_ep_px4,
+            'e_impact_timestamp_PX4': e_impact_px4,
             'allocator_saturation_duration_sec': allocator_saturation_duration_sec,
             'max_unallocated_torque': max_unallocated_torque,
             'thrust_setpoint_achieved_pct': thrust_setpoint_achieved_pct,
@@ -591,7 +607,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     metrics['sweep_speed'] = sweep_speed
 
                     # Battery % at Exp. Start-point (WP1 / WP2, whichever is earliest available)
-                    t_exp_start = wp_events.get('WP1') or wp_events.get('WP2')
+                    t_exp_start = wp_events.get('WP2')
                     if t_exp_start is not None and not df_bat.empty:
                         from dev_logs.analysis.kinematics.kin_calculator import query_battery
                         bat_pct_str, _ = query_battery(df_bat, t_exp_start)
@@ -620,7 +636,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     metrics['voltage_drop_rate_v_per_min'] = v_drop
 
                     # Skip if already cached in the database (idempotent runs, force-recompute if missing schema columns)
-                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_sdld', 'imu_ax_spread_impact']):
+                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'e_sp_timestamp_PX4', 'e_impact_timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_sdld', 'imu_ax_spread_impact']):
                         print(f"⏭️  '{pass_name}' already in database, skipping insert.")
                     else:
                         insert_or_replace_flight(pass_name, condition_label, metrics)
@@ -638,28 +654,33 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                                         dynamic_waypoints=dynamic_waypoints, df_column=df_column,
                                         df_setpoint=df_setpoint, show_plot=False)
                         
-                        # Build segment events list for velocity/kinetic plots
+                        # Build segment events list for IMU / battery plots
                         events_log = build_events_log(df_mocap, df_bat, arming_time, takeoff_time, disarming_time, wp_events, achieved_angle=metrics.get('achieved_impact_angle'))
-                        
-                        # 2. Kinetic Profile (3-Panel stack: Velocity, Tangential Accel, MoCap Rate)
-                        kinetic_capsule_path = os.path.join(flight_dir, f"{pass_prefix}kinetic_profile.png")
-                        plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
-                                              label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                              mocap_rate=mocap_rate, condition=condition_label, output_path=kinetic_capsule_path, show_plot=False,
-                                              df_raw=df_mocap_raw, is_raw=False)
-                        
-                        # 2b. Raw Unsmoothed Kinetic Profile
-                        kinetic_raw_capsule_path = os.path.join(flight_dir, f"{pass_prefix}kinetic_profile_raw.png")
-                        plot_velocity_profile(df_mocap_raw, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
-                                              label=condition_label, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                              mocap_rate=mocap_rate, condition=condition_label, output_path=kinetic_raw_capsule_path, show_plot=False,
-                                              is_raw=True)
-                        
-                        # 3. Battery Voltage Sag Profile
-                        battery_capsule_path = os.path.join(flight_dir, f"{pass_prefix}battery_sag.png")
-                        plot_battery_sag(df_bat, takeoff_time, wp_events, arming_time, label=condition_label, flight_name=pass_name,
-                                         achieved_angle=metrics.get('achieved_impact_angle'), output_path=battery_capsule_path, show_plot=False)
-                        
+
+                        # (MoCap-based kinetic_profile.png / kinetic_profile_raw.png retired 2026-06-10 —
+                        #  EKF kinetic profile is the sole velocity/acceleration plot from the pipeline.)
+
+                        # 2. EKF Kinetic Profile (EKF velocity + tangential accel, no MoCap rate)
+                        ekf_kinetic_path = os.path.join(flight_dir, f"{pass_prefix}ekf_kinetic_profile.png")
+                        if df_ekf_kin is not None and not df_ekf_kin.empty:
+                            plot_ekf_kinetic_profile(
+                                ekf_t=df_ekf_kin["t"].values,
+                                ekf_speed=df_ekf_kin["speed"].values,
+                                ekf_rate=100.0,  # target_freq in compute_ekf_kinematics()
+                                df_mocap=df_mocap,
+                                wp_events=wp_events,
+                                arming_time=arming_time,
+                                flight_name=pass_name,
+                                condition=condition_label,
+                                achieved_angle=metrics.get('achieved_impact_angle'),
+                                output_path=ekf_kinetic_path,
+                                show_plot=False,
+                            )
+                        else:
+                            print(f"  ⚡ EKF kinetic profile: not available (no vehicle_odometry data)")
+
+                        # (Battery voltage sag plot retired from pipeline 2026-06-10)
+
                         # 4. Physical IMU Dynamics Plot (Acceleration & Gyro deviation/surge)
                         imu_dyn_capsule_path = os.path.join(flight_dir, f"{pass_prefix}imu_dynamics.png")
                         plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
@@ -917,8 +938,8 @@ if __name__ == "__main__":
     _today_cutoff = datetime.date.today().strftime("%Y%m%d-0000")
 
     parser = argparse.ArgumentParser(description="Standalone DB population pipeline")
-    parser.add_argument('--cutoff', '-c', type=str, default="20260524-1904",
-                        help="Skipping any flight directories recorded before this timestamp in YYYYMMDD-HHMM format (default: 20260524-1904)")
+    parser.add_argument('--cutoff', '-c', type=str, default=APPROVED_CUTOFF,
+                        help="Skipping any flight directories recorded before this timestamp in YYYYMMDD-HHMM format (default from SSoT: {})".format(APPROVED_CUTOFF))
     parser.add_argument('--today', '-t', action='store_true',
                         help=f"Shortcut to process only today's flights (sets cutoff to {_today_cutoff})")
     parser.add_argument('--force-plot', '-f', action='store_true',
@@ -946,15 +967,10 @@ if __name__ == "__main__":
             return "Rotating Cage"
         return "Fixed Cage"
 
-    def _flight_ts(folder_name):
-        m = _re.search(r'flight_(\d{8}-\d{4})', folder_name)
-        return m.group(1) if m else None
-
-    # Collect all approved pass files
+    # Collect all approved pass files (cutoff enforced via SSoT from db_manager)
     all_pass_files = []
     for folder in sorted(os.listdir(_flights_dir)):
-        ts = _flight_ts(folder)
-        if ts is None or ts < APPROVED_CUTOFF:
+        if not is_approved_flight(folder):
             continue
         folder_path = os.path.join(_flights_dir, folder)
         passes = sorted(_glob.glob(os.path.join(folder_path, "*-pass*.mcap")))
@@ -1130,7 +1146,7 @@ if __name__ == "__main__":
             metrics['sweep_speed'] = _m.sweep_speed if _m is not None else sweep_speed_declared
 
             # Battery % at Exp. Start-point
-            t_exp_start = wp_events.get('WP1') or wp_events.get('WP2')
+            t_exp_start = wp_events.get('WP2')
             if t_exp_start is not None and not df_bat.empty:
                 from dev_logs.analysis.kinematics.kin_calculator import query_battery as _qb
                 bat_pct_str, _ = _qb(df_bat, t_exp_start)
@@ -1157,13 +1173,13 @@ if __name__ == "__main__":
             condition = _infer_condition(folder_name)
             
             # Skip if already cached
-            if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_sdld', 'imu_ax_spread_impact']):
+            if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'e_sp_timestamp_PX4', 'e_impact_timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_sdld', 'imu_ax_spread_impact']):
                 print(f"⏭️  '{pass_name}' already in database, skipping insert.")
             else:
                 insert_or_replace_flight(pass_name, condition, metrics)
 
-            # Generate and save all 5 high-fidelity plots to the individual flight capsule directory
-            if False:  # Temporarily disabled plot generation to speed up DB ingestion
+            # Generate and save high-fidelity plots to the individual flight capsule directory
+            if metrics.get('impact_detected', 0) == 1 or args.force_plot:
                 pass_prefix = f"pass{pass_idx:02d}_"
                 
                 # 1. Trajectory Top-Down 2D Spatial Plot
@@ -1173,28 +1189,32 @@ if __name__ == "__main__":
                                 dynamic_waypoints=dynamic_waypoints, df_column=df_column,
                                 df_setpoint=df_setpoint, show_plot=False)
                 
-                # Build segment events list for velocity/kinetic plots
+                # Build segment events list for IMU / battery plots
                 events_log = build_events_log(df_mocap, df_bat, arming_time, takeoff_time, disarming_time, wp_events, achieved_angle=metrics.get('achieved_impact_angle'))
-                
-                # 2. Kinetic Profile (3-Panel stack: Velocity, Tangential Accel, MoCap Rate)
-                kinetic_capsule_path = os.path.join(folder_path, f"{pass_prefix}kinetic_profile.png")
-                plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
-                                      label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                      mocap_rate=mocap_rate, condition=condition, output_path=kinetic_capsule_path, show_plot=False,
-                                      df_raw=df_mocap_raw, is_raw=False)
-                
-                # 2b. Raw Unsmoothed Kinetic Profile
-                kinetic_raw_capsule_path = os.path.join(folder_path, f"{pass_prefix}kinetic_profile_raw.png")
-                plot_velocity_profile(df_mocap_raw, wp_events, arming_time, takeoff_time, disarming_time, events_log, 
-                                      label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
-                                      mocap_rate=mocap_rate, condition=condition, output_path=kinetic_raw_capsule_path, show_plot=False,
-                                      is_raw=True)
-                
-                # 3. Battery Voltage Sag Profile
-                battery_capsule_path = os.path.join(folder_path, f"{pass_prefix}battery_sag.png")
-                plot_battery_sag(df_bat, takeoff_time, wp_events, arming_time, label=condition, flight_name=pass_name,
-                                 achieved_angle=metrics.get('achieved_impact_angle'), output_path=battery_capsule_path, show_plot=False)
-                
+
+                # (MoCap-based kinetic_profile.png / kinetic_profile_raw.png retired 2026-06-10)
+
+                # 2. EKF Kinetic Profile (EKF velocity + tangential accel, no MoCap rate)
+                ekf_kinetic_path = os.path.join(folder_path, f"{pass_prefix}ekf_kinetic_profile.png")
+                if df_ekf_kin is not None and not df_ekf_kin.empty:
+                    plot_ekf_kinetic_profile(
+                        ekf_t=df_ekf_kin["t"].values,
+                        ekf_speed=df_ekf_kin["speed"].values,
+                        ekf_rate=100.0,
+                        df_mocap=df_mocap,
+                        wp_events=wp_events,
+                        arming_time=arming_time,
+                        flight_name=pass_name,
+                        condition=condition,
+                        achieved_angle=metrics.get('achieved_impact_angle'),
+                        output_path=ekf_kinetic_path,
+                        show_plot=False,
+                    )
+                else:
+                    print(f"  ⚡ EKF kinetic profile: not available (no vehicle_odometry data)")
+
+                # (Battery voltage sag plot retired from pipeline 2026-06-10)
+
                 # 4. Physical IMU Dynamics Plot (Acceleration & Gyro deviation/surge)
                 imu_dyn_capsule_path = os.path.join(folder_path, f"{pass_prefix}imu_dynamics.png")
                 plot_imu_dynamics(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
@@ -1206,6 +1226,21 @@ if __name__ == "__main__":
                 plot_imu_xyz_components(df_imu, wp_events, arming_time, takeoff_time, disarming_time, events_log,
                                         label=condition, flight_name=pass_name, achieved_angle=metrics.get('achieved_impact_angle'),
                                         output_path=imu_xyz_capsule_path, show_plot=False)
+
+                # 6. Actuators and Status
+                ulg_files = glob.glob(os.path.join(folder_path, "*.ulg"))
+                if ulg_files:
+                    offset_sec = metrics.get('offset_sec', 0.0)
+                    act_capsule_path = os.path.join(folder_path, f"{pass_prefix}actuators_profile.png")
+                    plot_actuators_and_status(ulg_files[0], offset_sec, bag_start_ns, wp_events, arming_time, pass_name, condition, act_capsule_path, show_plot=False)
+
+                    # 7. Control Allocator Saturation
+                    sat_capsule_path = os.path.join(folder_path, f"{pass_prefix}control_allocator_saturation.png")
+                    plot_control_allocator_saturation(ulg_files[0], offset_sec, bag_start_ns, wp_events, pass_name, condition, sat_capsule_path, show_plot=False)
+
+                    # 8. PID Rate Tracking
+                    pid_capsule_path = os.path.join(folder_path, f"{pass_prefix}pid_rate_tracking.png")
+                    plot_pid_rate_tracking(ulg_files[0], offset_sec, bag_start_ns, wp_events, pass_name, condition, pid_capsule_path, show_plot=False)
             else:
                 print(f"   ⏭️  No collision detected in {pass_name}, skipping plot generation.")
 

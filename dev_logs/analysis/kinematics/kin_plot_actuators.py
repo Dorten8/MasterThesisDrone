@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+import matplotlib.ticker as ticker
 import numpy as np
 import pyulog
 import os
@@ -64,20 +65,23 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
     fig = plt.figure(figsize=(14, 10))
     gs = gridspec.GridSpec(3, 1, height_ratios=[1.5, 1.5, 0.8], hspace=0.3)
     
-    # Restrict x-axis to the pass time window
-    t_min = wp_events.get('WP1', 0) - 2.0
-    t_max = wp_events.get('WP3', t_min + 10) + 3.0
+    # Standard timeline window: [WP2 - 1s, WP3 + 1s] in bag-relative time (data is absolute via to_rel_t)
+    esp_time = wp_events.get('WP2')   # experiment start (refined forward movement)
+    eep_time = wp_events.get('WP3')   # experiment end (sweep end)
+    impact_t = wp_events.get('Column Impact') or wp_events.get('WP2')
+    t_min = max(0.0, esp_time - 1.0) if esp_time is not None else 0.0
+    t_max = eep_time + 1.0 if eep_time is not None else (impact_t + 5.0 if impact_t is not None else 10.0)
 
     colors = ['#FF4B4B', '#4B8BFF', '#4BFF4B', '#FFB34B']
     labels = ['Motor 1 (Front Right)', 'Motor 2 (Rear Left)', 'Motor 3 (Front Left)', 'Motor 4 (Rear Right)']
-    impact_t = wp_events.get('WP2')
     wp1_t = wp_events.get('WP1')
     wp3_t = wp_events.get('WP3')
 
     # Helper function to add background phase shadings to each axis
     def add_phase_shading(ax):
-        if wp1_t is not None and impact_t is not None:
-            ax.axvspan(wp1_t, impact_t, color='#FFE0B2', alpha=0.3, label='Sweep Phase')
+        sweep_start = esp_time or wp1_t
+        if sweep_start is not None and impact_t is not None:
+            ax.axvspan(sweep_start, impact_t, color='#FFE0B2', alpha=0.3, label='Sweep Phase')
         if impact_t is not None and wp3_t is not None:
             ax.axvspan(impact_t, wp3_t, color='#C8E6C9', alpha=0.3, label='Recovery Phase')
         if impact_t is not None:
@@ -94,12 +98,13 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
                          arrowprops=dict(facecolor='#D32F2F', shrink=0.05), color='#D32F2F', fontweight='bold')
             
     ax1.set_xlim(t_min, t_max)
+    ax1.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
     ax1.set_ylim(0.2, 1.0)
     ax1.set_ylabel('Motor Command (normalized, 0.0 to 1.0)')
-    ax1.set_title(f'[{condition}] Actuator Motor Commands\nFlight: {flight_name}', fontweight='bold')
+    ax1.set_title(f'Actuator Motor Commands <{condition}>', fontweight='bold')
     ax1.grid(True, linestyle='--', alpha=0.6)
     # Put legend outside or tidy up
-    ax1.legend(loc='upper left', ncol=2)
+    ax1.legend(loc='upper right', ncol=2, framealpha=1.0)
 
     # Panel 2: Actuator Outputs (PWM/DShot)
     ax2 = fig.add_subplot(gs[1], sharex=ax1)
@@ -107,7 +112,7 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
     if len(out_t) > 0:
         for i in range(4):
             ax2.plot(out_t, out_vals[i], color=colors[i], label=labels[i], alpha=0.8, linewidth=1.5)
-            
+
     ax2.set_xlim(t_min, t_max)
     ax2.set_ylabel('Actuator Output (PWM/DShot)')
     ax2.set_title('Raw Actuator Outputs to ESCs')
@@ -119,24 +124,32 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
     if len(status_t) > 0:
         # Plot Nav State as step graph
         ax3.step(status_t, nav_state, color='purple', label='Nav State (14=Offboard)', linewidth=2, where='post')
-        
+
     ax3.set_xlim(t_min, t_max)
     ax3.set_ylim(-1, 20)
     ax3.set_ylabel('Nav State ID')
     ax3.set_title('PX4 Vehicle Status')
     ax3.grid(True, linestyle='--', alpha=0.6)
-    
+
     # Add arming state on a secondary y-axis
     ax3_twin = ax3.twinx()
     if len(status_t) > 0:
         ax3_twin.step(status_t, arming_state, color='#E91E63', linestyle=':', label='Arming State (2=Armed)', linewidth=2, where='post')
     ax3_twin.set_ylabel('Arming State ID')
     ax3_twin.set_ylim(0.5, 2.5)
-    
+
     # Merge legends from ax3 and ax3_twin
     lines, labels_lines = ax3.get_legend_handles_labels()
     lines2, labels2 = ax3_twin.get_legend_handles_labels()
-    ax3.legend(lines + lines2, labels_lines + labels2, loc='upper left')
+    ax3.legend(lines + lines2, labels_lines + labels2, loc='upper right', framealpha=1.0)
+
+    # Flight name annotation (bottom-right)
+    if flight_name:
+        ax3.text(0.98, 0.02, f"{flight_name}",
+                 transform=ax3.transAxes,
+                 ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
+                           boxstyle='round,pad=0.2'))
 
     plt.tight_layout()
     if output_path is not None:
@@ -193,23 +206,28 @@ def plot_control_allocator_saturation(ulg_path, offset_sec, bag_start_ns, wp_eve
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True, dpi=150)
     
-    t_impact = wp_events.get('WP2', None)
+    t_impact = wp_events.get('Column Impact', None)
+    if t_impact is None or np.isnan(t_impact):
+        t_impact = wp_events.get('WP2', None)
     if t_impact is None or np.isnan(t_impact):
         t_impact = wp_events.get('WP1', 0.0)
-    
-    t_min = t_impact - 2.0
-    t_max = t_impact + 3.0
-    
+
+    # Standard timeline window: [WP2 - 1s, WP3 + 1s] in bag-relative time (data is absolute via to_rel_t)
+    esp_time = wp_events.get('WP2')
+    eep_time = wp_events.get('WP3')
+    t_min = max(0.0, esp_time - 1.0) if esp_time is not None else (t_impact - 2.0)
+    t_max = eep_time + 1.0 if eep_time is not None else (t_impact + 3.0)
+
     colors = ['#FF4B4B', '#4B8BFF', '#4BFF4B', '#FFB34B']
     labels = ['Motor 1 (FR)', 'Motor 2 (RL)', 'Motor 3 (FL)', 'Motor 4 (RR)']
-    
+
     # Subpanel 1: Motor Command Input
     ax = axes[0]
     if len(motor_t) > 0:
         for i in range(4):
             ax.plot(motor_t, motor_ctrl[i], color=colors[i], label=labels[i], alpha=0.8, linewidth=1.5)
     ax.set_ylabel('Motor Command (normalized, 0.0 to 1.0)')
-    ax.set_title(f'[{condition}] Control Allocator Saturation Analysis\nFlight: {flight_name}', fontweight='bold')
+    ax.set_title(f'Control Allocator Saturation Analysis <{condition}>', fontweight='bold')
     ax.grid(True, linestyle=':', alpha=0.6)
     ax.legend(loc='upper left', ncol=2)
     ax.set_ylim(0.0, 1.1)
@@ -245,10 +263,19 @@ def plot_control_allocator_saturation(ulg_path, offset_sec, bag_start_ns, wp_eve
     ax.set_xlabel('Time (s)')
     ax.grid(True, linestyle=':', alpha=0.6)
 
-    # Draw vertical dashed line at t_impact
+    # Draw vertical dashed line at t_impact, uniform 1.0s ticks
     for a in axes:
         a.axvline(x=t_impact, color='#D32F2F', linestyle='--', linewidth=2, label='Impact')
         a.set_xlim(t_min, t_max)
+    axes[0].xaxis.set_major_locator(ticker.MultipleLocator(1.0))
+
+    # Flight name annotation (bottom-right)
+    if flight_name:
+        axes[-1].text(0.98, 0.02, f"{flight_name}",
+                      transform=axes[-1].transAxes,
+                      ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                      bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
+                                boxstyle='round,pad=0.2'))
 
     plt.tight_layout()
     if output_path is not None:
@@ -304,12 +331,17 @@ def plot_pid_rate_tracking(ulg_path, offset_sec, bag_start_ns, wp_events, flight
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True, dpi=150)
     
-    t_impact = wp_events.get('WP2', None)
+    t_impact = wp_events.get('Column Impact', None)
+    if t_impact is None or np.isnan(t_impact):
+        t_impact = wp_events.get('WP2', None)
     if t_impact is None or np.isnan(t_impact):
         t_impact = wp_events.get('WP1', 0.0)
-        
-    t_min = t_impact - 2.0
-    t_max = t_impact + 3.0
+
+    # Standard timeline window: [WP2 - 1s, WP3 + 1s] in bag-relative time (data is absolute via to_rel_t)
+    esp_time = wp_events.get('WP2')
+    eep_time = wp_events.get('WP3')
+    t_min = max(0.0, esp_time - 1.0) if esp_time is not None else (t_impact - 2.0)
+    t_max = eep_time + 1.0 if eep_time is not None else (t_impact + 3.0)
 
     axes_labels = ['Roll Rate Tracking (rad/s)', 'Pitch Rate Tracking (rad/s)', 'Yaw Rate Tracking (rad/s)']
     axes_data = [
@@ -336,13 +368,22 @@ def plot_pid_rate_tracking(ulg_path, offset_sec, bag_start_ns, wp_events, flight
         ax.grid(True, linestyle=':', alpha=0.6)
         ax.legend(loc='upper left', ncol=3)
 
-    axes[0].set_title(f'[{condition}] PID Rate Controller Tracking Performance\nFlight: {flight_name}', fontweight='bold')
+    axes[0].set_title(f'PID Rate Controller Tracking Performance <{condition}>', fontweight='bold')
     axes[2].set_xlabel('Time (s)')
 
-    # Draw vertical dashed line at t_impact
+    # Draw vertical dashed line at t_impact, uniform 1.0s ticks
     for a in axes:
         a.axvline(x=t_impact, color='#D32F2F', linestyle='--', linewidth=2, label='Impact')
         a.set_xlim(t_min, t_max)
+    axes[0].xaxis.set_major_locator(ticker.MultipleLocator(1.0))
+
+    # Flight name annotation (bottom-right)
+    if flight_name:
+        axes[-1].text(0.98, 0.02, f"{flight_name}",
+                      transform=axes[-1].transAxes,
+                      ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                      bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
+                                boxstyle='round,pad=0.2'))
 
     plt.tight_layout()
     if output_path is not None:

@@ -95,7 +95,7 @@ def generate_aggregated_imu_plot():
         
         # Red Impact Line
         ax.axvline(0.0, color='#D32F2F', linestyle='--', linewidth=2, zorder=10)
-        ax.text(0.0, 18, ' IMPACT (WP2)', color='#D32F2F', fontweight='bold', ha='left')
+        ax.text(0.0, 18, ' Column Impact', color='#D32F2F', fontweight='bold', ha='left')
         
         # Legends
         lines = l1 + [l3]
