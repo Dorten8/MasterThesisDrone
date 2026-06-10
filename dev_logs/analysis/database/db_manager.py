@@ -1,4 +1,5 @@
 import sqlite3
+import json
 import os
 import re
 import datetime
@@ -36,6 +37,89 @@ def is_approved_flight(folder_name):
     """Return True if the flight folder timestamp is >= the approved cutoff."""
     ts = _extract_flight_timestamp(folder_name)
     return ts is not None and ts >= APPROVED_CUTOFF
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SSoT: Pass Exclusion Config
+# ══════════════════════════════════════════════════════════════════════════════
+# config_db.json records passes that manual IMU/trajectory review has deemed
+# invalid: false positives (clearance negative but no real impact), borderline
+# contacts (clearance -0.4 to 0.0 with barely visible impact), and data
+# corruption (broken plots, missing path segments).
+#
+# The clearance-based impact_detected heuristic is a rough proxy — this config
+# is the ground-truth override from human inspection.
+
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config_db.json")
+
+_exclusion_cache = None
+
+
+def _load_exclusion_config():
+    """Load config_db.json, returning {db_pass_name: {excluded, reason, notes}}."""
+    global _exclusion_cache
+    if _exclusion_cache is not None:
+        return _exclusion_cache
+    _exclusion_cache = {}
+    if not os.path.exists(CONFIG_PATH):
+        return _exclusion_cache
+    with open(CONFIG_PATH, 'r') as f:
+        cfg = json.load(f)
+    excluded = cfg.get('excluded_passes', {})
+    for folder_name, entry in excluded.items():
+        if not isinstance(entry, dict):
+            continue
+        for pnum in entry.get('passes', []):
+            db_name = f"{folder_name} - Pass-{pnum:02d}"
+            _exclusion_cache[db_name] = {
+                'excluded': 1,
+                'exclusion_reason': entry.get('reason', 'unknown'),
+                'notes': entry.get('notes', ''),
+            }
+    return _exclusion_cache
+
+
+def is_excluded_pass(flight_name):
+    """Return True if this pass is in the exclusion config (manual review override)."""
+    cfg = _load_exclusion_config()
+    return flight_name in cfg
+
+
+def get_exclusion_info(flight_name):
+    """Return (excluded, reason, notes) for a pass, or (0, None, None) if not excluded."""
+    cfg = _load_exclusion_config()
+    entry = cfg.get(flight_name)
+    if entry:
+        return entry['excluded'], entry['exclusion_reason'], entry.get('notes')
+    return 0, None, None
+
+
+def apply_exclusion_config_to_db():
+    """Sync the exclusion config to the database: mark excluded passes.
+
+    Reads config_db.json, UPDATEs flights_summary.excluded = 1 and sets
+    exclusion_reason for every pass listed in excluded_passes.
+    Does NOT remove rows — only marks them so queries can filter.
+    """
+    cfg = _load_exclusion_config()
+    if not cfg:
+        print("[EXCLUSION] No exclusion config found — nothing to sync.")
+        return 0
+    conn = get_connection()
+    cursor = conn.cursor()
+    updated = 0
+    for db_name, info in cfg.items():
+        cursor.execute(
+            "UPDATE flights_summary SET excluded = ?, exclusion_reason = ? WHERE flight_name = ?",
+            (info['excluded'], info['exclusion_reason'], db_name)
+        )
+        if cursor.rowcount > 0:
+            updated += 1
+    conn.commit()
+    conn.close()
+    print(f"[EXCLUSION] Marked {updated} passes as excluded in flights_summary.")
+    return updated
+
 
 def get_connection():
     """Establishes a resilient SQLite connection, preventing network mount locking conflicts."""
@@ -118,7 +202,9 @@ def init_db():
             imu_az_spread_impact REAL,
             imu_ax_spread_regular REAL,
             imu_ay_spread_regular REAL,
-            imu_az_spread_regular REAL
+            imu_az_spread_regular REAL,
+            excluded INTEGER DEFAULT 0,
+            exclusion_reason TEXT
         )
     """)
     # Initialize raw flight battery and efficiency table
@@ -219,7 +305,9 @@ def init_db():
         ("imu_az_spread_impact", "REAL"),
         ("imu_ax_spread_regular", "REAL"),
         ("imu_ay_spread_regular", "REAL"),
-        ("imu_az_spread_regular", "REAL")
+        ("imu_az_spread_regular", "REAL"),
+        ("excluded", "INTEGER DEFAULT 0"),
+        ("exclusion_reason", "TEXT")
     ]
     for col, coltype in new_cols:
         try:

@@ -1,0 +1,84 @@
+{
+  "_description": "Pass-level exclusion / flagging config — manual ground-truth from IMU & trajectory plot review (2026-06-10). The clearance-based impact_detected heuristic is a rough proxy; this file records passes where manual inspection overrides the heuristic.",
+  "_clearance_rules_of_thumb": {
+    "clearance_le_neg_0.5": "definitely impacted — clearance is reliable",
+    "clearance_neg_0.4_to_0.0": "unclear / borderline — IMU review needed",
+    "clearance_ge_0.0": "definitely NOT impacted — cage did not penetrate column boundary"
+  },
+  "_review_date": "2026-06-10",
+  "_reviewer": "manual pass-by-pass IMU + trajectory plot inspection",
+
+  "excluded_passes": {
+    "_description": "Passes excluded from the dataset — no real collision despite what clearance/DB says, or data corruption. These are skipped by the pipeline and excluded from analysis plots.",
+
+    "flight_20260525-1716_75°_column_collision_loop_fixed_cage": {
+      "passes": [7],
+      "reason": "no_impact_false_positive",
+      "notes": "No impact visible in IMU data. Visual trajectory angle ~90° does not match nominal 75° — likely missed the column entirely. DB clearance +0.2 (impact_detected=0 — DB agrees, but angle is wrong)."
+    },
+
+    "flight_20260526-0922_75°_column_collision_loop_rotating_cage": {
+      "passes": [1],
+      "reason": "no_impact_false_positive",
+      "notes": "Clearance -0.3 cm but IMU shows no impact whatsoever. Cage may have grazed the column without transferring measurable force. Pass 04 in same flight had -0.4 cm clearance and DID impact — shows how tight the margin is."
+    },
+
+    "flight_20260526-0931_75°_column_collision_loop_rotating_cage": {
+      "passes": [2, 4],
+      "reason": "no_impact_false_positive",
+      "notes": "Pass 02: clearance -0.1, no impact visible. Pass 04: clearance 0.0, impact_detected=1 by heuristic but only slight contact. Both below the reliable-impact threshold."
+    },
+
+    "flight_20260528-1230_75°_column_collision_loop_fixed_cage": {
+      "passes": [1, 4, 6],
+      "reason": "no_impact_false_positive",
+      "notes": "Pass 01: clearance -0.4, very slight impact — borderline. Pass 04: clearance -0.3, almost no impact. Pass 06: clearance -0.3, no impact at all. This flight had inconsistent column contact — passes 02 & 05 are fine (clearance -0.7/-0.6)."
+    },
+
+    "flight_20260528-1239_75°_column_collision_loop_rotating_cage": {
+      "passes": [2, 3],
+      "reason": "slight_impact_borderline",
+      "notes": "Pass 02: clearance -0.3, slight impact. Pass 03: clearance -0.4, slight impact. Both are marginal — cage may have barely touched. Excluded for clean analysis."
+    },
+
+    "flight_20260529-1419_45°_column_collision_loop_rotating_cage": {
+      "passes": [5],
+      "reason": "slight_impact_borderline",
+      "notes": "Clearance -0.2, slight impact. Other passes in this flight have clearance -0.7 to -0.9 — this one is an outlier. Also, unsliced MCAP for this flight was corrupted (ULog fallback used for battery)."
+    },
+
+    "flight_20260531-1228_45°_column_collision_loop_rotating_cage": {
+      "passes": [5],
+      "reason": "broken_page_data_corruption",
+      "notes": "Path after impact is missing from trajectory plot — data corruption in the pass MCAP or plot generation. Plot is broken/unreadable. This pass should not be included in any analysis."
+    }
+  },
+
+  "flagged_passes": {
+    "_description": "Passes kept in the dataset but flagged for awareness — marginal clearance, slight impact, or unusual characteristics. These are NOT excluded from analysis but may warrant caution in interpretation.",
+
+    "flight_20260525-1716_75°_column_collision_loop_fixed_cage": {
+      "passes": [7],
+      "reason": "angle_mismatch",
+      "notes": "Already excluded (see above). Also flagged because visual trajectory angle ~90° doesn't match nominal 75°."
+    },
+
+    "flight_20260528-1655_45°_column_collision_loop_fixed_cage": {
+      "passes": [1, 2],
+      "reason": "clear_impact_despite_marginal_clearance",
+      "notes": "Clearance -0.3 but VERY clear impact in IMU — demonstrates that clearance alone is not sufficient to determine impact quality. KEPT in dataset."
+    },
+
+    "flight_20260529-1049_45°_column_collision_loop_fixed_cage": {
+      "passes": [5],
+      "reason": "clear_impact_despite_marginal_clearance",
+      "notes": "Clearance -0.1 but SUPER clear impact — further evidence that clearance heuristic fails at margins. KEPT in dataset."
+    },
+
+    "flight_20260526-0922_75°_column_collision_loop_rotating_cage": {
+      "passes": [4],
+      "reason": "clear_impact_at_clearance_boundary",
+      "notes": "Clearance -0.4 and definitely impacted — contrasts with Pass 01 in same flight (-0.3, no impact). Demonstrates the ~1mm difference between hit and miss. KEPT in dataset."
+    }
+  }
+}

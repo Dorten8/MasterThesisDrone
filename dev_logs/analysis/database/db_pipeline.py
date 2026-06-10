@@ -12,7 +12,7 @@ from dev_logs.analysis.kinematics.kin_plot_trajectory import plot_trajectory
 from dev_logs.analysis.kinematics.kin_plot_kinematics import plot_velocity_profile, plot_battery_sag, plot_imu_dynamics, plot_imu_xyz_components, plot_ekf_kinetic_profile
 from dev_logs.analysis.kinematics.kin_plot_actuators import plot_actuators_and_status, plot_control_allocator_saturation, plot_pid_rate_tracking
 from dev_logs.analysis.kinematics.kin_plot_statistics import plot_angle_boxplots
-from dev_logs.analysis.database.db_manager import insert_or_replace_flight, get_database_summary_markdown, is_already_cached, get_battery_efficiency_df, APPROVED_CUTOFF, is_approved_flight
+from dev_logs.analysis.database.db_manager import insert_or_replace_flight, get_database_summary_markdown, is_already_cached, get_battery_efficiency_df, APPROVED_CUTOFF, is_approved_flight, is_excluded_pass, apply_exclusion_config_to_db
 
 
 # ── Battery rate lookup (flight-level, from flights_battery_efficiency) ──────────────
@@ -564,7 +564,14 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
  
                 for p_idx, wp_events in enumerate(wp_events_list):
                     pass_name = f"{base_folder} - Pass-{pass_idx:02d}"
- 
+
+                    # ── Exclusion gate: skip passes manually reviewed as invalid ──
+                    if is_excluded_pass(pass_name):
+                        from dev_logs.analysis.database.db_manager import get_exclusion_info
+                        _, reason, _ = get_exclusion_info(pass_name)
+                        print(f"⏭️  '{pass_name}' excluded by manual review ({reason}), skipping.")
+                        continue
+
                     # Only write a complete pass (WP1 + WP2 + WP3 all detected)
                     has_full_pass = ('WP1' in wp_events or 'WP2' in wp_events) and 'WP3' in wp_events
                     if not has_full_pass:
@@ -1045,6 +1052,14 @@ if __name__ == "__main__":
             continue
         pass_idx  = int(m.group(1))
         pass_name = f"{folder_name} - Pass-{pass_idx:02d}"
+
+        # ── Exclusion gate ──
+        if is_excluded_pass(pass_name):
+            from dev_logs.analysis.database.db_manager import get_exclusion_info
+            _, reason, _ = get_exclusion_info(pass_name)
+            print(f"⏭️  Skipping (excluded by manual review: {reason}): {pass_name}")
+            skipped += 1
+            continue
 
         if False:  # Temporarily bypassed to populate new motor metrics columns for all flights
             print(f"⏭️  Skipping (already cached): {pass_name}")
