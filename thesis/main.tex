@@ -2,6 +2,8 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{svg}
+\usepackage{amsmath}
+\usepackage{lastpage}
 \usepackage{hyperref}
 \usepackage{listings}
 \usepackage{xcolor}
@@ -16,9 +18,7 @@
 \usepackage[colorinlistoftodos]{todonotes}
 \usepackage[numbers,sort&compress]{natbib}
 \usepackage{graphicx}
-\graphicspath{ {./Figures/} } % Sets the default image asset lookup path
-\graphicspath{ {./diagrams/} } % additonally for diagrams
-\graphicspath{ {./plots/} } % for generated plots
+\graphicspath{ {./Figures/} {./diagrams/} {./plots/} } % Sets asset lookup paths
 
 
 
@@ -142,7 +142,7 @@
 \newpage
 \input{Sections/Introduction}
 \pagenumbering{arabic}
-\fancyfoot[C]{Page \thepage\ of \pageref{EndOfText}}
+\fancyfoot[C]{Page \thepage\ of \pageref{LastPage}}
 \input{Sections/Related_work}
 \input{Sections/Methodology}
 \input{Sections/Experiments}
@@ -153,19 +153,13 @@
 \input{Sections/Figures}
 \input{Sections/Tables}
 \input{Sections/Math}
-\input{Sections/CodeListings}
-\input{Sections/Citations}
-
-\label{EndOfText}
 
 \newpage
 \pagenumbering{Roman}
-\fancyfoot[C]{Page \thepage\ of \pageref{endOfDoc}}
+\fancyfoot[C]{Page \thepage\ of \pageref{LastPage}}
 \bibliographystyle{plainnat}
 \bibliography{IEEEabrv,references,references_non_zotero}
 % \bibliographystyle{IEEEtran}
-
-\label{endOfDoc}
 
 %\clearpage
 

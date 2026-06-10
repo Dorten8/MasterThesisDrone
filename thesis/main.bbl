@@ -1,8 +1,175 @@
-\begin{thebibliography}{0}
+\begin{thebibliography}{27}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
   \providecommand{\doi}[1]{doi: #1}\else
   \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Ema()]{EmaxECOII}
+Emax {{ECO II Series}} 2004 {{1600KV 2000KV 2400KV 3000KV Brushless Motor}} for
+  {{RC Drone FPV Racing}}.
+\newblock URL
+  \url{https://emaxmodel.com/products/emax-eco-ii-series-2004-1600kv-2000kv-2400kv-3000kv-brushless-motor-for-rc-drone-fpv-racing}.
+
+\bibitem[Fin()]{FindYourPerfect}
+Find {{Your Perfect FPV Drone Size}} for {{Optimal Use}}.
+\newblock URL \url{https://vibms.com/what-size-fpv-drone-should-i-get/}.
+
+\bibitem[Gom()]{Gomboc2026}
+Gömböc.
+\newblock URL
+  \url{https://en.wikipedia.org/w/index.php?title=G%C3%B6mb%C3%B6c&oldid=1342148896}.
+
+\bibitem[LiP()]{LiPoBatteriesFPV}
+{LiPo} batteries for {FPV} drones explained: Voltage, sag, charging and storage
+  basics.
+\newblock URL
+  \url{https://chinahobbyline.com/blogs/news/lipo-batteries-for-fpv-drones-explained}.
+
+\bibitem[PX4()]{PX4Docs}
+Holybro {Pixhawk} 6{C}.
+\newblock URL \url{https://docs.px4.io/main/en/flight_controller/pixhawk6c}.
+
+\bibitem[Pix()]{Pixhawk6C6C}
+Pixhawk {{6C 6C Mini Flight Controller}} — {{Copter}} documentation.
+\newblock URL
+  \url{https://ardupilot.org/copter/docs/common-holybro-pixhawk6C.html}.
+
+\bibitem[Tec()]{TechnicalSpecificationHolybro2025}
+Technical {{Specification}} | {{Holybro}}.
+\newblock URL
+  \url{https://docs.holybro.com/autopilot/pixhawk-6c/technical-specification}.
+
+\bibitem[Ult({\natexlab{a}})]{UltimateFPVDrone}
+The {{Ultimate FPV Drone Motors Guide}} 2025, {\natexlab{a}}.
+\newblock URL
+  \url{https://www.ligpower.com/blog/the-ultimate-fpv-drone-motor-guide.html}.
+\newblock info on number of cells, voltage sag, ratio, efficiency\\.
+
+\bibitem[Ult({\natexlab{b}})]{UltimateGuideDrone}
+Ultimate {{Guide}} to {{Drone Cages}}: {{Types}} \& {{Uses}}, {\natexlab{b}}.
+\newblock URL \url{https://www.flyability.com/blog/drone-cage}.
+
+\bibitem[Und({\natexlab{a}})]{UnderstandingLiPoBattery}
+Understanding {{LiPo Battery Internal Resistance}} - {{Hanery}},
+  {\natexlab{a}}.
+\newblock URL
+  \url{https://www.hanery.com/blog/lipo-battery-internal-resistance/}.
+
+\bibitem[Und({\natexlab{b}})]{UnderstandingLiPoBattery2025}
+Understanding {LiPo} battery voltage for optimal performance, {\natexlab{b}}.
+\newblock URL
+  \url{https://www.large-battery.com/blog/lipo-battery-voltage-guide/}.
+
+\bibitem[Ins(10:48:12 +0200 +0200)]{InstallDockerEngine10:48:12+0200+0200}
+Install {{Docker Engine}} on {{Ubuntu}}, 10:48:12 +0200 +0200.
+\newblock URL \url{https://docs.docker.com/engine/install/ubuntu/}.
+
+\bibitem[Pos(15:53:34 +0200 +0200)]{PostinstallationSteps0200}
+Post-installation steps, 15:53:34 +0200 +0200.
+\newblock URL \url{https://docs.docker.com/engine/install/linux-postinstall/}.
+
+\bibitem[de~Azambuja et~al.()de~Azambuja, Fouad, Bouteiller, Sol, and
+  Beltrame]{azambujaWhenBeingSoft2022}
+Ricardo de~Azambuja, Hassan Fouad, Yann Bouteiller, Charles Sol, and Giovanni
+  Beltrame.
+\newblock When {{Being Soft Makes You Tough}}: {{A Collision-Resilient
+  Quadcopter Inspired}} by {{Arthropods}}' {{Exoskeletons}}.
+\newblock In \emph{2022 {{International Conference}} on {{Robotics}} and
+  {{Automation}} ({{ICRA}})}, pages 7854--7860.
+\newblock \doi{10.1109/ICRA46639.2022.9811841}.
+\newblock URL \url{http://arxiv.org/abs/2103.04423}.
+\newblock Comment: Author's version of the paper presented at ICRA 2022 (still
+  waiting for the conference proceedings to be online). Added acknowledgements
+  that were previously removed to fit 6+n ICRA 2022 page limits.
+
+\bibitem[Designs()]{Innov8tive}
+Innov8tive Designs.
+\newblock How to use multirotor motor performance data charts.
+\newblock URL
+  \url{https://innov8tivedesigns.com/images/specs/Prop-Chart-Instructions-B.pdf}.
+
+\bibitem[Drone24Hours()]{drone24hoursTMotorF20041700KV}
+Drone24Hours.
+\newblock T-motor f2004 1700kv.
+\newblock URL \url{https://drone24hours.com/products/t-motor-f2004-1700kv}.
+
+\bibitem[Gomez et~al.()Gomez, Gomez, Rodas~Benítez, Paiva, Saad, and
+  Gregor]{gomezParetoOptimalPID2020}
+Victor Gomez, Nicolas Gomez, Jorge Rodas~Benítez, Enrique Paiva, Maarouf Saad,
+  and Raul Gregor.
+\newblock Pareto {{Optimal PID Tuning}} for {{Px4-Based Unmanned Aerial
+  Vehicles}} by {{Using}} a {{Multi-Objective Particle Swarm Optimization
+  Algorithm}}.
+\newblock 7.
+\newblock \doi{10.3390/aerospace7060071}.
+
+\bibitem[Lerche and Faina()]{lercheSpinFlyUAVSystem}
+Alexander~Niclas Lerche and Andres Faina.
+\newblock {{SpinFly}}: {{UAV System}} for {{Active Inspection}} in the
+  {{Pharmaceutical Industry}}.
+
+\bibitem[Mahmud()]{mahmudDevelopmentCollisionResilient2021}
+Al~Mahmud.
+\newblock Development of {{Collision Resilient Drone}} for {{Flying}} in
+  {{Cluttered Environment}}.
+\newblock Ms.
+\newblock URL \url{https://researchrepository.wvu.edu/etd/8022}.
+
+\bibitem[MECHTEX()]{mechtexUnderstandingRelationshipKV}
+MECHTEX.
+\newblock Understanding the {{Relationship Between KV Rating}} and {{Drone
+  Performance}}.
+\newblock URL
+  \url{https://mechtex.com/blog/understanding-the-relationship-between-kv-rating-and-drone-performance}.
+
+\bibitem[Meier et~al.()Meier, Honegger, and
+  Pollefeys]{meierPX4NodebasedMultithreaded2015}
+Lorenz Meier, Dominik Honegger, and Marc Pollefeys.
+\newblock {{PX4}}: {{A}} node-based multithreaded open source robotics
+  framework for deeply embedded platforms.
+\newblock In \emph{2015 {{IEEE International Conference}} on {{Robotics}} and
+  {{Automation}} ({{ICRA}})}, pages 6235--6240. IEEE.
+\newblock ISBN 978-1-4799-6923-4.
+\newblock \doi{10.1109/ICRA.2015.7140074}.
+\newblock URL \url{http://ieeexplore.ieee.org/document/7140074/}.
+
+\bibitem[Mulgaonkar et~al.()Mulgaonkar, Makineni, Guerrero-Bonilla, and
+  Kumar]{mulgaonkarRobustAerialRobot2018}
+Yash Mulgaonkar, Anurag Makineni, Luis Guerrero-Bonilla, and Vijay Kumar.
+\newblock Robust {{Aerial Robot Swarms Without Collision Avoidance}}.
+\newblock 3\penalty0 (1):\penalty0 596--603.
+\newblock ISSN 2377-3766.
+\newblock \doi{10.1109/LRA.2017.2775699}.
+\newblock URL \url{https://ieeexplore.ieee.org/document/8115305/}.
+
+\bibitem[Oscar({\natexlab{a}})]{oscarHowChooseFPV2024}
+Oscar.
+\newblock How to {{Choose FPV Drone Motors}} - {{Considerations}} and {{Best
+  Motor Recommendations}}, {\natexlab{a}}.
+\newblock URL \url{https://oscarliang.com/motors/}.
+
+\bibitem[Oscar({\natexlab{b}})]{oscarUsingLiPoBatteries2025}
+Oscar.
+\newblock Using {{LiPo Batteries}} for {{FPV Drones}}: {{Beginner}}'s {{Guide}}
+  with {{Top Product Recommendations}}, {\natexlab{b}}.
+\newblock URL \url{https://oscarliang.com/lipo-battery-guide/}.
+
+\bibitem[{Recursion Labs}()]{recursionlabsRecursionLabs6s2021}
+{Recursion Labs}.
+\newblock 6s vs 4s - detailed head to head automated motor bench testing.
+\newblock URL \url{https://www.youtube.com/watch?v=Vy_JMJNG31Y}.
+
+\bibitem[Robotics()]{roboticsDroneDesignCalculations}
+Tyto Robotics.
+\newblock Drone {{Design}} - {{Calculations}} and {{Assumptions}}.
+\newblock URL
+  \url{https://www.tytorobotics.com/blogs/articles/the-drone-design-loop-for-brushless-motors-and-propellers}.
+
+\bibitem[Simpson()]{simpsonLatestPixhawkOpen2023}
+Sarah Simpson.
+\newblock Latest {{Pixhawk Open Standards Available}} | {{UST}}.
+\newblock URL
+  \url{https://www.unmannedsystemstechnology.com/2023/01/latest-pixhawk-open-standards-available/}.
 
 \end{thebibliography}

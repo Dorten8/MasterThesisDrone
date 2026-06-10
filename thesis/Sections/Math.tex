@@ -1,44 +1,39 @@
-\section{EXAMPLE Math Equations}
-You may want to display math equations in three distinct styles:
-inline, numbered or non-numbered display.  Each of the three are
-discussed in the next sections.
+\section{Mathematics}
 
-\subsection{Inline (In-text) Equations}
-A formula that appears in the running text is called an inline or
-in-text formula.  It is produced by the \textbf{math} environment,
-which can be invoked with the usual
-\texttt{{\char'134}begin\,\ldots{\char'134}end} construction or with
-the short form \texttt{\$\,\ldots\$}. You can use any of the symbols
-and structures, from $\alpha$ to $\omega$, available in
-\LaTeX~\cite{Lamport:LaTeX}; this section will simply show a few
-examples of in-text equations in context. Notice how this equation:
-\begin{math}
-  \lim_{n\rightarrow \infty}x=0
-\end{math},
-set here in in-line math style, looks slightly different when
-set in display style.  (See next section).
+This thesis uses standard mathematical notation for rigid-body dynamics and
+control theory. Key symbols and conventions are defined here for reference.
 
-\subsection{Display Equations}
-A numbered display equation---one set off by vertical space from the
-text and centered horizontally---is produced by the \textbf{equation}
-environment. An unnumbered display equation is produced by the
-\textbf{displaymath} environment.
+\subsection{Coordinate Frames}
 
-Again, in either environment, you can use any of the symbols and
-structures available in \LaTeX\@; this section will just give a couple
-of examples of display equations in context.  First, consider the
-equation, shown as an inline equation above:
+The drone's pose is expressed in two coordinate frames:
+\begin{itemize}
+    \item \textbf{World frame (ENU):} $X$ east, $Y$ north, $Z$ up.
+    \item \textbf{Body frame:} $x_b$ forward, $y_b$ right, $z_b$ down
+    (NED convention per PX4 firmware).
+\end{itemize}
+
+Position is denoted $\mathbf{p} = [x, y, z]^\mathsf{T}$,
+velocity $\mathbf{v} = [v_x, v_y, v_z]^\mathsf{T}$, and
+acceleration $\mathbf{a} = [a_x, a_y, a_z]^\mathsf{T}$.
+
+\subsection{Drone Dynamics}
+
+The quadcopter's rotational dynamics are governed by the Euler equations:
+
 \begin{equation}
-  \lim_{n\rightarrow \infty}x=0
+    \mathbf{I} \dot{\boldsymbol{\omega}} + \boldsymbol{\omega} \times (\mathbf{I} \boldsymbol{\omega}) = \boldsymbol{\tau}
 \end{equation}
-Notice how it is formatted somewhat differently in
-the \textbf{displaymath}
-environment.  Now, we'll enter an unnumbered equation:
-\begin{displaymath}
-  \sum_{i=0}^{\infty} x + 1
-\end{displaymath}
-and follow it with another numbered equation:
+
+where $\mathbf{I}$ is the inertia tensor, $\boldsymbol{\omega}$ the angular velocity,
+and $\boldsymbol{\tau}$ the applied torque from motor thrust differentials.
+
+\subsection{Collision Kinematics}
+
+Impact deceleration is measured as the peak magnitude of the IMU acceleration vector
+during the collision window:
+
 \begin{equation}
-  \sum_{i=0}^{\infty}x_i=\int_{0}^{\pi+2} f
+    \|\mathbf{a}_{\text{peak}}\| = \max_{t \in T_{\text{collision}}} \sqrt{a_x(t)^2 + a_y(t)^2 + a_z(t)^2}
 \end{equation}
-just to demonstrate \LaTeX's able handling of numbering.
+
+This is reported in multiples of standard gravity $g = 9.81\ \text{m}\,\text{s}^{-2}$.

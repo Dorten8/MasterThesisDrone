@@ -1,40 +1,25 @@
-\section{EXAMPLE Tables}
+\section{Tables}
 
-This template includes the ``\verb|booktabs|''
-package --- \url{https://ctan.org/pkg/booktabs} --- for preparing
-high-quality tables.
+The experimental results are summarized in the following tables. These
+present aggregated metrics across the fixed and rotating cage configurations
+for each incidence angle tested.
 
-Table captions are placed {\itshape below} the table.
-
-Because tables cannot be split across pages, the best placement for
-them is typically the top of the page nearest their initial cite.  To
-ensure this proper ``floating'' placement of tables, use the
-environment \textbf{table} to enclose the table's contents and the
-table caption.  The contents of the table itself must go in the
-\textbf{tabular} environment, to be aligned properly in rows and
-columns, with the desired horizontal and vertical rules.  Again,
-detailed instructions on \textbf{tabular} material are found in the
-\textit{\LaTeX\ User's Guide}.
-
-Immediately following this sentence is the point at which
-Table~\ref{tab:freq} is included in the input file; compare the
-placement of the table here with the table in the printed output of
-this document.
-
-\begin{table}
-  
+\begin{table}[htbp]
   \centering
-  \label{tab:freq-data}
+  \caption{Experiment configurations tested}
+  \label{tab:experiment_configs}
   \begin{tabular}{ccl}
     \toprule
-    Non-English or Math&Frequency&Comments\\
+    Incidence Angle & Cage Type & Valid Passes \\
     \midrule
-    \O & 1 in 1,000& For Swedish names\\
-    $\pi$ & 1 in 5& Common in math\\
-    \$ & 4 in 5 & Used in business\\
-    $\Psi^2_1$ & 1 in 40,000& Unexplained usage\\
-  \bottomrule
-\end{tabular}
-\caption{Frequency of Special Characters}
-\label{tab:freq}
+    $30^\circ$ & Fixed & $N$ \\
+    $30^\circ$ & Rotating & $N$ \\
+    $45^\circ$ & Fixed & $N$ \\
+    $45^\circ$ & Rotating & $N$ \\
+    $60^\circ$ & Fixed & $N$ \\
+    $60^\circ$ & Rotating & $N$ \\
+    $75^\circ$ & Fixed & $N$ \\
+    $75^\circ$ & Rotating & $N$ \\
+    \bottomrule
+  \end{tabular}
 \end{table}

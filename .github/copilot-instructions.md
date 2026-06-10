@@ -51,7 +51,7 @@ ninja -C build clangtidy-autofix
 
 ## Project Ecosystem
 These links represent the different dimensions of the project. Reference them when discussing design, documentation, or research.
-* **Thesis Manuscript (Overleaf):** https://overleaf.com/read/ptfbgvrbbkpq#ba9385
+* **Thesis Manuscript (local — `thesis/`):** `/home/dorten/MasterThesisDrone/thesis/`
 * **Design & Ideation (Figma):** Master Thesis Board
 * **Research & Notes (Notion):** Thesis Management
 * **Project Data (OneDrive):** Raw Data & Assets
@@ -95,7 +95,7 @@ These links represent the different dimensions of the project. Reference them wh
 - **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
-## Current Session Status (Last Update: 2026-06-08 19:30 Local Time)
+## Current Session Status (Last Update: 2026-06-09 ~23:30 Local Time)
 
 ### 🎯 Mission Status
 - **Diagram pipeline transitioned to vector PDFs:** ✅ DONE.
@@ -127,6 +127,21 @@ These links represent the different dimensions of the project. Reference them wh
 - **Dual comparison cells created** in `experiments_analysis.ipynb`: single-flight EKF vs MoCap viewer and Fixed vs Rotating Cage side-by-side (both at 45°). User confirmed EKF result is "absolute gold."
 - **Full MoCap velocity downstream dependency trace** completed — the 24.1% deceleration improvement claim, impact angle calculation, and sweep transit speed all depend on MoCap-derived velocity/acceleration.
 
+### 🎯 Experiment Start-Point Timing — SSoT Knowledge
+
+**CRITICAL:** The "Exp. Start-point" vertical line on plots must reflect when the drone *actually starts moving* (speed crossing from ~0 to > 0.10 m/s), NOT when the command was sent. The drone may drift off position, re-acquire, then spring forward — command time ≠ movement time.
+
+**Current code state (NEXT SESSION — verify & fix):**
+- `find_waypoint_events()` in `kin_calculator.py` **already refines WP2 to actual movement start** (lines 560-587): after detecting the sweep command transition, it finds the last timestamp where MoCap speed < 0.10 m/s before crossing Y=0.70m.
+- **BUT** `draw_timeline_markers()` in `kin_plot_kinematics.py:14` uses `wp_events.get('WP1')` for the "Exp. Start-point" line — and **WP1 is NOT refined**; it stays as the raw command transition time.
+- **Task:** Investigate if Exp. Start-point should use WP2 (refined) instead of WP1, or if WP1 needs its own refinement.
+
+**Flight to inspect:** `flight_20260531-1112_45°_column_collision_loop_fixed_cage/pass02` — the IMU dynamics plot shows the timing alignment, and the trajectory top-down plot looks "completely wrong and actually impossible."
+
+**Next-session script to build:** A4 PDF plot dumper at `dev_logs/scratch/plot_to_a4_pdf.py` — collects all `pass*.png` → multi-page A4 PDF for physical printing + manual annotation of bad passes.
+
+**Plan file with details:** `/home/dorten/.claude/plans/add-here-the-plan-graceful-starlight.md`
+
 ### ⚠️ KNOWN LIMITATIONS & RESEARCH NOTES
 - **Bagfile size checks:** Flight bags should be sanity checked after recording to avoid MCAP indexing/header corruption.
 - **Heavy drone inertia:** The heavy 1.2kg 4-inch quadcopter has high linear inertia; keeping transit speeds at `0.30 m/s - 0.35 m/s` near geofence boundaries is mandatory.
@@ -147,13 +162,21 @@ These links represent the different dimensions of the project. Reference them wh
 - **Complete MoCap velocity dependency trace mapped** — metrics engine, profile plots, comparison tables, impact angle all flow from MoCap-derived speed/accel.
 - **Plots backup created** — `dev_logs/analysis/plots_before_vel&acc_fix/` with all 1,117 current plots (33 graphics + 1,084 per-pass capsule PNGs, 955 MB total) before EKF integration.
 
+### ✅ Completed This Session (2026-06-09)
+- **Approved Flight Cutoff SSoT created** — centralized `APPROVED_CUTOFF = "20260524-1904"` in `db_manager.py`, all 4 scripts import from it via `is_approved_flight()`.
+- **16 pre-cutoff orphans deleted** from `flights_battery_efficiency` — these were 75° flights from May 23-24 with no pass MCAPs and no summary data.
+- **75° pipeline re-run completed** — 71 passes restored to `flights_summary` (total now 179: 108 × 45° + 71 × 75°).
+- **0 NULL battery columns** in `flights_summary`.
+- **Star-point timing investigated** — found that the "Exp. Start-point" line uses WP1 (command transition time), while WP2 is already refined to actual movement start (`t_start_sweep` in `kin_calculator.py:560-587`). Documented in copilot-instructions.md for next session.
+
 ### 📋 Next Priority Order
-0. **[IN PROGRESS] Integrate EKF velocity into main pipeline** — Replace MoCap-derived `speed`/`accel` in `calculate_metrics()` with EKF equivalents, re-run deceleration-vs-battery plots, generate thesis-ready dual EKF comparison figure.
-1. **Investigate Control Allocator Saturation**: Resolve why `allocator_saturation_duration_sec` is empty/zero for 177 flights. Verify active motor limit hits and alternate instances of `actuator_outputs` or `actuator_motors`.
-2. **Phase 6 - Motor Analysis**: Generate Plot 1, Plot 2, Plot 17, and Plot 18 comparative figures.
-3. **Phase 2 & 3 - Plot Polish**: Resolve Plot 16 Y-axis name, convert Plot 12 to 2-panels with mathematical descriptions, and implement the nominal vs. actual polar wedge geometry visualization.
-4. **Phase 4 - Trajectory Path Spread**: Implement SDLD calculations to quantify path spread.
-5. **Manuscript Sync**: Push updated figures and tables to the Overleaf thesis document.
+0. **[HIGHEST] Verify Exp. Start-point timing & build A4 PDF plot dumper** — See "Experiment Start-Point Timing" section above. Build `dev_logs/scratch/plot_to_a4_pdf.py` to dump all `pass*.png` → multi-page A4 PDF for physical printing + manual pass validation.
+1. **[IN PROGRESS] Integrate EKF velocity into main pipeline** — Replace MoCap-derived `speed`/`accel` in `calculate_metrics()` with EKF equivalents, re-run deceleration-vs-battery plots, generate thesis-ready dual EKF comparison figure.
+2. **Investigate Control Allocator Saturation**: Resolve why `allocator_saturation_duration_sec` is empty/zero for 177 flights. Verify active motor limit hits and alternate instances of `actuator_outputs` or `actuator_motors`.
+3. **Phase 6 - Motor Analysis**: Generate Plot 1, Plot 2, Plot 17, and Plot 18 comparative figures.
+4. **Phase 2 & 3 - Plot Polish**: Resolve Plot 16 Y-axis name, convert Plot 12 to 2-panels with mathematical descriptions, and implement the nominal vs. actual polar wedge geometry visualization.
+5. **Phase 4 - Trajectory Path Spread**: Implement SDLD calculations to quantify path spread.
+6. **Manuscript Sync**: Push updated figures and tables to the Overleaf thesis document.
 
 
 ## Tutoring Mode: Socratic Learning Style (Default)

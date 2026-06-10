@@ -2,7 +2,7 @@
 
 To evaluate the operational and protective capabilities of the drone, physical collision tests were conducted. This section details the hardware setup, the software pipeline used to capture the data, and the direct mechanical results of the impacts, comparing the performance of a standard fixed cage against a freely rotating cage.
 
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plots/2D_path_overlay_2026-06-09.png}
     \caption{2D path overlay showing trajectory comparison between fixed and rotating cage configurations}
@@ -22,7 +22,7 @@ To orchestrate the experimental runs, a custom software component named \texttt{
 
 The complete experimental pipeline, from hardware components through the ROS~2 software stack and MOCAP integration to telemetry storage, is illustrated in \autoref{fig:experiments_pipeline}.
 
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{Figures/experiments_pipeline.pdf}
     \caption{Experiment pipeline showing hardware components, ROS2 software stack, data flow from MOCAP through the agent to PX4, and telemetry logging to MCAP storage}
@@ -35,6 +35,13 @@ Prior to analyzing the collision data, a baseline for flight stability and syste
 Despite the introduction of a dynamic spinning mass, the OptiTrack MOCAP system successfully maintained continuous tracking of the drone's spatial position ($X, Y, Z$) and orientation. The high-speed rotation of the dynamic cage did not occlude the camera pipeline or induce telemetry drops. Furthermore, commanded motor speeds and maximum actuator outputs showed no statistically significant deviation between the fixed and rotating cage variants during standard flight.
 
 However, analysis of the power consumption from the exact moment of commanded takeoff indicates a disparity in efficiency. The fixed cage configuration demonstrated a consistently lower voltage drop over active flight loops compared to the rotating cage. Consequently, the fixed cage yielded measurably longer total active flight times before reaching critical battery thresholds.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{plots/2D_trajectory.png}
+    \caption{2D trajectory overlay of all 45-degree incidence passes, comparing fixed and rotating cage flight paths through the collision zone}
+    \label{fig:2d_trajectory}
+\end{figure}
 
 \subsection{Impact Kinematics and Force Transfer}
 The primary metric for structural viability is the instantaneous deceleration force transferred to the drone's core mass upon physical collision with the static column. The internal IMU data was isolated at the exact timestamp of impact to evaluate this force transfer.
