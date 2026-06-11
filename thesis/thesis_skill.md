@@ -9,7 +9,7 @@
 3. **User syncs Zotero** → Zotero's Better BibTeX exports to `references.bib`
 4. **I check the `.bib`** for the new entry and its exact key name
 5. **I fix the `.tex`** to use `\cite{EXACT_KEY_FROM_BIB}`
-6. **I update `citations_checklist.md`** to mark things resolved
+6. **The citation key is now in the `.bib`** — I use the exact key name in `.tex`
 
 ## What I Should NEVER Do
 

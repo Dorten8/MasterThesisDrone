@@ -123,3 +123,21 @@
 - Verified: both PDFs rendered (33 KB + 60 KB) and thesis compiled successfully (668 KB)
 - User flagged EKF filter implementation from another conversation as tomorrow's priority
 - Full breakdown: [dev_logs/session_journals/2026-06-08-diagram-pipeline-migration.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-08-diagram-pipeline-migration.md)
+
+## Session: 2026-06-09 (Approved Flight Cutoff & 75° Pipeline Re-run)
+- Created centralized `APPROVED_CUTOFF` in `db_manager.py` with `is_approved_flight()` — all 4 scripts now reference it
+- Deleted 16 pre-cutoff orphan records from `flights_battery_efficiency`
+- Reran 75° pipeline: 71 passes restored, total now 179
+- Fixed 0 NULL battery columns in `flights_summary`
+- Investigated Start-point timing — WP2 already refined to actual movement start, WP1 still uses command time
+- Full breakdown: [dev_logs/session_journals/2026-06-09-db-cleanup-pipeline.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-09-db-cleanup-pipeline.md)
+
+## Session: 2026-06-10 — 🎯 BREAKTHROUGH: IMU-Angle Prediction EDA
+- **Created complete EDA pipeline** from scratch: `eda_angle_prediction.py` module + Jupyter notebook + planning doc
+- **Correlation heatmap**: 26 IMU features vs `impact_angle` (Fixed Cage, N=70)
+- **Top-3 scatter plots**: Peak Gyro Y (r = -0.84), Peak Accel X (r = -0.81), Vibration Gyro Y (r = -0.80) — all with robust Huber trendlines
+- **Key insight**: All top-10 features are NEGATIVE — shallow impacts transfer more rotational energy. Gyro Y (pitch rate) is the dominant predictor.
+- **Physical explanation**: Asymmetric cage contact at shallow angles induces pitch rotation; head-on impacts transfer energy linearly.
+- **Files created**: `eda_angle_prediction.py`, `eda_angle_prediction.ipynb`, `angle_prediction.md`, 3 PNGs in `graphics/`
+- User reaction: "OMG this is some seriously fucking good data"
+- Full breakdown: [dev_logs/session_journals/2026-06-10-angle-prediction-eda.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-10-angle-prediction-eda.md)

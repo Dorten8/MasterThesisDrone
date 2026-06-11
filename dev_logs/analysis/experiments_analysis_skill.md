@@ -361,3 +361,16 @@ To prevent repeat attempts of low-value visualizations:
 *[2026-06-08] Added dynamic % improvement printouts for: (1) recovery area after boxplot, (2) max deviation after Plot B scatter, (3) impact deceleration after battery plot. Polished Plot 12: removed 3rd Settling Times panel (now 2 panels), Y label includes `[rad]`, added LaTeX markdown explanation.
 **Verify:** Notebook shows "✅ Rotating Cage reduces recovery area by XX.X%" etc. Plot 12 has 2 panels, Rotational Energy in `[rad]`. Math markdown renders below.
 **Where:** `experiments_analysis_summary.ipynb` cells after boxplot (~13), after Plot B (~33), after deceleration (~25). Plot 12 cell (~28). New markdown cell (~29).*
+
+### Impact Timestamp Column + Pipeline Plot Retirement — 2026-06-10
+*[2026-06-10] **Three changes:**
+
+**1. Impact timestamp in DB.** Added `e_impact_timestamp_PX4` INTEGER column to `flights_summary` (schema, migration, pipeline computation, cache checks). Impact time now persisted from `wp_events.get('Column Impact')` so consumers don't re-run `find_waypoint_events()`.
+
+**2. IMU cache & aggregated plot fixed.** `db_cache_imu.py` was aligning traces to `WP2` (gate arrival, ~2.5s early) instead of `Column Impact` (actual collision). Fixed to `wp_events.get('Column Impact') or wp_events.get('WP2')`. Aggregated plot label corrected from "IMPACT (WP2)" to "Column Impact". IMU cache rebuilt: 137 traces aligned to true impact.
+
+**3. Pipeline plot cleanup.** Retired MoCAP kinetic plots (`kinetic_profile.png`, `kinetic_profile_raw.png`) and battery sag (`battery_sag.png`) from the pipeline — only `ekf_kinetic_profile.png` is generated for velocity/accel. Deleted 365 legacy MoCAP kinetic + 170 battery sag PNGs from flight directories. EKF kinetic, trajectory, IMU dynamics, IMU XYZ, actuators, control allocator, and PID plots remain.
+
+**Full pipeline re-run:** `python3 -m dev_logs.analysis.database.db_pipeline --today --force-plot` — 179/179 passes, 0 errors, 1,253 PNGs regenerated (7 types × 179 passes) with corrected Column Impact alignment.
+
+**Where:** `db_pipeline.py`, `db_manager.py`, `db_cache_imu.py`, `plot_aggregated_imu_dynamics.py`, `experiments_analysis_skill.md`.*

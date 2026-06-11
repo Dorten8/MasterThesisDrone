@@ -95,7 +95,7 @@ These links represent the different dimensions of the project. Reference them wh
 - **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
-## Current Session Status (Last Update: 2026-06-09 ~23:30 Local Time)
+## Current Session Status (Last Update: 2026-06-10 ~20:45 Local Time)
 
 ### 🎯 Mission Status
 - **Diagram pipeline transitioned to vector PDFs:** ✅ DONE.
@@ -116,6 +116,13 @@ These links represent the different dimensions of the project. Reference them wh
   - Conceived and generated the dark glassmorphic database web inspector [db_inspector.html](file:///home/dorten/pi_drone_sshfs/dev_logs/analysis/db_inspector.html) powered by `generate_db_html.py`.
 - **Flight Recorder (`record_flight_bag.sh`):** ✅ HARDENED.
   - Added direct motor commands `/fmu/in/actuator_motors`, active ROS 2 event logs `/rosout`, and Flight Director waypoint status `/flight_director/active_waypoint` to the recorded ROS 2 bag topic list to log motor saturation, recoveries, and state sequences.
+- **🎯 BREAKTHROUGH: IMU-Angle Prediction EDA:** ✅ DONE & DISCOVERY MADE.
+  - **Created `eda_angle_prediction.py`** — reusable module: data loading, correlation heatmap, top-3 scatter with Huber trendlines, parallel coordinates.
+  - **Created companion notebook** `eda_angle_prediction.ipynb` and planning doc `angle_prediction.md`.
+  - **Key result**: **Peak Gyro Y** (pitch rate) correlates with `impact_angle` at **r = −0.84** (p < 0.001). Peak Accel X at r = −0.81. Vibration Gyro Y at r = −0.80.
+  - **All top-10 features are NEGATIVE** — shallow/grazing impacts transfer more rotational energy. Physical explanation: asymmetric cage contact induces pitch rotation; head-on impacts transfer energy linearly.
+  - 3 thesis-quality PNGs saved to `graphics/`: `eda_correlation_heatmap.png`, `eda_top3_scatter.png`, `eda_parallel_coordinates.png`.
+  - **Scope**: Fixed Cage only (70 flights). Rotating Cage analyzed separately.
 
 ### 🔬 KEY TECHNICAL FINDINGS — Fixed Cage Velocity Kinks & EKF Velocity Solution
 - **Root Cause: ~10 Hz MoCap dropout kinks vs ~4 Hz collision dynamics — only 1.3 octaves apart.** The MoCap `/poses` topic drops to ~10 Hz during Fixed Cage flights (nominal ~120–240 Hz). Linear interpolation to 100 Hz creates slope discontinuities at each dropout. Savitzky-Golay differentiation (window=19, polyorder=3) amplifies these discontinuities into visible velocity kinks.
@@ -147,6 +154,7 @@ These links represent the different dimensions of the project. Reference them wh
 - **Heavy drone inertia:** The heavy 1.2kg 4-inch quadcopter has high linear inertia; keeping transit speeds at `0.30 m/s - 0.35 m/s` near geofence boundaries is mandatory.
 - **MicroXRCEAgent Stale Connection:** Do not kill the agent once it connects; doing so freezes the Flight Controller and requires a battery reboot.
 - **EKF velocity not yet in main pipeline** — currently only viewable in dedicated notebook cells. `calculate_metrics()`, `compare_all_angles()`, and the summary notebook still use MoCap-derived velocity/acceleration.
+- **IMU-Angle EDA discovery (NEW)**: Peak Gyro Y correlates with `impact_angle` at r = −0.84 (Fixed Cage, N=70). All top-10 features are negative. This is thesis-worthy material and ML modeling is next.
 
 ### ✅ Completed This Session (2026-06-04)
 - **IMU Timeline Alignment**: Aligned the collision timeline dynamically to the peak accelerometer gradient, resolving coordinate-based MoCap latency and sync offsets. Reprocessed and rebuilt the database cache for all 137 flights.
@@ -162,21 +170,26 @@ These links represent the different dimensions of the project. Reference them wh
 - **Complete MoCap velocity dependency trace mapped** — metrics engine, profile plots, comparison tables, impact angle all flow from MoCap-derived speed/accel.
 - **Plots backup created** — `dev_logs/analysis/plots_before_vel&acc_fix/` with all 1,117 current plots (33 graphics + 1,084 per-pass capsule PNGs, 955 MB total) before EKF integration.
 
-### ✅ Completed This Session (2026-06-09)
-- **Approved Flight Cutoff SSoT created** — centralized `APPROVED_CUTOFF = "20260524-1904"` in `db_manager.py`, all 4 scripts import from it via `is_approved_flight()`.
-- **16 pre-cutoff orphans deleted** from `flights_battery_efficiency` — these were 75° flights from May 23-24 with no pass MCAPs and no summary data.
-- **75° pipeline re-run completed** — 71 passes restored to `flights_summary` (total now 179: 108 × 45° + 71 × 75°).
-- **0 NULL battery columns** in `flights_summary`.
-- **Star-point timing investigated** — found that the "Exp. Start-point" line uses WP1 (command transition time), while WP2 is already refined to actual movement start (`t_start_sweep` in `kin_calculator.py:560-587`). Documented in copilot-instructions.md for next session.
+### ✅ Completed This Session (2026-06-10) — 🎯 BREAKTHROUGH: IMU-Angle Prediction EDA
+- **Built complete EDA pipeline** from scratch: `eda_angle_prediction.py` module + Jupyter notebook + `angle_prediction.md` planning doc + 3 publication-quality PNGs
+- **Correlation heatmap**: 26 IMU features vs `impact_angle` — rows sorted by |r| descending, significance stars, grouped by feature type (colored sidebar)
+- **Top-3 scatter plots**: Peak Gyro Y (r = −0.84), Peak Accel X (r = −0.81), Vibration Gyro Y (r = −0.80) — each with robust Huber trendline, points colored by battery state
+- **Parallel coordinates**: Multi-dimensional view with angle-group coloring (<40°, 40–60°, 60–75°, 75°+)
+- **Key insight**: All top-10 features show NEGATIVE correlation — shallow impacts transfer more rotational energy. Gyro Y (pitch rate) is the dominant predictor.
+- **Physical explanation**: Asymmetric cage contact at shallow angles induces pitch rotation; head-on impacts transfer energy linearly through the cage structure
+- **Fixed Cage scope** (70 flights) — Rotating Cage deliberately excluded due to different collision physics
+- **Hurdle solved**: Used `importlib` to import `db_manager.py` directly and bypass the MCAP-heavy `database/__init__.py` dependency chain
+- **User reaction**: "OMG this is some seriously fucking good data"
 
 ### 📋 Next Priority Order
-0. **[HIGHEST] Verify Exp. Start-point timing & build A4 PDF plot dumper** — See "Experiment Start-Point Timing" section above. Build `dev_logs/scratch/plot_to_a4_pdf.py` to dump all `pass*.png` → multi-page A4 PDF for physical printing + manual pass validation.
-1. **[IN PROGRESS] Integrate EKF velocity into main pipeline** — Replace MoCap-derived `speed`/`accel` in `calculate_metrics()` with EKF equivalents, re-run deceleration-vs-battery plots, generate thesis-ready dual EKF comparison figure.
-2. **Investigate Control Allocator Saturation**: Resolve why `allocator_saturation_duration_sec` is empty/zero for 177 flights. Verify active motor limit hits and alternate instances of `actuator_outputs` or `actuator_motors`.
-3. **Phase 6 - Motor Analysis**: Generate Plot 1, Plot 2, Plot 17, and Plot 18 comparative figures.
-4. **Phase 2 & 3 - Plot Polish**: Resolve Plot 16 Y-axis name, convert Plot 12 to 2-panels with mathematical descriptions, and implement the nominal vs. actual polar wedge geometry visualization.
-5. **Phase 4 - Trajectory Path Spread**: Implement SDLD calculations to quantify path spread.
-6. **Manuscript Sync**: Push updated figures and tables to the Overleaf thesis document.
+0. **[HIGHEST] EKF velocity integration into main pipeline** — Replace MoCap-derived `speed`/`accel` in `calculate_metrics()` with EKF equivalents, re-run deceleration-vs-battery plots, generate thesis-ready dual EKF comparison figure.
+1. **[HIGHEST] ML Modeling for Angle Prediction** — Build Huber linear regression model on top-10 IMU features predicting `impact_angle`. Use Fixed Cage data (70 flights). Cross-validate with leave-one-flight-out. Check multicollinearity first.
+2. **[NEXT] Rotating Cage EDA comparison** — Repeat correlation analysis on Rotating Cage data; compare coefficient signs/magnitudes vs Fixed Cage findings.
+3. **Investigate Control Allocator Saturation**: Resolve why `allocator_saturation_duration_sec` is empty/zero for 177 flights. Verify active motor limit hits and alternate instances of `actuator_outputs` or `actuator_motors`.
+4. **Phase 6 - Motor Analysis**: Generate Plot 1, Plot 2, Plot 17, and Plot 18 comparative figures.
+5. **Phase 2 & 3 - Plot Polish**: Resolve Plot 16 Y-axis name, convert Plot 12 to 2-panels with mathematical descriptions, and implement the nominal vs. actual polar wedge geometry visualization.
+6. **Phase 4 - Trajectory Path Spread**: Implement SDLD calculations to quantify path spread.
+7. **Manuscript Sync**: Push updated figures and tables to the Overleaf thesis document.
 
 
 ## Tutoring Mode: Socratic Learning Style (Default)
