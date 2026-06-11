@@ -1,0 +1,143 @@
+## 2026-05-08 Chat Session
+**User**: Hey, can u tell me what is this all about and how you are supposed to initilize stuff?
+**AI**: Summarized project (ROS 2 Humble, Pi 5, Pixhawk 6C, OptiTrack) and how to initialize (Dev Container, colcon build, MicroXRCEAgent, mocap nodes).
+**User**: so what is for you as an AI the SSoT?
+**AI**: The `README.md` file located in the root of this repository.
+**User**: fuck, that is wronf...I mean u have correct answer..but it was supposed to be changed by Gemini Code Assist and it wasnt please eppend there this /home/dorten/pi_drone_sshfs/.github/copilot-instructions.md this file in this repo is the most important SSoT for AI initialiaztion
+**AI**: Updated GEMINI.md to point to `.github/copilot-instructions.md`. Confirmed reading it.
+**User**: Great stuff, and u read it too right? so please run end of the day routine
+**AI**: Running End of Day Routine.
+
+## 2026-05-14 Chat Session
+**User**: Reported issues with Wi-Fi power management causing connectivity drops on the Pi unless a monitor is attached. Provided instructions for installing `iw` and permanently disabling power save in NetworkManager.
+**AI**: Created journal entry `2026-05-14-network-stability-fix.md` and updated session status to record the permanent fix (`wifi.powersave = 2`).
+
+## Session: 2026-05-14 (Mocap Stabilization)
+- Resolved QoS mismatch for position messages.
+- Discovered "Source ID 255" requirement for arming.
+- Measured 60ms EKF2_EV_DELAY via Jerk Test.
+- Implemented NaN setpoint safety for trajectory generation.
+- Created screen-based XRCE agent protocol.
+- Full technical breakdown in: [dev_logs/journal_entries/2026-05-14-mocap-pipeline-stabilization.md](file:///home/dorten/pi_drone_sshfs/dev_logs/journal_entries/2026-05-14-mocap-pipeline-stabilization.md)
+
+## Session: 2026-05-19 (Pass-By Column Coordination)
+- Coded and validated the absolute-coordinate transit and pass-by column mission trajectory.
+- Diagnosed and fixed the 1m+ flight drift bug by restoring EKF2-to-Motive translation offset inside `flight_director.py`.
+- Tailored the trajectory endpoints to align perfectly with the Motive grid axes.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-19-mocap-geofence-and-rectangle-flight.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-19-mocap-geofence-and-rectangle-flight.md)
+
+## Session: 2026-05-22 (Velocity Feedforward & Flight Hardening)
+- Enabled offboard velocity feedforward in the heartbeat flags to completely fix jerky speed tracking and deceleration overshoots.
+- Shifted sweep loop waypoints slightly Southward (1.200m Y-limit) to maintain a safe physical clearance margin (12cm) for the custom PETG-printed glass-fiber cage.
+- Discovered and diagnosed the loopback deceleration hookup (WP4 to WP1) due to instantaneous velocity feedforward step-changes.
+- Measured battery consumption under active motor load (20% capacity depletion per minute of flight, estimated max flight time of 3 minutes).
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-22-flight-hardening-and-loopback-optimization.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-22-flight-hardening-and-loopback-optimization.md)
+
+## Session: 2026-05-23 (MoCap Recovery & Universal Modular Analysis Pipeline)
+- Resolved startup hangs and socket multicast timeouts caused by OptiTrack PC power outage reboots.
+- Replaced hardcoded IP references in `startup-sequence.sh` with robust, config-driven JSON queries from `drone_config.json`.
+- Refactored `experiments_analysis.ipynb` into a clean parameter-driven thin-notebook backed by the modular `experiments_analysis` package.
+- Restored strict 1:1 aspect ratios, equal 0.5m grid ticks, and scaled vector CAD drone viewport overlays inside 2D top-down trajectory plots.
+- Integrated a self-healing Jupyter module reload guard to clear memory cache dynamically and successfully verified headless notebook execution and vector TikZ compilation (exit code 0).
+- Configured, renamed, and mathematically validated the `exp_collision_75deg.py` mission. Forced a safe `1.0 m/s` rapid transit/approach and symmetrized coordinates to trace a strictly vertical straight-line sweep at $X = -0.186$ m, matching CAD and MoCap `/poses` column offset offsets.
+## Session: 2026-05-24 (Experimental Analysis Pipeline & Symmetrical Collision Loop)
+- Conceived and engineered the core mathematical and statistical data pipeline (`experiments_analysis` package) to clean raw high-frequency telemetry using Savitzky-Golay filtering, isolate active sweep events, calculate perpendicular tracking errors and closest approach clearances, and compile 2x2 comparative plots.
+- Symmetrized the waypoint logic in `exp_collision_75deg.py` to fly a straight-line vertical sweep at a constant offset of $X = -0.186$ m, matching CAD sketch and `/poses` column offset.
+- Replaced all hardcoded IP references in `startup-sequence.sh` with configuration-driven queries from `drone_config.json`, fixed the multicast node tracking join timeout pattern, and introduced custom health diagnostics for Companion-to-FC connectivity checking.
+- Enabled `hb.velocity = True` inside [flight_director.py](file:///home/dorten/pi_drone_sshfs/drone_control/flight_director.py) to activate PX4 offboard velocity feedforward.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-24-experimental-analysis-pipeline-and-collision-loop.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-24-experimental-analysis-pipeline-and-collision-loop.md)
+
+## Session: 2026-05-25 (Corrupted MCAP Auto-Repair & DB Population)
+- Designed and built a robust low-level MCAP auto-repair engine utilizing `StreamReader(record_size_limit=None)` to recover **150,905 raw messages** from the corrupted `flight_20260525-1706` bag.
+- Implemented dynamic ROS 2 message schema registration using `writer.register_msgdef()` during pass slicing to eliminate deserialization `KeyError` crashes in standard readers.
+- Added a direct `__main__` entry launcher block to `exa_pipeline.py` enabling fully automated, terminal-based pipeline execution and database population with duplicate-skipping support.
+- Fully cached 9 verified sweep passes in `collision_experiments.db`, successfully updating metrics for battery capacity, sweep speed, impact speed, acceleration, and perpendicular rebound deviations.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-25-telemetry-pipeline-upgrades-and-mcap-repair.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-25-telemetry-pipeline-upgrades-and-mcap-repair.md)
+
+## Session: 2026-05-27 (Waypoint Event Slicing & Database Web Inspector)
+- Implemented `/flight_director/active_waypoint` event publisher inside the Flight Director to log control state machine events deterministically.
+- Updated `record_flight_bag.sh` to record the new event topic.
+- Created `mcap_event_segmenter.py` using state-machine-driven parser logic to cleanly slice multi-loop bags into individual micro-bags.
+- Integrated SQLite database updates tracking cage physical conditions (`condition`) and actual `collision` outcome indicators.
+- Created a standalone HTML SQLite web inspector `db_inspector.html` in dark glassmorphism.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-27-mcap-event-slicing-and-database-hardening.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-27-mcap-event-slicing-and-database-hardening.md)
+
+## Session: 2026-05-28 (Robust Kinematics & Self-Healing Pipeline)
+- Resolved Jupyter notebook `IndexError` by fixing trajectory setpoint classification and waypoint extraction edge-cases.
+- Hardened V1 vs V2 mission detection (`detect_mission_class`) using stable pause-duration checks (counting coordinate matches near `Y=0.950` vs `1.100` for $>10$ messages) instead of transient interpolation.
+- Added self-healing waypoint pass reconstruction inside `exa_kinematics.py` for aborted/crashed flights where WP1 (Stage) and WP2 (Sweep Entry) were reached, estimating WP3/WP4 from telemetry boundaries.
+- Verified end-to-end notebook execution via headless `nbconvert` and successfully restored clean unstaged repository state.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-28-robust-kinematics-and-self-healing-pipeline.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-28-robust-kinematics-and-self-healing-pipeline.md)
+
+## Session: 2026-05-29 (Stabilization Trendlines, Overlay, and Dashboard Finalization)
+- Designed and built the unified Jupyter dashboard `experiments_analysis_summary.ipynb` utilizing 100% pure Matplotlib to avoid dependency issues.
+- Implemented 18+ client-side pre-sliced Pandas DataFrames in the notebook split by nominal angles, cages, and measured impact angle ranges.
+- Configured Step 7 & 8 Battery Bin Trendlines color-coded to each start LiPo battery state, with overlaid colored linear regressions for each bin.
+- Created Step 9 Comparative Stabilization Overlay plotting exactly 8 battery-colored trendlines overlaid on top of each other (dashed for Rotating Cage, solid for Fixed Cage).
+- Hardcoded Y-axis scaling strictly from 0 to 15 cm across all plots, correcting a major database metric conversion error (scaling mm to cm by dividing by 10.0 instead of multiplying by 100).
+- Simplified all X-axis labels to `'Impact Angle (deg)'` and removed Emojis from titles to resolve system font rendering problems.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-29-stabilization-trendlines-and-overlay.md](file:///home/dorten/pi_drone_sshfs/dev_logs/session_journals/2026-05-29-stabilization-trendlines-and-overlay.md)
+
+## Session: 2026-05-30 (Battery Efficiency Pipeline & Trajectory Refinements)
+- Programmatically scraped starting battery voltages, capacity drain rates, and active flight times directly from raw unsliced `.mcap` flight logs.
+- Refactored `kin_plot_trajectory.py` to project lateral tracking errors (`dev_max`) and recovery area integrals onto a hybrid reference line (start of sweep `WP2` to target exit `WP3`).
+- Added actual PX4 target setpoint trajectory visualization (topic `/fmu/in/trajectory_setpoint`) as rotated, dashed-purple lines to 2D trajectory plots.
+- Injected formal mathematical framework for line-tracking algorithms, waypoint acceptance radius, and impact geometry derivations.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-30-battery-efficiency-pipeline-and-trajectory-refinements.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-05-30-battery-efficiency-pipeline-and-trajectory-refinements.md)
+
+## Session: 2026-05-31 (Database Backfill & Battery-Deceleration Analysis)
+- Imported and parsed 4 new multi-pass flight folders (30 new passes total) covering 45° and 75° collision loops.
+- Backfilled the SQLite database `experiments_summary.db` with all updated telemetry metrics.
+- Designed and implemented Step 11: Deceleration vs Battery Capacity plot (`deceleration_vs_battery_angle.png`) to study energy absorption.
+- Hardened database ingestion pipeline to safely match file paths containing unicode degree symbols.
+- Full technical breakdown in: [dev_logs/session_journals/2026-05-31-database-backfill-and-battery-deceleration-analysis.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-05-31-database-backfill-and-battery-deceleration-analysis.md)
+
+## Session: 2026-06-01 (Summary Refinement & Vibration Dynamics Analysis)
+- Added 6 new post-impact time-domain vibration metrics to SQLite database schema (`imu_vib_ax/y/z` and `imu_vib_gx/y/z`).
+- Integrated dynamic vibration calculation inside the kinematics engine `kin_calculator.py`, isolating post-impact tail oscillation spread using standard deviations over the `[t_impact + 0.2, t_impact + 3.0]` stabilization window.
+- Updated `db_pipeline.py` database caches with `imu_vib_ay` cache check validation and successfully reprocessed/backfilled 95% of flight passes in the database.
+- Streamlined summary dashboard cells, simplified battery charge classification to publication-grade 3-bins (0-40% Red, 40-60% Orange, 60-100% Green), and deleted redundant speed and tracking deviation plots.
+- Full technical breakdown in: [dev_logs/session_journals/2026-06-01-summary-refinement-and-vibration-analysis.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-01-summary-refinement-and-vibration-analysis.md)
+
+## Session: 2026-06-02 (Structural Dynamics Boxplots & Battery Binning)
+- Appended Step 12 boxplots for structural dynamics: Peak Accelerometer Z, Rotational Energy Integration, and Vibration Tail Spread.
+- Re-implemented boxplots using pure Matplotlib instead of Seaborn to resolve dependency warnings and enforce visual theme consistency.
+- Standardized battery charge classification to publication-grade 3-bins (0-40% Red, 40-60% Orange, 60-100% Green) across all deviation scatter plots.
+- Updated visual styling guidelines in `experiments_analysis_skill.md` to establish the monochrome standard (dashed lines for Rotating Cage, solid for Fixed Cage).
+- Full technical breakdown in: [dev_logs/session_journals/2026-06-02-structural-dynamics-boxplots-and-battery-binning.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-02-structural-dynamics-boxplots-and-battery-binning.md)
+
+## Session: 2026-06-03 (Project Inactivity)
+- Inactive day. No active development or telemetry processing performed.
+
+## Session: 2026-06-04 (Experimental Collision Sweep Refinements)
+- Aligned the IMU collision dynamics timeline by dynamically scanning the accelerometer peak gradient to correct coordinate-based MoCap latency.
+- Restored three empty plots (Post-Impact Deviation, Stabilization Overlay) by standardizing query filters to `'Rotating'` and `'Fixed'` instead of `'Rotating Cage'` and `'Fixed Cage'`.
+- Implemented robust **Huber Regressor** and **Theil-Sen estimator** trendlines for Deceleration vs. Battery Capacity, and filtered command speed outliers at 2000 RPM.
+- Cleaned the summary notebook figures (removing red dots and retiring Plot 14 and Plot 15).
+- Full technical breakdown in: [dev_logs/session_journals/2026-06-04-experiments-analysis-refinements.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-04-experiments-analysis-refinements.md)
+
+## Session: 2026-06-08 (Session 2 — Mermaid Diagram Pipeline Migration)
+- Standardized diagram source extensions: `architecture.md` → `architecture.mmd`, `experiments_pipeline.md` → `experiments_pipeline.mmd` (fences stripped, pure Mermaid source)
+- Rewrote `plot_diagrams.sh` from a 45-line awk/sed extraction script to a 26-line universal `*.mmd`→PDF batch renderer outputting to `thesis/Figures/`
+- Wired both diagrams into LaTeX: replaced ASCII-art stack in Methodology.tex and resolved TODO comments in both Methodology.tex and Experiments.tex with proper `\includegraphics` figure environments
+- Verified: both PDFs rendered (33 KB + 60 KB) and thesis compiled successfully (668 KB)
+- User flagged EKF filter implementation from another conversation as tomorrow's priority
+- Full breakdown: [dev_logs/session_journals/2026-06-08-diagram-pipeline-migration.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-08-diagram-pipeline-migration.md)
+
+## Session: 2026-06-09 (Approved Flight Cutoff & 75° Pipeline Re-run)
+- Created centralized `APPROVED_CUTOFF` in `db_manager.py` with `is_approved_flight()` — all 4 scripts now reference it
+- Deleted 16 pre-cutoff orphan records from `flights_battery_efficiency`
+- Reran 75° pipeline: 71 passes restored, total now 179
+- Fixed 0 NULL battery columns in `flights_summary`
+- Investigated Start-point timing — WP2 already refined to actual movement start, WP1 still uses command time
+- Full breakdown: [dev_logs/session_journals/2026-06-09-db-cleanup-pipeline.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-09-db-cleanup-pipeline.md)
+
+## Session: 2026-06-10 — 🎯 BREAKTHROUGH: IMU-Angle Prediction EDA
+- **Created complete EDA pipeline** from scratch: `eda_angle_prediction.py` module + Jupyter notebook + planning doc
+- **Correlation heatmap**: 26 IMU features vs `impact_angle` (Fixed Cage, N=70)
+- **Top-3 scatter plots**: Peak Gyro Y (r = -0.84), Peak Accel X (r = -0.81), Vibration Gyro Y (r = -0.80) — all with robust Huber trendlines
+- **Key insight**: All top-10 features are NEGATIVE — shallow impacts transfer more rotational energy. Gyro Y (pitch rate) is the dominant predictor.
+- **Physical explanation**: Asymmetric cage contact at shallow angles induces pitch rotation; head-on impacts transfer energy linearly.
+- **Files created**: `eda_angle_prediction.py`, `eda_angle_prediction.ipynb`, `angle_prediction.md`, 3 PNGs in `graphics/`
+- User reaction: "OMG this is some seriously fucking good data"
+- Full breakdown: [dev_logs/session_journals/2026-06-10-angle-prediction-eda.md](file:///home/dorten/MasterThesisDrone/dev_logs/session_journals/2026-06-10-angle-prediction-eda.md)

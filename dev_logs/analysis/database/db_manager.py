@@ -18,7 +18,7 @@ DB_PATH = os.path.abspath(os.path.join(current_dir, "..", "experiments_summary.d
 # telemetry unreliable for comparative analysis.
 #
 # IMPORTED BY: db_pipeline.py, db_mcap_event_segmenter.py,
-#              db_unsliced_flights_bat_analyser.py, _rerun_pipeline.py
+#              db_unsliced_flights_bat_analyser.py, rerun_pipeline.py
 APPROVED_CUTOFF = "20260524-1904"
 
 

@@ -1,0 +1,53 @@
+graph TB
+%% ── Experiment Geometry & Waypoint Layout (Top-Down View) ─────────────────
+%% Thesis figure: spatial layout of collision sweep experiment.
+%% Coordinate frame: OptiTrack ENU (X=East, Y=North, Z=Up).
+%% All measurements in metres.
+    %% ── Coordinate Axes / Legend ───────────────────────────────────────────
+    subgraph Legend[" "]
+        direction LR
+        AXIS["ENU Frame: +X→East  |  +Y→North  |  +Z→Up"]
+        COL_LEGEND["● Column (Ø 9 cm)"]
+        CAGE_LEGEND["○ Cage perimeter (Ø 35.8 cm)"]
+        WP_DOT["◆ Waypoint (WPn)"]
+        SWEEP["➤ Sweep transit path"]
+    end
+    style Legend fill:#fafafa,stroke:#ccc,stroke-width:1px,color:#000
+    class AXIS,COL_LEGEND,CAGE_LEGEND,WP_DOT,SWEEP classAnnotation;
+
+    %% ── Spatial Layout: North (top) → South (bottom) ───────────────────────
+    subgraph North["North Side (+Y)"]
+        WP1["◆ WP1 / WP_STAGE\nY ≈ 1.200 m\nU-turn pass-through\n(heading reversed to southward)"]
+        WP2["◆ WP2 — Gate Entry\nY ≈ 0.950–1.100 m\nExp. Start-Point\n(speed > 0.10 m/s)"]
+    end
+
+    subgraph Mid["Collision Zone"]
+        COLUMN["⬤ Column\nX ≈ 0.186 m (75°)\nX ≈ 0.248 m (45°)\n(Static obstacle)"]
+        IMPACT["💥 IMPACT ZONE\nCage perimeter intersects\ncolumn surface at sweep transit.\nAchieved angle: 45° or 75°\n(measured from velocity vector\nat closest approach)"]
+    end
+
+    subgraph South["South Side (−Y)"]
+        WP3["◆ WP3 — Recovery\nY ≈ −1.200 m\nPost-collision endpoint\nExp. End-Point"]
+        WP4["◆ WP4 — Pause & Loop\nY ≈ −1.200 m\nDrone holds position;\nuser prompt to resume\n(Loop back → WP1)"]
+    end
+
+    %% ── Flight Path Arrows ─────────────────────────────────────────────────
+    WP1 -->|"Transit leg\n(X-shift to sweep lane)"| WP2
+    WP2 -->|"SWEEP LEG\n0.30–0.50 m/s constant transit\n~2.15 m southward travel\n(collision occurs mid-sweep)"| WP3
+    WP3 -->|"Post-sweep transit\n(X-shift to pause lane)"| WP4
+    WP4 -.->|"Loop-back RESUME\n(repeat WP1→WP4)\nbypasses WP0/Takeoff"| WP1
+
+    %% ── Collision Geometry Annotation ──────────────────────────────────────
+    WP2 -.->|"θ = 75° or 45°\n(approach angle between\nvelocity vector and\ncolumn surface normal)"| COLUMN
+    COLUMN -->|"Post-impact\ntrajectory deviation\n(recovery area metric)"| WP3
+
+    %% ── Styling ────────────────────────────────────────────────────────────
+    classDef classWaypoint fill:#2ecc71,stroke:#27ae60,stroke-width:2px,color:#000
+    classDef classObstacle fill:#e74c3c,stroke:#c0392b,stroke-width:3px,color:#fff
+    classDef classImpact fill:#f39c12,stroke:#e67e22,stroke-width:2px,color:#000
+    classDef classAnnotation fill:#bdc3c7,stroke:#95a5a6,stroke-width:1px,color:#333
+
+    class WP1,WP2,WP3,WP4 classWaypoint;
+    class COLUMN classObstacle;
+    class IMPACT classImpact;
+    class AXIS,COL_LEGEND,CAGE_LEGEND,WP_DOT,SWEEP classAnnotation;

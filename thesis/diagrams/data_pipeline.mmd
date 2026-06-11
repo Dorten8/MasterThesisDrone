@@ -1,0 +1,198 @@
+graph LR
+%% ── Full Data Pipeline: MCAP → Database → Thesis Figures ─────────────────
+%% Thesis figure: end-to-end post-flight analysis architecture.
+%% Shows every processing stage, key function calls, data flows, and
+%% decision gates. Covers two execution modes: interactive notebook and
+%% standalone CLI batch processing.
+%%
+%% Colour schema per diagrams_skill.md:
+%%   BLUE   = processing modules   GREEN  = flight control / plotting
+%%   ORANGE = data storage / DB     GRAY   = external hardware
+%%   MAGENTA edges = MoCap data     GREEN edges = control signals
+%%   ORANGE edges = data flow
+    %% ═══════════════════════════════════════════════════════════════════════
+    %% PHASE 0 — DATA SOURCES (recorded during flight)
+    %% ═══════════════════════════════════════════════════════════════════════
+    subgraph Phase0["🛫 FLIGHT RECORDING (onboard Pi)"]
+        direction TB
+        RECORDER["record_flight_bag.sh\nRecords ROS 2 topics:\n• /poses (MoCap)\n• /fmu/out/* (PX4 telemetry)\n• /fmu/in/* (setpoints)\n• /flight_director/active_waypoint\n• /rosout (event logs)"]
+        RAW_MCAP[("Raw unsliced .mcap\n200+ MB, 1M+ messages\n(all topics, full flight)")]
+        ULOG[("PX4 .ulg log\n(actuator_motors,\ncontrol_allocator_status,\nvehicle_rates_setpoint)")]
+        RECORDER --> RAW_MCAP
+        PX4_HW["PX4 Flight Controller\n(Pixhawk 6C)"] -.->|"internal SD card"| ULOG
+    end
+
+    %% ═══════════════════════════════════════════════════════════════════════
+    %% PHASE 1 — MCAP SEGMENTATION (pre-processing)
+    %% ═══════════════════════════════════════════════════════════════════════
+    subgraph Phase1["✂️ PHASE 1: MCAP SEGMENTATION"]
+        direction TB
+        SEGMENTER["db_mcap_event_segmenter.py\nsegment_flight_mcap()\n\n① Scans /flight_director/active_waypoint\n   for EXP_START_POINT / EXP_END_POINT\n② Falls back to coordinate-based slicing\n   (legacy flights pre-May-24)\n③ Slices raw MCAP into per-pass .mcap\n④ Padding: ±2.0 s around sweep window"]
+        REPAIR["repair_mcap()\nAuto-healing for corrupted\nMCAP headers (SSHFS drops).\nUnlimited record-size reader\n→ re-writes clean .mcap"]
+        APPROVED_GATE{"is_approved_flight()\ncutoff ≥ 20260524-1904"}
+        PASS_MCAPS[("Per-pass .mcap files\n*-pass01.mcap, *-pass02.mcap, …\n~10 s per pass, ~5 MB each")]
+
+        RAW_MCAP --> SEGMENTER
+        RAW_MCAP -.->|"corrupted?"| REPAIR
+        REPAIR -.->|"repaired .mcap"| SEGMENTER
+        SEGMENTER --> APPROVED_GATE
+        APPROVED_GATE -->|"✅ approved"| PASS_MCAPS
+        APPROVED_GATE -->|"⏭️ pre-cutoff"| SKIP1["⏭️ Skipped\n(16 flights)"]
+    end
+
+    %% ═══════════════════════════════════════════════════════════════════════
+    %% PHASE 2 — DATA LOADING (MCAP → DataFrames)
+    %% ═══════════════════════════════════════════════════════════════════════
+    subgraph Phase2["📥 PHASE 2: DATA LOADING"]
+        direction TB
+        LOADER["db_loader.py\n\nload_mcap(path) → topic_data, bag_start_ns\n  • read_ros2_messages() — parses ROS 2 MCAP\n  • Returns dict[topic → list[Message]]\n\nbuild_dataframes(topic_data, drone_name, t0)\n  • /poses → df_mocap  (x,y,z + dropout-adaptive resample)\n  • /fmu/out/vehicle_odometry → df_odom\n    → vx/vy/vz EKF velocity (ENU-aligned)\n  • /fmu/out/sensor_combined → df_imu\n    → ax/ay/az, gx/gy/gz, |a|, |g|, a_deviation\n  • /fmu/out/battery_status → df_bat\n  • /fmu/in/trajectory_setpoint → df_setpoint\n    → dynamic_waypoints extracted from command steps\n  • /poses (column) → df_column\n  • /fmu/out/vehicle_status → arming/disarming_time"]
+        BAT_LOADER["db_unsliced_flights_bat_analyser.py\n\n_stream_load_for_battery()\n  • Memory-safe: streams only 4 topics\n    (/poses, /fmu/out/battery_status,\n     vehicle_status, vehicle_odometry)\n  • Peak RAM: ~350 MB (vs 5+ GB naive)\n  • Computes flight-level takeoff→landing rates:\n    capacity_drain_rate_flying %/min\n    voltage_drop_rate_flying V/min\n  • Output → flights_battery_efficiency table"]
+        CONFIG_SSOT[("config/drone_config.json\nSSOT: drone tracker name\n(primary role → rigid body)")]
+
+        PASS_MCAPS --> LOADER
+        RAW_MCAP --> BAT_LOADER
+        CONFIG_SSOT -.->|"load_drone_metadata()"| LOADER
+    end
+
+    %% ═══════════════════════════════════════════════════════════════════════
+    %% PHASE 3 — KINEMATIC COMPUTATION
+    %% ═══════════════════════════════════════════════════════════════════════
+    subgraph Phase3["🧮 PHASE 3: KINEMATIC COMPUTATION (kin_calculator.py)"]
+        direction TB
+        VEL["compute_velocity(df_mocap)\n  • resample_and_interpolate_mocap()\n    → uniform 100 Hz grid, dropout gap repair\n  • Savitzky-Golay differentiation\n    window=19, polyorder=3\n  • Raw + splined velocity profiles"]
+        EKF_KIN["compute_ekf_kinematics(df_odom, df_mocap)\n  • Extracts EKF velocity from vehicle_odometry\n    (vx, vy, vz → ENU-aligned)\n  • Resampled to 100 Hz uniform grid\n  • Returns df_ekf_kin: t, vx, vy, vz, speed\n  • IMMUNE to MoCap dropouts\n    (IMU propagation through gaps)"]
+        WP["find_waypoint_events(df_mocap, df_sp, t_takeoff, …)\n  ① Micro-pass detection: if already sliced,\n     use bag boundary times (deterministic)\n  ② detect_mission_class() → label-based\n     (no hardcoded coordinates!)\n  ③ WP2 refined: last t where speed < 0.10 m/s\n     before crossing Y=0.70m (actual movement)\n  ④ Column Impact: closest MoCap approach\n     to column centre within cage radius\n  ⑤ Self-healing: aborted passes reconstruct\n     WP3/WP4 from telemetry boundaries\n  ⑥ return_all=True → all passes in one flight"]
+        METRICS["calculate_metrics(df_mocap, wp_events, …)\n  • impact_speed, impact_accel (EKF-based)\n  • achieved_impact_angle (velocity vector vs column)\n  • avg/max deviation, recovery_area\n  • closest_clearance (cage perimeter → column)\n  • path_spread_sdld (lateral displacement std)\n  • 18 IMU structural metrics:\n    peak accel/gyro (per-axis + magnitude)\n    integrated energy, settling time, vibration spread\n  • nom_sp / act_sp / nom_ep / act_ep\n    (nominal vs actual waypoint coordinates)"]
+        MOTOR["get_ulog_motor_metrics(flight_dir, pass_path, …)\n  ⚡ PX4 ULog parsing (pyulog):\n  • actuator_motors → avg/max before & after\n    motor_thrust_surge, motor_imbalance_after\n  • Clock sync: timesync_status (priority)\n    → fallback: EKF velocity correlation\n  • control_allocator_status →\n    saturation_duration, max_unallocated_torque,\n    thrust_setpoint_achieved_pct\n  • vehicle_rates_setpoint + angular_velocity →\n    roll/pitch/yaw RMS rate tracking errors"]
+        EVENTS["build_events_log(…)\n  Chronological flight event journal:\n  Arming → Takeoff → WP1 → WP2\n  → Column Impact → WP3 → Landing\n  with battery % at each event"]
+
+        LOADER --> VEL
+        LOADER --> EKF_KIN
+        VEL --> WP
+        EKF_KIN --> METRICS
+        WP --> METRICS
+        WP --> MOTOR
+        WP --> EVENTS
+        ULOG --> MOTOR
+    end
+
+    %% ═══════════════════════════════════════════════════════════════════════
+    %% PHASE 4 — DATABASE INSERTION (with gates)
+    %% ═══════════════════════════════════════════════════════════════════════
+    subgraph Phase4["🗄️ PHASE 4: DATABASE POPULATION"]
+        direction TB
+
+        %% Gates
+        subgraph Gates["🚦 Pipeline Decision Gates"]
+            direction TB
+            EXCL_GATE{"is_excluded_pass()\nconfig_db.json\nmanual IMU review\n11 excluded passes"}
+            CACHE_GATE{"is_already_cached()\nall required columns\npresent + non-NULL?"}
+            IMPACT_GATE{"impact_detected?\n(closest_clearance < 0\nAND not excluded)"}
+            EXCL_CFG[("config_db.json\nSSOT exclusion list:\n7 false positives\n3 slight_impact_borderline\n1 data corruption\n+ 4 flagged passes")]
+
+            EXCL_CFG --> EXCL_GATE
+            METRICS --> EXCL_GATE
+            EXCL_GATE -->|"⏭️ excluded"| SKIP2["⏭️ Skipped\n(logged with reason)"]
+            EXCL_GATE -->|"✅ clean"| CACHE_GATE
+            CACHE_GATE -->|"✅ cached"| SKIP3["⏭️ Skipped\n(idempotent)"]
+            CACHE_GATE -->|"miss → insert"| IMPACT_GATE
+        end
+
+        %% DB Manager
+        DB_MGR["db_manager.py\n\ninit_db()\n  • Creates flights_summary (PK: flight_name)\n  • Creates flights_battery_efficiency (PK: flight_name)\n  • 60+ columns with backwards-compat migration\n  • APPROVED_CUTOFF = '20260524-1904'\n\ninsert_or_replace_flight(flight_name, condition, metrics)\n  • 65-column INSERT OR REPLACE\n  • Converts clearance to cm, sets impact_detected flag\n  • Waypoints: nominal (from mission SSoT)\n    vs actual (from MoCap at event timestamps)\n\ninsert_or_replace_battery_efficiency(…)\n  • 21-column INSERT OR REPLACE\n  • Flight-level battery metrics from unsliced MCAPs\n\nget_database_df() → pandas DataFrame\nget_database_summary_markdown() → thesis audit table"]
+        DB_FILE[("experiments_summary.db\nflights_summary:\n  179 passes total\n  127 clean impacted\n   56 Fixed Cage\n   52 Rotating Cage\n    0 NULL battery columns\n\nflights_battery_efficiency:\n  32 approved flights")]
+
+        IMPACT_GATE -->|"yes 💥"| DB_MGR
+        IMPACT_GATE -->|"no ⏭️"| SKIP4["⏭️ No collision\n(skip plot gen)"]
+        DB_MGR --> DB_FILE
+        BAT_LOADER --> DB_FILE
+    end
+
+    %% ═══════════════════════════════════════════════════════════════════════
+    %% PHASE 5 — PLOT GENERATION
+    %% ═══════════════════════════════════════════════════════════════════════
+    subgraph Phase5["📊 PHASE 5: PLOT GENERATION"]
+        direction TB
+        TRAJ["kin_plot_trajectory.py\nplot_trajectory()\n  • Top-down 2D spatial path\n  • Column + cage to-scale circles\n  • Dynamic waypoints from setpoints\n  • 1:1 aspect ratio, 0.5m grid\n  • SVG drone icons at waypoints"]
+        KIN_PLOT["kin_plot_kinematics.py\nplot_ekf_kinetic_profile()\n  • EKF speed + tangential accel\n  • No MoCap dropout artifacts!\nplot_imu_dynamics()\n  • a_deviation + g_deviation\n  • Time-aligned to peak accel gradient\nplot_imu_xyz_components()\n  • Per-axis accelerometer + gyro\n  • RGB colour coding (X=R,Y=G,Z=B)"]
+        ACT_PLOT["kin_plot_actuators.py\nplot_actuators_and_status()\n  • Motor commands + arming state\nplot_control_allocator_saturation()\n  • Torque allocation + saturation flags\nplot_pid_rate_tracking()\n  • Setpoint vs actual angular rates\n  • RMS tracking error overlay"]
+        STAT_PLOT["kin_plot_statistics.py\nplot_angle_boxplots()\n  • Side-by-side Fixed vs Rotating\n  • Per-angle-bucket comparisons\n  • Impact speed, deviation, recovery"]
+        EDA["eda_angle_prediction.py\n(standalone research module)\n  • load_impact_data() → DB query\n  • plot_correlation_heatmap()\n    Pearson r, all IMU features vs angle\n  • plot_top3_scatter()\n    Huber trendlines, battery-coloured\n  • plot_parallel_coordinates()\n    Multi-dimensional angle-group view"]
+
+        DB_FILE -.->|"get_database_df()\n(Fixed Cage, impacted, not excluded)"| EDA
+        METRICS --> TRAJ
+        EKF_KIN --> KIN_PLOT
+        METRICS --> KIN_PLOT
+        MOTOR --> ACT_PLOT
+        DB_FILE --> STAT_PLOT
+    end
+
+    %% ═══════════════════════════════════════════════════════════════════════
+    %% PHASE 6 — OUTPUTS & ANALYSIS NOTEBOOKS
+    %% ═══════════════════════════════════════════════════════════════════════
+    subgraph Phase6["📁 PHASE 6: OUTPUTS"]
+        direction TB
+        PER_PASS[("Per-Pass Capsule PNGs\n(inside each flight folder)\n8 plots per pass:\n① trajectory_top_down\n② ekf_kinetic_profile\n③ imu_dynamics\n④ imu_xyz_components\n⑤ actuators_profile\n⑥ control_allocator_saturation\n⑦ pid_rate_tracking\n(+ battery_sag retired)")]
+        GRAPHICS[("dev_logs/analysis/graphics/\nThesis publication PNGs:\n  trajectory_*.png\n  2D_path_overlay_*.png\n  eda_correlation_heatmap.png\n  eda_top3_scatter.png\n  eda_parallel_coordinates.png")]
+        INSPECTOR[("db_inspector.html\nGlassmorphic web viewer\n  • Zero-dependency, single-file\n  • Real-time stats cards\n  • Hover-highlight table rows\n  • Status badges (impact/no impact)")]
+        NB1["experiments_analysis.ipynb\nInteractive single-flight viewer\n  • Setup → Trajectory → EKF kinetic\n  • IMU dynamics → Battery sag\n  • Actuators → PID tracking\n  • Flight picker → representative finder\n  (no DB writes — read-only)"]
+        NB2["experiments_analysis_summary.ipynb\nAggregate comparative dashboard\n  • Fixed vs Rotating boxplots\n  • Deceleration vs battery trendlines\n  • Post-impact deviation by angle\n  • Stabilisation overlay plots\n  • Huber & Theil-Sen robust fitting"]
+        A3PDF["plot_to_a3_pdf.py\nPer-pass print dumper\n  • A3 portrait, 2×3 grid\n  • 127 pages, 2 volumes\n  • impact_only filter from DB\n  • for physical pen review"]
+        THESIS["thesis/main.pdf\nLaTeX compiled document\n  • \\includegraphics{Figures/*.pdf}\n  • \\autoref{fig:*} cross-refs\n  • latexmk → pdflatex → bibtex → …"]
+
+        TRAJ --> PER_PASS
+        KIN_PLOT --> PER_PASS
+        ACT_PLOT --> PER_PASS
+        TRAJ --> GRAPHICS
+        STAT_PLOT --> GRAPHICS
+        EDA --> GRAPHICS
+        DB_FILE --> INSPECTOR
+        DB_FILE --> NB1
+        DB_FILE --> NB2
+        PER_PASS --> A3PDF
+        GRAPHICS --> THESIS
+    end
+
+    %% ═══════════════════════════════════════════════════════════════════════
+    %% TWO EXECUTION PATHS (annotations)
+    %% ═══════════════════════════════════════════════════════════════════════
+    NOTEBOOK_PATH["🟢 NOTEBOOK PATH\nexperiments_analysis.ipynb\n→ db_pipeline.run(label, angle, flights=…)\n→ process_flights() → plot → display inline"]
+    CLI_PATH["🟡 CLI BATCH PATH\npython3 -m dev_logs.analysis.database.db_pipeline\n→ scans all approved flights\n→ standalone DB population\n→ per-pass PNG generation\n→ prints summary markdown table"]
+
+    LOADER -.-> NOTEBOOK_PATH
+    LOADER -.-> CLI_PATH
+
+    %% ═══════════════════════════════════════════════════════════════════════
+    %% STYLING — per diagrams_skill.md colour schema
+    %% ═══════════════════════════════════════════════════════════════════════
+    classDef classHardware fill:#7f8c8d,stroke:#34495e,stroke-width:2px,color:#fff
+    classDef classSubmodule fill:#3498db,stroke:#2980b9,stroke-width:2px,color:#fff
+    classDef classFlightControl fill:#2ecc71,stroke:#27ae60,stroke-width:2px,color:#000
+    classDef classData fill:#e67e22,stroke:#d35400,stroke-width:2px,color:#fff
+    classDef classGate fill:#f39c12,stroke:#e67e22,stroke-width:2px,color:#000
+    classDef classSkip fill:#bdc3c7,stroke:#95a5a6,stroke-width:1px,color:#666
+    classDef classOutput fill:#9b59b6,stroke:#8e44ad,stroke-width:2px,color:#fff
+    classDef classPhase fill:#ecf0f1,stroke:#bdc3c7,stroke-width:1px,color:#333
+    classDef classPath fill:#d5f5e3,stroke:#27ae60,stroke-width:1px,color:#000
+    classDef classAnalysis fill:#aed6f1,stroke:#2980b9,stroke-width:1px,color:#000
+
+    class PX4_HW classHardware;
+    class RECORDER,SEGMENTER,REPAIR,LOADER,BAT_LOADER classSubmodule;
+    class VEL,EKF_KIN,WP,METRICS,MOTOR,EVENTS classSubmodule;
+    class DB_MGR,TRAJ,KIN_PLOT,ACT_PLOT,STAT_PLOT,EDA classSubmodule;
+    class APPROVED_GATE,EXCL_GATE,CACHE_GATE,IMPACT_GATE classGate;
+    class SKIP1,SKIP2,SKIP3,SKIP4 classSkip;
+    class RAW_MCAP,PASS_MCAPS,ULOG,DB_FILE,CONFIG_SSOT,EXCL_CFG classData;
+    class PER_PASS,GRAPHICS,INSPECTOR,A3PDF,THESIS classOutput;
+    class NB1,NB2 classAnalysis;
+    class NOTEBOOK_PATH,CLI_PATH classPath;
+
+    %% Phase containers — light styling
+    style Phase0 fill:#f5f5f5,stroke:#ccc,stroke-width:1px
+    style Phase1 fill:#f0f8ff,stroke:#3498db,stroke-width:1px
+    style Phase2 fill:#f0f8ff,stroke:#3498db,stroke-width:1px
+    style Phase3 fill:#f0f8ff,stroke:#3498db,stroke-width:1px
+    style Phase4 fill:#fff8f0,stroke:#e67e22,stroke-width:1px
+    style Phase5 fill:#f0fff0,stroke:#2ecc71,stroke-width:1px
+    style Phase6 fill:#faf0ff,stroke:#9b59b6,stroke-width:1px
+    style Gates fill:#fffdf5,stroke:#f39c12,stroke-width:1px

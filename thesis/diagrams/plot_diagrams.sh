@@ -10,19 +10,28 @@ if ! command -v mmdc &> /dev/null; then
     exit 1
 fi
 
-OUTPUT_DIR="$DIR/../Figures"
-mkdir -p "$OUTPUT_DIR"
+PDF_DIR="$DIR/../Figures"
+SVG_DIR="$DIR"
+mkdir -p "$PDF_DIR"
 
-echo "Rendering all .mmd diagrams to PDF..."
+echo "Rendering all .mmd diagrams to SVG (diagrams/) + PDF (Figures/)..."
 
 for mmd_file in *.mmd; do
     [ -f "$mmd_file" ] || continue
     base_name="${mmd_file%.mmd}"
-    pdf_file="$OUTPUT_DIR/${base_name}.pdf"
 
-    echo "  Rendering $mmd_file -> $pdf_file ..."
-    mmdc -i "$mmd_file" -o "$pdf_file" -f
-    echo "  OK $base_name.pdf generated"
+    # SVG — preview in diagrams folder
+    svg_file="$SVG_DIR/${base_name}.svg"
+    echo "  SVG:  $mmd_file -> ${base_name}.svg"
+    mmdc -i "$mmd_file" -o "$svg_file" -b transparent
+    echo "    OK"
+
+    # PDF — publication vector format for LaTeX Figures/
+    pdf_file="$PDF_DIR/${base_name}.pdf"
+    echo "  PDF:  $mmd_file -> ../Figures/${base_name}.pdf"
+    mmdc -i "$mmd_file" -o "$pdf_file" -b white
+    echo "    OK"
 done
 
-echo "Done! All diagrams rendered to $OUTPUT_DIR"
+echo ""
+echo "✅ All done! SVGs: $SVG_DIR  |  PDFs: $PDF_DIR"

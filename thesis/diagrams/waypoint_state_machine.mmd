@@ -1,0 +1,116 @@
+stateDiagram-v2
+%% ── Collision Sweep Waypoint State Machine ───────────────────────────────
+%% Thesis figure: state transitions of the autonomous collision loop.
+%% Publishes /flight_director/active_waypoint (std_msgs/String) on each
+%% transition — these events drive the offboard MCAP event segmenter.
+    direction TB
+
+    %% ── States ─────────────────────────────────────────────────────────────
+    DISARMED : DISARMED (Ground)
+    DISARMED : Props stopped, battery plugged in
+    DISARMED : Awaiting arming command
+
+    TAKEOFF : WP0 — TAKEOFF
+    TAKEOFF : Ascend to 0.50 m altitude
+    TAKEOFF : EKF2 10-sample alignment
+    TAKEOFF : Geofence active
+
+    WP_STAGE : WP_STAGE — U-Turn
+    WP_STAGE : Transit to X≈0.186, Y≈1.200
+    WP_STAGE : Reverses approach heading
+    WP_STAGE : Drone now facing south
+
+    WP1_GATE : WP1 — GATE (Pause)
+    WP1_GATE : Arrive at gate entry
+    WP1_GATE : Hold position, verify heading
+    WP1_GATE : User prompt: "Resume?"
+
+    WP2_SWEEP : WP2 — SWEEP
+    WP2_SWEEP : Acceleration to sweep_speed
+    WP2_SWEEP : Exp. Start-Point marker
+    WP2_SWEEP : Constant-velocity transit
+    WP2_SWEEP : Flight Director active
+
+    WP3_RECOVER : WP3 — RECOVERY
+    WP3_RECOVER : Post-collision deceleration
+    WP3_RECOVER : Stabilisation hold
+    WP3_RECOVER : Exp. End-Point marker
+    WP3_RECOVER : Motor surge measurement
+
+    WP4_PAUSE : WP4 — PAUSE & LOOP
+    WP4_PAUSE : Hold at far position
+    WP4_PAUSE : Battery check
+    WP4_PAUSE : User prompt: "Resume?"
+    WP4_PAUSE : Loop counter incremented
+
+    LANDING : LANDING
+    LANDING : Auto-triggered on low battery
+    LANDING : Or user-commanded exit
+    LANDING : Disarm after touchdown
+
+    EMERGENCY : EMERGENCY LAND
+    EMERGENCY : MoCap tracking lost
+    EMERGENCY : Geofence breached
+    EMERGENCY : Spacebar kill-switch
+
+    %% ── Transitions ────────────────────────────────────────────────────────
+    [*] --> DISARMED : Power on
+
+    DISARMED --> TAKEOFF : ARM + Offboard mode\n(publishes: TAKEOFF)
+
+    TAKEOFF --> WP_STAGE : Altitude ≥ 0.50 m\n(publishes: LOOP_0_WP_STAGE)
+
+    WP_STAGE --> WP1_GATE : Position reached\n(publishes: LOOP_0_WP1_GATE)
+
+    WP1_GATE --> WP2_SWEEP : User confirms resume\n(publishes: LOOP_0_WP2_SWEEP\nor EXP_START_POINT)
+
+    WP2_SWEEP --> WP3_RECOVER : Y < −1.000 m\nOR collision detected\n(publishes: LOOP_0_WP3_RECOVER\nor EXP_END_POINT)
+
+    WP3_RECOVER --> WP4_PAUSE : Stabilisation hold complete\n(publishes: LOOP_0_WP4_PAUSE)
+
+    WP4_PAUSE --> WP1_GATE : User resumes → NEXT LOOP\n(index reset to WP1, bypass WP0)\n(publishes: LOOP_N_WP1_GATE)
+
+    WP4_PAUSE --> LANDING : User exits OR\nbattery < 20.4 V\n(publishes: LANDING)
+
+    LANDING --> DISARMED : Touchdown + disarm
+
+    %% ── Safety Transitions (any active state) ──────────────────────────────
+    TAKEOFF --> EMERGENCY : Failsafe trigger
+    WP_STAGE --> EMERGENCY : Failsafe trigger
+    WP1_GATE --> EMERGENCY : Failsafe trigger
+    WP2_SWEEP --> EMERGENCY : Failsafe trigger
+    WP3_RECOVER --> EMERGENCY : Failsafe trigger
+
+    EMERGENCY --> DISARMED : Land + disarm
+
+    %% ── Notes ──────────────────────────────────────────────────────────────
+    note right of WP2_SWEEP
+        ⚡ COLLISION OCCURS HERE
+        (between WP2→WP3)
+        Cage contacts column surface.
+        IMU captures peak accel/gyro.
+        db_mcap_event_segmenter
+        uses EXP_START_POINT +
+        EXP_END_POINT to slice
+        pass-level .mcap files.
+    end note
+
+    note left of WP4_PAUSE
+        🔁 LOOP BACK (not WP0)
+        WP4 → WP1 only.
+        Takeoff never repeated.
+        Each loop = 1 data pass.
+        Max loops limited by
+        battery (≈ 8–12 passes
+        per full flight).
+    end note
+
+    note right of EMERGENCY
+        🛑 FAILSAFE TRIGGERS
+        • MoCap loss: auto-land
+        • Geofence breach: land
+        • Spacebar: force disarm
+        • Low battery: land
+        • Source ID 255 for all
+          companion kill commands
+    end note

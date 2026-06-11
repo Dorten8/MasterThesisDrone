@@ -338,7 +338,7 @@ def main(force_recompute=False):
     print(f"\n📦 SQLite Processing complete: {inserted_count} processed/inserted, {skipped_count} skipped, {error_count} errors.")
     
     # 7. Auto-export table to CSV file
-    csv_path = os.path.join(project_root, "dev_logs", "analysis", "unsliced_battery_efficiency.csv")
+    csv_path = os.path.join(project_root, "dev_logs", "analysis", "database", "unsliced_battery_efficiency.csv")
     print(f"📁 Exporting fresh dataset to: {csv_path}")
     try:
         from dev_logs.analysis.database.db_manager import get_battery_efficiency_df

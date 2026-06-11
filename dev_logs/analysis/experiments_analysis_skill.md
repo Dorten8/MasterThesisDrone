@@ -62,7 +62,7 @@ def is_approved_flight(folder_name): ...
 ```
 **All processing scripts import:** `from db_manager import is_approved_flight, APPROVED_CUTOFF`
 
-**Enforced by:** `db_pipeline.py`, `db_mcap_event_segmenter.py`, `db_unsliced_flights_bat_analyser.py`, `_rerun_pipeline.py`
+**Enforced by:** `db_pipeline.py`, `db_mcap_event_segmenter.py`, `db_unsliced_flights_bat_analyser.py`, `database/rerun_pipeline.py`
 
 **Approved flights (as of 2026-06-09):** 2026-05-24 (1, from 19:04+), 05-25 (6), 05-26 (2), 05-27 (2), 05-28 (5), 05-29 (6), 05-30 (3), 05-31 (4), 06-01 (1) = 30 flights. **Excluded:** All 16 flights on 2026-05-23 and 2026-05-24 before 19:04 (no pass-sliced MCAPs).
 
@@ -312,6 +312,13 @@ To prevent repeat attempts of low-value visualizations:
 | EKF Kinetic Profile | **Active** | **Active** | New standard — clean, dropout-free velocity |
 
 ## 9. Execution Log — Italic Notes (Most Recent First)
+
+### EKF Pipeline Integration Verified & Complete
+*[2026-06-11] Audit confirmed EKF fully wired: `db_pipeline.py` → `compute_ekf_kinematics()` → `calculate_metrics()` with column override. Database repopulated 2026-06-10. DB columns `impact_speed`, `impact_accel`, `before_impact_accel` are EKF-derived. Status flag in copilot-instructions.md updated from "not yet in pipeline" to "fully integrated ✅".
+**Copilot-instructions.md:** stale "not yet in pipeline" text replaced.
+**Skill file §4, §5.4:** Already correct — EKF listed as active standard.
+**Walkthrough:** M3-M5 marked done.
+**Where:** `.github/copilot-instructions.md`, `experiments_analysis_skill.md`, `walkthrough_experiments.md`.*
 
 ### EKF Kinetic Profile — Impact line fixes
 *[2026-06-10] Fixed impact line bug in actuator/allocator/PID plots (used WP2 instead of Column Impact). Added `e_impact_timestamp_PX4` column to `flights_summary` (CREATE, migration, INSERT, pipeline, cache checks). Fixed `db_cache_imu.py` to align to Column Impact. Fixed `plot_aggregated_imu_dynamics.py` label from "IMPACT (WP2)" to "Column Impact".

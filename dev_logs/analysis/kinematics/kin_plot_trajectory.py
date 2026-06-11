@@ -473,3 +473,240 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
         'closest_clearance': closest_clearance,
         'achieved_impact_angle': achieved_angle
     }
+
+
+# ==============================================================================
+# Full Mission Loop — Theoretical Geometry  (no flight data required)
+# ==============================================================================
+
+# 45° waypoints (from ExpCollision45Deg)
+_WP_45 = {
+    'WP_stage': (0.248, 1.200),
+    'WP1':      (0.248, 0.950),
+    'WP2':      (0.248, -1.200),
+    'WP3':      (0.000, 0.300),
+    'COLUMN':   (0.408, 0.358),
+    'coll_pt':  (0.2496, 0.5164),  # exact 45° geometry
+}
+# 75° waypoints (from ExpCollision75Deg)
+_WP_75 = {
+    'WP_stage': (0.186, 1.200),
+    'WP1':      (0.186, 1.100),  # 75° has WP1 at Y=1.100 (45° has 0.950)
+    'WP2':      (0.186, -1.200),
+    'WP3':      (0.000, 0.300),
+    'COLUMN':   (0.408, 0.358),
+    'coll_pt':  (0.2400, 0.4296),  # approximate 75° geometry
+}
+_WPS = {45: _WP_45, 75: _WP_75}
+_COL_DIAMETER = 0.09
+_CAGE_DIAMETER = 0.358
+
+
+def _rotate_coords(x_val, y_val):
+    """Rotate coordinate system 90° CCW — matches plot_trajectory()."""
+    return -y_val, x_val
+
+
+def plot_full_loop_geometry(angle_deg=45, output_path=None, show_plot=True):
+    """Theoretical 2D top-down loop geometry — no flight data needed.
+
+    Plots the full closed-loop path, waypoints, shaded drones, column
+    obstacle, full-colour drone at the collision point with heading vector,
+    separation vector, and safety cage.  Uses the same rotated coordinate
+    system, canvas, drone rendering, and styling as ``plot_trajectory()``.
+
+    Parameters
+    ----------
+    angle_deg : int, optional
+        Impact angle (45 or 75).  Selects the corresponding mission waypoints.
+    output_path : str, optional
+        Save to file instead of showing interactively.
+    show_plot : bool, optional
+        Call ``plt.show()``.
+    """
+    # ── Late imports (avoids circular deps, matches plot_trajectory pattern) ──
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    analysis_dir = os.path.abspath(os.path.join(current_dir, ".."))
+    if 'graphics' in sys.modules:
+        gmod = sys.modules['graphics']
+        if not getattr(gmod, '__file__', '').startswith(analysis_dir):
+            del sys.modules['graphics']
+    if analysis_dir not in sys.path:
+        sys.path.insert(0, analysis_dir)
+    try:
+        from graphics import draw_vector_drone
+    except ImportError as e:
+        print(f"[WARN] draw_vector_drone unavailable: {e}")
+        draw_vector_drone = None
+
+    # ── Pick the right waypoint set ──
+    wp = _WPS.get(angle_deg, _WPS[45])
+    WP_stage, WP1 = wp['WP_stage'], wp['WP1']
+    WP2, WP3      = wp['WP2'], wp['WP3']
+    COLUMN        = wp['COLUMN']
+    coll_pt       = wp['coll_pt']
+
+    COL_RADIUS    = _COL_DIAMETER / 2.0
+    CAGE_RADIUS   = _CAGE_DIAMETER / 2.0
+
+    # Rotate everything
+    r_stage = _rotate_coords(*WP_stage)
+    r_wp1   = _rotate_coords(*WP1)
+    r_wp2   = _rotate_coords(*WP2)
+    r_wp3   = _rotate_coords(*WP3)
+    r_col   = _rotate_coords(*COLUMN)
+    r_coll  = _rotate_coords(*coll_pt)
+
+    enu_loop = [WP_stage, WP1, WP2, WP3, WP_stage]
+    rot_loop = [_rotate_coords(x, y) for x, y in enu_loop]
+
+    fig, ax = plt.subplots(figsize=(11, 7))
+
+    # ── Dotted red closed-loop path ──
+    ax.plot([p[0] for p in rot_loop], [p[1] for p in rot_loop],
+            color='#D62728', linestyle=':', linewidth=2.5, zorder=5,
+            label='Target Track')
+
+    # Directional arrows at midpoints
+    for i in range(len(enu_loop) - 1):
+        se, ee = enu_loop[i], enu_loop[i+1]
+        mid   = ((se[0] + ee[0]) / 2, (se[1] + ee[1]) / 2)
+        r_mid = _rotate_coords(*mid)
+        r_dir = _rotate_coords(ee[0] - se[0], ee[1] - se[1])
+        ln    = np.hypot(*r_dir)
+        if ln > 1e-6:
+            ax.annotate('', xy=(r_mid[0] + r_dir[0]/ln*0.08,
+                                r_mid[1] + r_dir[1]/ln*0.08),
+                        xytext=(r_mid[0], r_mid[1]),
+                        arrowprops=dict(arrowstyle="->", color='#D62728',
+                                        lw=2, shrinkA=0, shrinkB=0))
+
+    # ── Column obstacle ──
+    col_fill = plt.Circle(r_col, COL_RADIUS, color='#FFCC00', alpha=0.3, zorder=5)
+    col_edge = plt.Circle(r_col, COL_RADIUS, fill=False, color='#CC9900',
+                           linewidth=2.0, zorder=5)
+    ax.add_patch(col_fill)
+    ax.add_patch(col_edge)
+    ax.scatter(r_col[0], r_col[1], color='black', marker='+', zorder=5)
+    ax.annotate(f'Column Obstacle\nX: {COLUMN[0]:.3f}m\nY: {COLUMN[1]:.3f}m',
+                xy=r_col, xytext=(0, 50), textcoords='offset points',
+                fontsize=8, fontweight='bold', color='#CC9900',
+                ha='center', va='bottom',
+                bbox=dict(facecolor='white', alpha=0.9, edgecolor='none', pad=2),
+                arrowprops=dict(arrowstyle="->", color='#CC9900', lw=0.8))
+
+    # ── Command waypoints (hollow red circles) ──
+    wps = [r_stage, r_wp1, r_wp2, r_wp3]
+    ax.scatter([p[0] for p in wps], [p[1] for p in wps],
+               color='#D62728', s=120, facecolors='none', edgecolors='#D62728',
+               linewidth=2.5, zorder=6, label='Command Waypoints')
+
+    # ── Waypoint labels — strictly vertical above/below ──
+    wp_info = [
+        (r_stage, f"WP_stage (U-turn)\nX: {WP_stage[0]:.3f}m\nY: {WP_stage[1]:.3f}m",
+         0, -60, 'center', 'top'),
+        (r_wp1,   f"Exp. Start-point\nX: {WP1[0]:.3f}m\nY: {WP1[1]:.3f}m",
+         0, 55, 'center', 'bottom'),
+        (r_wp2,   f"Exp. End-point\nX: {WP2[0]:.3f}m\nY: {WP2[1]:.3f}m",
+         0, 55, 'center', 'bottom'),
+        (r_wp3,   f"Recovery (WP3)\nX: {WP3[0]:.3f}m\nY: {WP3[1]:.3f}m",
+         0, -55, 'center', 'top'),
+    ]
+    for (x, y), lbl, dx, dy, ha, va in wp_info:
+        ax.annotate(lbl, xy=(x, y), xytext=(dx, dy),
+                    textcoords='offset points',
+                    fontsize=8, fontweight='bold', color='#444444',
+                    ha=ha, va=va,
+                    bbox=dict(facecolor='white', alpha=0.9,
+                              edgecolor='none', pad=2),
+                    arrowprops=dict(arrowstyle="->", color='#888888', lw=0.8))
+
+    # ── Gray drone ghosts at all waypoints ──
+    if draw_vector_drone:
+        for (x, y) in [r_stage, r_wp1, r_wp2, r_wp3]:
+            draw_vector_drone(ax, x, y, CAGE_RADIUS, rotation_deg=0,
+                              color_mode='gray')
+
+    # ── Full-colour drone at collision point + safety cage ──
+    if draw_vector_drone:
+        draw_vector_drone(ax, r_coll[0], r_coll[1], CAGE_RADIUS,
+                          rotation_deg=0, color_mode='full')
+    safety_cage = plt.Circle(r_coll, CAGE_RADIUS, fill=False,
+                              color='#1F77B4', linestyle='--',
+                              linewidth=2.0, zorder=5)
+    ax.add_patch(safety_cage)
+    ax.plot([], [], color='#1F77B4', linestyle='--', linewidth=2.0,
+            label=f'Safety Cage (D={_CAGE_DIAMETER*100:.1f}cm)')
+
+    # Collision-point label above
+    clearance = (np.hypot(COLUMN[0] - coll_pt[0], COLUMN[1] - coll_pt[1])
+                 - COL_RADIUS - CAGE_RADIUS)
+    ax.annotate(f"Collision Point\nClearance: {clearance*100:+.1f} cm",
+                xy=r_coll, xytext=(0, 65), textcoords='offset points',
+                fontsize=8, fontweight='bold', color='#1F77B4',
+                ha='center', va='bottom',
+                bbox=dict(facecolor='white', alpha=0.9,
+                          edgecolor='none', pad=2),
+                arrowprops=dict(arrowstyle="->", color='#1F77B4', lw=0.8))
+
+    # ── Heading vector (red quiver, southward in ENU) ──
+    ax.quiver(r_coll[0], r_coll[1], 0.28, 0,
+              angles='xy', scale_units='xy', scale=1, color='crimson',
+              width=0.005, headwidth=4.5, zorder=8,
+              label='Velocity Vector at Contact')
+
+    # ── Separation vector (purple dotted) ──
+    ax.plot([r_coll[0], r_col[0]], [r_coll[1], r_col[1]],
+            color='purple', linestyle=':', linewidth=2, zorder=5,
+            label='Separation Vector')
+
+    # ── Axis setup ──
+    ax.set_xlabel('Y coordinate, meters', color='#2CA02C', fontweight='bold')
+    ax.set_ylabel('X coordinate, meters', color='#D62728', fontweight='bold')
+    ax.tick_params(axis='x', colors='#2CA02C')
+    ax.tick_params(axis='y', colors='#D62728')
+
+    ax.text(0.02, 0.02,
+            "X and Y axes have been rotated on this plot\n"
+            "to strictly adhere to the physical mapping of X-Y\n"
+            "in the motion capture system used",
+            transform=ax.transAxes, ha='left', va='bottom',
+            fontsize=7, style='italic', alpha=0.8, zorder=10)
+
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_xlim(-1.6, 1.6)
+    ax.set_ylim(-0.5, 1.0)
+    ax.set_xticks(np.arange(-1.5, 1.6, 0.5))
+    ax.set_yticks(np.arange(-0.5, 1.1, 0.5))
+
+    # ── Monospace legend ──
+    handles, labels = ax.get_legend_handles_labels()
+    aligned = []
+    for lbl in labels:
+        matched = False
+        for key in ['Column Obstacle', 'Safety Cage',
+                     'Velocity Vector', 'Separation Vector']:
+            if key in lbl:
+                try:
+                    val = lbl.split('(')[1].split(')')[0]
+                    aligned.append(f'{key:<18}({val})')
+                except Exception:
+                    aligned.append(lbl)
+                matched = True
+                break
+        if not matched:
+            aligned.append(lbl)
+    ax.legend(handles, aligned, loc='upper left',
+              prop={'family': 'monospace', 'size': 8.5})
+    ax.grid(True, color='#EAEAEA')
+    ax.set_title(f'{angle_deg}° Column Collision Loop — Full Mission Geometry',
+                 fontsize=12, fontweight='bold')
+    plt.tight_layout()
+
+    if output_path:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path, dpi=300)
+        print(f"[INFO]  Full-loop geometry saved to:  {output_path}")
+    if show_plot:
+        plt.show()
+    plt.close()

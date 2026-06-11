@@ -153,7 +153,7 @@ These links represent the different dimensions of the project. Reference them wh
 - **Bagfile size checks:** Flight bags should be sanity checked after recording to avoid MCAP indexing/header corruption.
 - **Heavy drone inertia:** The heavy 1.2kg 4-inch quadcopter has high linear inertia; keeping transit speeds at `0.30 m/s - 0.35 m/s` near geofence boundaries is mandatory.
 - **MicroXRCEAgent Stale Connection:** Do not kill the agent once it connects; doing so freezes the Flight Controller and requires a battery reboot.
-- **EKF velocity not yet in main pipeline** — currently only viewable in dedicated notebook cells. `calculate_metrics()`, `compare_all_angles()`, and the summary notebook still use MoCap-derived velocity/acceleration.
+- **EKF velocity fully integrated** ✅ — `db_pipeline.py` calls `compute_ekf_kinematics()`, pipes EKF data into `calculate_metrics()`, which overrides MoCap columns. Database was repopulated with EKF-derived metrics on 2026-06-10 (179 passes). `impact_speed`, `impact_accel`, `before_impact_accel` in `flights_summary` are all EKF-based. Summary notebook re-run pending to refresh comparative plots.
 - **IMU-Angle EDA discovery (NEW)**: Peak Gyro Y correlates with `impact_angle` at r = −0.84 (Fixed Cage, N=70). All top-10 features are negative. This is thesis-worthy material and ML modeling is next.
 
 ### ✅ Completed This Session (2026-06-04)
@@ -219,7 +219,7 @@ These links represent the different dimensions of the project. Reference them wh
 
 At the end of each session:
 1. **Create a timestamped journal entry strictly in the `dev_logs/session_journals/` directory** in the workspace. The absolute workspace path is `/home/dorten/pi_drone_sshfs/dev_logs/session_journals/YYYY-MM-DD-description.md` (or container-relative: `/home/ws/dev_logs/session_journals/YYYY-MM-DD-description.md`). **Do NOT** use `journal_entries/` or create daily entries in any other folder; Copilot has previously done this incorrectly, requiring manual intervention.
-2. Append the raw chat transcript to `/home/ws/dev_logs/chat_history.md`.
+2. Append the raw chat transcript to `.copilot/chat_history.md`.
 3. **Format the journal entry as markdown** (`#` for main heading, `##` for sections, `###` for subsections, `-` for bullet lists) so it pastes cleanly into Notion.
 4. Provide clickable links for every file path you list in the end-of-day result (journal entry, updated instruction files, and any other referenced files).
 5. Update this "Current Session Status" section with next steps.

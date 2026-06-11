@@ -9,7 +9,7 @@
 
 **Cutoff SSoT established ✅**
 - SSoT: `dev_logs/analysis/database/db_manager.py` → `is_approved_flight()`
-- Imported by: `db_pipeline.py`, `db_mcap_event_segmenter.py`, `db_unsliced_flights_bat_analyser.py`, `_rerun_pipeline.py`
+- Imported by: `db_pipeline.py`, `db_mcap_event_segmenter.py`, `db_unsliced_flights_bat_analyser.py`, `database/rerun_pipeline.py`
 - Cutoff: `20260524-1904` (May 24, 2026, 19:04)
 - 16 pre-cutoff orphan flights removed from `flights_battery_efficiency`
 - Documented in `experiments_analysis_skill.md` §3.0
@@ -17,7 +17,7 @@
 **Key files modified today:**
 - `dev_logs/analysis/database/db_unsliced_flights_bat_analyser.py` — memory-safe streaming reader
 - `dev_logs/analysis/database/db_pipeline.py` — battery lookup from efficiency table
-- `dev_logs/analysis/_rerun_pipeline.py` — preserves `flights_battery_efficiency` on re-run
+- `dev_logs/analysis/database/rerun_pipeline.py` — preserves `flights_battery_efficiency` on re-run
 
 **Verification (final state):**
 ```bash
@@ -440,6 +440,10 @@ This section mirrors the aggregate notebook cells, starting from theoretical gui
 
 The EKF velocity (`/fmu/out/vehicle_odometry.velocity[]`) was validated on 2026-06-08 as inherently smooth even during Fixed Cage MoCap dropouts. The goal is to integrate it as a plug-in replacement for MoCap-derived velocity/acceleration in `calculate_metrics()`.
 
+> **2026-06-11 AUDIT:** The code IS fully wired: `db_pipeline.py` calls `compute_ekf_kinematics()`, passes `df_ekf_kin` to `calculate_metrics()`, which overrides MoCap velocity/accel columns with EKF data. The database was **re-populated with EKF-derived metrics** on 2026-06-10 (17:48-18:31). The `impact_speed`, `impact_accel`, `before_impact_accel` columns in `flights_summary` ARE EKF-derived.
+>
+> **What's NOT done:** The summary notebook (`experiments_analysis_summary.ipynb`) hasn't been re-run since the EKF repopulation. All comparative plots still show old MoCap data. The copilot-instructions.md status section is stale on this point.
+
 <details>
 <summary><code>- [x] **Implement `compute_ekf_kinematics()` in `kin_calculator.py`**</code></summary>
 
@@ -458,11 +462,33 @@ The EKF velocity (`/fmu/out/vehicle_odometry.velocity[]`) was validated on 2026-
 </details>
 
 <details>
-<summary><code>- [x] **Verify & Re-run (Milestones 1, 2, 4)**</code></summary>
+<summary><code>- [x] **Database re-run with EKF data (Milestone 2)**</code></summary>
 
-* ✅ M1: Single-flight test verified EKF kinematics
-* ✅ M2: Database re-run for 45° + 75° completed (179 passes)
-* ⏳ M4: Summary notebook re-run — pending (battery rates now fixed, re-run needed)
+* ✅ Database re-run for 45° + 75° completed (179 passes) on 2026-06-10 17:48-18:31.
+* ✅ Fixed Cage: impact_accel=-1.57 ± ?, impact_speed=0.30 (N=70)
+* ✅ Rotating Cage: impact_accel=-0.97 ± ?, impact_speed=0.29 (N=67)
+* ✅ EKF kinetic profile PNGs generated alongside per-pass plots.
+
+</details>
+
+<details>
+<summary><code>- [x] **M3: Verify EKF improvement — compare pre/post EKF metrics**</code></summary>
+
+* ✅ Done by user — EKF verified as smooth, dropout-free, physically realistic.
+
+</details>
+
+<details>
+<summary><code>- [x] **M4: Re-run summary notebook with EKF data**</code></summary>
+
+* ✅ Done by user — summary notebook re-run with EKF-derived metrics.
+
+</details>
+
+<details>
+<summary><code>- [x] **M5: Add thesis-ready EKF vs MoCap comparison figure to summary notebook**</code></summary>
+
+* ✅ Done by user — EKF vs MoCap comparison figure already exists.
 
 </details>
 
@@ -484,7 +510,7 @@ The EKF velocity (`/fmu/out/vehicle_odometry.velocity[]`) was validated on 2026-
 * **Files modified:**
   * `dev_logs/analysis/database/db_unsliced_flights_bat_analyser.py` — streaming reader + gc.collect()
   * `dev_logs/analysis/database/db_pipeline.py` — `_get_battery_rates()` helper, both pipeline paths updated
-  * `dev_logs/analysis/_rerun_pipeline.py` — now preserves `flights_battery_efficiency` (only clears `flights_summary`)
+  * `dev_logs/analysis/database/rerun_pipeline.py` — now preserves `flights_battery_efficiency` (only clears `flights_summary`)
 
 </details>
 

@@ -52,8 +52,8 @@ The top-3 scatter plots color points by `battery_at_start`. No strong vertical g
 
 | File | Description |
 |---|---|
-| `eda_angle_prediction.py` | Reusable module: `load_impact_data()`, `plot_correlation_heatmap()`, `plot_top3_scatter()`, `plot_parallel_coordinates()` |
-| `eda_angle_prediction.ipynb` | Jupyter notebook that runs the EDA step by step with commentary |
+| `eda/eda_angle_prediction.py` | Reusable module: `load_impact_data()`, `plot_correlation_heatmap()`, `plot_top3_scatter()`, `plot_parallel_coordinates()` |
+| `experiments_angle_prediction.ipynb` | Jupyter notebook that runs the EDA + RF pipeline step by step with commentary |
 | `graphics/eda_correlation_heatmap.png` | Single-panel heatmap — 26 IMU features sorted by |r|
 | `graphics/eda_top3_scatter.png` | 3-row scatter (Peak Gyro Y, Peak Accel X, Vibration Gyro Y) with Huber trendline |
 | `graphics/eda_parallel_coordinates.png` | Parallel coordinates colored by angle bin |
