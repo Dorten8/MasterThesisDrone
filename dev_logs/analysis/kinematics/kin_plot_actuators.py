@@ -12,7 +12,7 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
     Plots an 'inventive' multi-panel visualization of motor health and system state.
     """
     try:
-        ul = pyulog.ULog(ulg_path, message_name_filter_list=["actuator_motors", "actuator_outputs", "vehicle_status"])
+        ul = pyulog.ULog(ulg_path, message_name_filter_list=["actuator_motors", "actuator_outputs"])
     except Exception as e:
         print(f"[WARN] Could not load ULog for actuator plot: {e}")
         return
@@ -35,7 +35,7 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
         except Exception:
             pass
 
-    # 2. Extract actuator_outputs (Actual PWM/Dshot to ESCs) - robust instance matching
+    # 2. Extract actuator_outputs (Actual DShot values to ESCs)
     out_t = []
     out_vals = []
     best_ds_out = None
@@ -50,20 +50,8 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
         except Exception:
             pass
 
-    # 3. Extract vehicle_status (Nav state, arming state)
-    status_t = []
-    nav_state = []
-    arming_state = []
-    try:
-        ds_status = ul.get_dataset("vehicle_status")
-        status_t = np.array([to_rel_t(t) for t in ds_status.data["timestamp"]])
-        nav_state = ds_status.data["nav_state"]
-        arming_state = ds_status.data["arming_state"]
-    except Exception:
-        pass
-
-    fig = plt.figure(figsize=(14, 10))
-    gs = gridspec.GridSpec(3, 1, height_ratios=[1.5, 1.5, 0.8], hspace=0.3)
+    fig = plt.figure(figsize=(14, 8))
+    gs = gridspec.GridSpec(2, 1, height_ratios=[1.5, 1.5], hspace=0.3)
     
     # Standard timeline window: [WP2 - 1s, WP3 + 1s] in bag-relative time (data is absolute via to_rel_t)
     esp_time = wp_events.get('WP2')   # experiment start (refined forward movement)
@@ -99,8 +87,8 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
             
     ax1.set_xlim(t_min, t_max)
     ax1.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
-    ax1.set_ylim(0.2, 1.0)
-    ax1.set_ylabel('Motor Command (normalized, 0.0 to 1.0)')
+    ax1.set_ylim(0.4, 1.0)
+    ax1.set_ylabel('Motor Cmd\n(normalized)')
     ax1.set_title(f'Actuator Motor Commands <{condition}>', fontweight='bold')
     ax1.grid(True, linestyle='--', alpha=0.6)
     # Put legend outside or tidy up
@@ -114,39 +102,16 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
             ax2.plot(out_t, out_vals[i], color=colors[i], label=labels[i], alpha=0.8, linewidth=1.5)
 
     ax2.set_xlim(t_min, t_max)
-    ax2.set_ylabel('Actuator Output (PWM/DShot)')
-    ax2.set_title('Raw Actuator Outputs to ESCs')
+    ax2.set_ylabel('Motor Output\n(DShot value → RPM)')
+    ax2.set_ylim(750, 2000)
+    ax2.set_title('Raw Actuator Outputs to ESCs (DShot Protocol)')
+    ax2.set_xlabel('Time (s)')
     ax2.grid(True, linestyle='--', alpha=0.6)
-
-    # Panel 3: Vehicle Status (Nav State & Arming)
-    ax3 = fig.add_subplot(gs[2], sharex=ax1)
-    add_phase_shading(ax3)
-    if len(status_t) > 0:
-        # Plot Nav State as step graph
-        ax3.step(status_t, nav_state, color='purple', label='Nav State (14=Offboard)', linewidth=2, where='post')
-
-    ax3.set_xlim(t_min, t_max)
-    ax3.set_ylim(-1, 20)
-    ax3.set_ylabel('Nav State ID')
-    ax3.set_title('PX4 Vehicle Status')
-    ax3.grid(True, linestyle='--', alpha=0.6)
-
-    # Add arming state on a secondary y-axis
-    ax3_twin = ax3.twinx()
-    if len(status_t) > 0:
-        ax3_twin.step(status_t, arming_state, color='#E91E63', linestyle=':', label='Arming State (2=Armed)', linewidth=2, where='post')
-    ax3_twin.set_ylabel('Arming State ID')
-    ax3_twin.set_ylim(0.5, 2.5)
-
-    # Merge legends from ax3 and ax3_twin
-    lines, labels_lines = ax3.get_legend_handles_labels()
-    lines2, labels2 = ax3_twin.get_legend_handles_labels()
-    ax3.legend(lines + lines2, labels_lines + labels2, loc='upper right', framealpha=1.0)
 
     # Flight name annotation (bottom-right)
     if flight_name:
-        ax3.text(0.98, 0.02, f"{flight_name}",
-                 transform=ax3.transAxes,
+        ax2.text(0.98, 0.02, f"{flight_name}",
+                 transform=ax2.transAxes,
                  ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
                  bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
                            boxstyle='round,pad=0.2'))

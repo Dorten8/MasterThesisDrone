@@ -250,7 +250,7 @@ def _get_offset_sec(mcap_path, ulg_path, dfs):
 #  Thin plot wrappers  (notebook cells stay at 1–2 lines)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def plot_trajectory_from(data):
+def plot_trajectory_from(data, output_path=None):
     """2D top-down trajectory plot."""
     plot_trajectory(
         data["df_mocap"], data["wp_events"],
@@ -261,11 +261,12 @@ def plot_trajectory_from(data):
         dynamic_waypoints=data["dynamic_waypoints"],
         df_column=data["df_column"],
         df_setpoint=data["df_setpoint"],
+        output_path=output_path,
         show_plot=True,
     )
 
 
-def plot_velocity_profile_from(data, raw=False):
+def plot_velocity_profile_from(data, raw=False, output_path=None):
     """3-panel kinetic profile (velocity, tangential accel, MoCap rate)."""
     if raw:
         df      = data["df_mocap_raw"]
@@ -287,6 +288,7 @@ def plot_velocity_profile_from(data, raw=False):
         achieved_angle=data["achieved_angle"],
         mocap_rate=data["mocap_rate"],
         condition=data["condition"] + suffix,
+        output_path=output_path,
         show_plot=True, df_raw=df_raw, is_raw=raw,
     )
 
@@ -303,7 +305,7 @@ def plot_battery_sag_from(data):
     )
 
 
-def plot_imu_dynamics_from(data):
+def plot_imu_dynamics_from(data, output_path=None):
     """IMU collision dynamics (accel deviation + gyro surge)."""
     plot_imu_dynamics(
         data["df_imu"], data["wp_events"],
@@ -312,11 +314,12 @@ def plot_imu_dynamics_from(data):
         label=data["condition"],
         flight_name=data["flight_name"],
         achieved_angle=data["achieved_angle"],
+        output_path=output_path,
         show_plot=True,
     )
 
 
-def plot_imu_xyz_from(data):
+def plot_imu_xyz_from(data, output_path=None):
     """Raw IMU X/Y/Z components (RGB-standard)."""
     plot_imu_xyz_components(
         data["df_imu"], data["wp_events"],
@@ -325,11 +328,12 @@ def plot_imu_xyz_from(data):
         label=data["condition"],
         flight_name=data["flight_name"],
         achieved_angle=data["achieved_angle"],
+        output_path=output_path,
         show_plot=True,
     )
 
 
-def plot_actuators_from(data):
+def plot_actuators_from(data, output_path=None):
     """Actuator motor commands + outputs + vehicle status (requires ULog)."""
     if not data.get("ulg_path"):
         print(f"⚠️  No ULog file for {data['flight_name']} — skipping.")
@@ -338,11 +342,11 @@ def plot_actuators_from(data):
         data["ulg_path"], data["offset_sec"], data["bag_start_ns"],
         data["wp_events"], data["arming_time"],
         data["flight_name"], data["condition"],
-        output_path=None, show_plot=True,
+        output_path=output_path, show_plot=True,
     )
 
 
-def plot_allocator_from(data):
+def plot_allocator_from(data, output_path=None):
     """Control allocator saturation analysis (requires ULog)."""
     if not data.get("ulg_path"):
         print(f"⚠️  No ULog file for {data['flight_name']} — skipping.")
@@ -350,11 +354,11 @@ def plot_allocator_from(data):
     plot_control_allocator_saturation(
         data["ulg_path"], data["offset_sec"], data["bag_start_ns"],
         data["wp_events"], data["flight_name"], data["condition"],
-        output_path=None, show_plot=True,
+        output_path=output_path, show_plot=True,
     )
 
 
-def plot_pid_tracking_from(data):
+def plot_pid_tracking_from(data, output_path=None):
     """PID rate-controller tracking performance (requires ULog)."""
     if not data.get("ulg_path"):
         print(f"⚠️  No ULog file for {data['flight_name']} — skipping.")
@@ -362,7 +366,7 @@ def plot_pid_tracking_from(data):
     plot_pid_rate_tracking(
         data["ulg_path"], data["offset_sec"], data["bag_start_ns"],
         data["wp_events"], data["flight_name"], data["condition"],
-        output_path=None, show_plot=True,
+        output_path=output_path, show_plot=True,
     )
 
 
@@ -410,7 +414,7 @@ def compute_ekf_velocity(data):
     }
 
 
-def plot_ekf_velocity_from(data):
+def plot_ekf_velocity_from(data, output_path=None):
     """EKF vs MoCap velocity side-by-side for a single flight."""
     ekf = compute_ekf_velocity(data)
     if ekf is None:
@@ -480,8 +484,8 @@ def plot_ekf_velocity_from(data):
     ax_sp.plot(ekf["t"], ekf["speed"], "green", lw=1.2, alpha=0.85,
                label="EKF Speed")
     ax_sp.set_ylabel("Speed [m/s]")
-    ax_sp.set_ylim(-0.05, 1.25)
-    ax_sp.set_yticks(np.arange(0, 1.3, 0.2))
+    ax_sp.set_ylim(-0.05, 0.85)
+    ax_sp.set_yticks(np.arange(0, 0.9, 0.2))
     ax_sp.set_xlim(t_min_crop, t_max_crop)
     ax_sp.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
     ax_sp.set_xlabel("Time [s]")
@@ -492,11 +496,14 @@ def plot_ekf_velocity_from(data):
         ax_sp.axvline(x=impact_time, color="red", ls="--", lw=1.2, alpha=0.7)
 
     plt.tight_layout()
+    if output_path:
+        fig_sp.savefig(output_path, dpi=150, bbox_inches="tight")
+        print(f"[INFO]  EKF velocity plot saved to:  {output_path}")
     plt.show()
     print(f"✅ EKF velocity done — MoCap rate ≈ {ekf['rate']} Hz")
 
 
-def plot_ekf_kinetic_from(data):
+def plot_ekf_kinetic_from(data, output_path=None):
     """EKF-based kinetic profile: velocity + tangential accel (no MoCap rate panel).
 
     Thin wrapper that delegates to :func:`plot_ekf_kinetic_profile` in
@@ -519,11 +526,12 @@ def plot_ekf_kinetic_from(data):
         flight_name=data["flight_name"],
         condition=data["condition"],
         achieved_angle=data.get("achieved_angle"),
+        output_path=output_path,
         show_plot=True,
     )
 
 
-def plot_ekf_dual_comparison(rot_data, fix_data):
+def plot_ekf_dual_comparison(rot_data, fix_data, output_path=None):
     """EKF vs MoCap speed for both cages in a single 2×2 figure."""
     ekf_rot = compute_ekf_velocity(rot_data)
     ekf_fix = compute_ekf_velocity(fix_data)
@@ -564,8 +572,8 @@ def plot_ekf_dual_comparison(rot_data, fix_data):
             "b-", lw=0.8, alpha=0.7, label="MoCap SG")
     ax.plot(ekf_fix["t"], ekf_fix["speed"],
             "green", lw=1.3, alpha=0.9, label="EKF (PX4)")
-    ax.set_ylim(-0.05, 1.25)
-    ax.set_yticks(np.arange(0, 1.3, 0.2))
+    ax.set_ylim(-0.05, 0.85)
+    ax.set_yticks(np.arange(0, 0.9, 0.2))
     ax.set_title(f"Fixed Cage — Representative (MoCap ≈ {ekf_fix['rate']} Hz)",
                  fontsize=12, color="#cc3300")
     ax.set_ylabel("Speed [m/s]")
@@ -581,8 +589,8 @@ def plot_ekf_dual_comparison(rot_data, fix_data):
             "b-", lw=0.8, alpha=0.7, label="MoCap SG")
     ax.plot(ekf_rot["t"], ekf_rot["speed"],
             "green", lw=1.3, alpha=0.9, label="EKF (PX4)")
-    ax.set_ylim(-0.05, 1.25)
-    ax.set_yticks(np.arange(0, 1.3, 0.2))
+    ax.set_ylim(-0.05, 0.85)
+    ax.set_yticks(np.arange(0, 0.9, 0.2))
     ax.set_title(f"Rotating Cage — Representative (MoCap ≈ {ekf_rot['rate']} Hz)",
                  fontsize=12, color="#006600")
     ax.set_ylabel("Speed [m/s]")
@@ -639,6 +647,9 @@ def plot_ekf_dual_comparison(rot_data, fix_data):
     _flight_label(rot_data, ax)
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
+    if output_path:
+        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        print(f"[INFO]  Dual EKF comparison saved to:  {output_path}")
     plt.show()
     print(f"✅ Dual EKF comparison: "
           f"Fixed ({ekf_fix['rate']} Hz) | Rotating ({ekf_rot['rate']} Hz)")

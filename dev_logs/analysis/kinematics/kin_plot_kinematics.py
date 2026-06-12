@@ -147,8 +147,8 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         has_avg_legend = True
 
     ax_vel.set_ylabel('Velocity (m/s)')
-    ax_vel.set_ylim(-0.05, 1.25)
-    ax_vel.set_yticks(np.arange(0, 1.3, 0.2))
+    ax_vel.set_ylim(-0.05, 0.85)
+    ax_vel.set_yticks(np.arange(0, 0.9, 0.2))
     ax_vel.legend(loc='upper right', frameon=True, facecolor='white', edgecolor='#EAEAEA')
     ax_vel.grid(True)
 
@@ -184,9 +184,9 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         ax_acc.axhline(0.0, color='black', linewidth=1.6, linestyle='-', zorder=5,
                        label='Zero Acceleration (Steady State)')
 
-        # Symmetric Y-limits strictly bounded to [-12.0, 12.0] m/s², tick intervals at 4.0 m/s²
-        ax_acc.set_ylim(-12.0, 12.0)
-        ax_acc.set_yticks(np.arange(-12.0, 12.1, 4.0))
+        # Symmetric Y-limits strictly bounded to [-8.0, 8.0] m/s², tick intervals at 2.0 m/s²
+        ax_acc.set_ylim(-8.0, 8.0)
+        ax_acc.set_yticks(np.arange(-8.0, 8.1, 2.0))
         ax_acc.set_ylabel('Tangential Accel (m/s²)\n← Decel | Accel →')
         ax_acc.legend(loc='upper right', frameon=True, facecolor='white', edgecolor='#EAEAEA')
         ax_acc.grid(True)
@@ -258,9 +258,9 @@ def plot_velocity_profile(df_mocap, wp_events, arming_time, takeoff_time, disarm
         ax_vel.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
 
     # Draw timeline markers. Draw labels only on top plot to prevent overlapping text labels.
-    draw_timeline_markers(ax_vel, wp_events, arming_time, (-0.05, 1.25), is_absolute=False, achieved_angle=achieved_angle, draw_labels=True)
+    draw_timeline_markers(ax_vel, wp_events, arming_time, (-0.05, 0.85), is_absolute=False, achieved_angle=achieved_angle, draw_labels=True)
     if ax_acc is not None:
-        draw_timeline_markers(ax_acc, wp_events, arming_time, (-12.0, 12.0), is_absolute=False, achieved_angle=achieved_angle, draw_labels=False)
+        draw_timeline_markers(ax_acc, wp_events, arming_time, (-8.0, 8.0), is_absolute=False, achieved_angle=achieved_angle, draw_labels=False)
     if ax_rate is not None:
         draw_timeline_markers(ax_rate, wp_events, arming_time, (-10, 480), is_absolute=False, achieved_angle=achieved_angle, draw_labels=False)
 
@@ -605,17 +605,17 @@ def plot_ekf_kinetic_profile(ekf_t, ekf_speed, ekf_rate, df_mocap, wp_events,
         fontsize=13, fontweight="bold", y=0.98,
     )
 
-    # ── Top panel: EKF velocity (fixed 0-1.2 m/s, ticks every 0.2) ──
+    # ── Top panel: EKF velocity (fixed 0-0.8 m/s, ticks every 0.2) ──
     ax_vel.plot(t_rel, ekf_speed, color=C_MOCAP, linewidth=2.2,
                 label="EKF Velocity (vehicle_odometry)")
     ax_vel.set_ylabel("Velocity (m/s)")
-    ax_vel.set_ylim(-0.05, 1.25)
-    ax_vel.set_yticks(np.arange(0, 1.3, 0.2))
+    ax_vel.set_ylim(-0.05, 0.85)
+    ax_vel.set_yticks(np.arange(0, 0.9, 0.2))
     ax_vel.legend(loc="upper right", frameon=True, facecolor="white",
                   edgecolor="#EAEAEA")
     ax_vel.grid(True)
 
-    # ── Bottom panel: tangential acceleration (fixed ±12 m/s², ticks every 4) ──
+    # ── Bottom panel: tangential acceleration (fixed ±8 m/s², ticks every 2) ──
     ax_acc.fill_between(t_rel, accel, 0,
                         where=(accel >= 0),
                         color="#2CA02C", alpha=0.18, label="_nolegend_")
@@ -626,8 +626,8 @@ def plot_ekf_kinetic_profile(ekf_t, ekf_speed, ekf_rate, df_mocap, wp_events,
                 label="Tangential Acceleration (m/s²)")
     ax_acc.axhline(0.0, color="black", linewidth=1.6, linestyle="-", zorder=5,
                    label="Zero Acceleration (Steady State)")
-    ax_acc.set_ylim(-12.0, 12.0)
-    ax_acc.set_yticks(np.arange(-12.0, 12.1, 4.0))
+    ax_acc.set_ylim(-8.0, 8.0)
+    ax_acc.set_yticks(np.arange(-8.0, 8.1, 2.0))
     ax_acc.set_ylabel("Tangential Accel (m/s²)\n← Decel | Accel →")
     ax_acc.legend(loc="upper right", frameon=True, facecolor="white",
                   edgecolor="#EAEAEA")
@@ -638,10 +638,10 @@ def plot_ekf_kinetic_profile(ekf_t, ekf_speed, ekf_rate, df_mocap, wp_events,
     ax_vel.set_xlim(t_min_crop, t_max_crop)
     ax_vel.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
     draw_timeline_markers(ax_vel, wp_events, arming_time,
-                          (-0.05, 1.25), is_absolute=False,
+                          (-0.05, 0.85), is_absolute=False,
                           achieved_angle=achieved_angle, draw_labels=True)
     draw_timeline_markers(ax_acc, wp_events, arming_time,
-                          (-12.0, 12.0), is_absolute=False,
+                          (-8.0, 8.0), is_absolute=False,
                           achieved_angle=achieved_angle, draw_labels=False)
 
     # Data origin label (bottom-right)
