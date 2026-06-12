@@ -221,8 +221,8 @@ See [`walkthrough_experiments.md`](walkthrough_experiments.md#-experiment-starte
 
 | Plot | Variable | Limits | Ticks |
 |------|----------|--------|-------|
-| All velocity panels (MoCap+EKF) | Speed | `-0.05` – `1.25` | every `0.2` |
-| Velocity panels | Tangential accel | `-12.0` – `12.0` | every `4.0` |
+| All velocity panels (MoCap+EKF) | Speed | `-0.05` – `0.85` | every `0.2` |
+| Velocity panels | Tangential accel | `-8.0` – `8.0` | every `2.0` |
 | EKF debug (3×2 + dual) | Per-axis velocity | `-0.4` – `0.6` | auto |
 | IMU Dynamics | Accel left axis | `-1.0` – `20.0` | every `2.0` |
 | IMU Dynamics | Gyro right axis | `0` – `10` | every `1` |
@@ -265,9 +265,9 @@ These are called on-the-fly from the notebook with representative flight data. T
 
 9. **RAW IMU X/Y/Z Components (`plot_imu_xyz_from(data)`):** 3 subplots (Lateral/X, Longitudinal/Y, Vertical/Z), height ratios `[26,26,20]`, explicit limits per axis. Pipeline output `passNN_imu_xyz_components.png`.
 
-10. **Actuator Motor Commands (`plot_actuators_from(data)`):** 4-motor subplot (one per motor). Normalized output 0–1 vs time. Vertical markers at waypoints. Pipeline output `passNN_actuator_motor_commands.png`.
+10. **Actuator Motor Commands (`plot_actuators_from(data)`):** 2-panel (vehicle status panel removed 2026-06-12 — showed nothing useful). Panel 1: motor commands, ylim `0.4–1.0`, ylabel `Motor Cmd (normalized)`. Panel 2: DShot output values to ESCs, ylim `750–2000`, ylabel `Motor Output (DShot value → RPM)`, xlabel `Time (s)`. Pipeline output `passNN_actuator_motor_commands.png`.
 
-11. **Control Allocator Saturation (`plot_allocator_from(data)`):** 2-panel: (1) actuator motor outputs with saturation highlights, (2) allocated vs unallocated torque. Requires `.ulg` alongside MCAP. Pipeline output `passNN_control_allocator_saturation.png`.
+11. **Control Allocator Saturation (`plot_allocator_from(data)`):** **Retired from notebook 2026-06-12** — showed nothing beyond the actuator commands plot (same data, same saturation events). Pipeline output still generated as `passNN_control_allocator_saturation.png` for completeness.
 
 12. **PID Rate Controller Tracking — Per-Flight (`plot_pid_tracking_from(data)`):** 3-panel (roll, pitch, yaw rate setpoint vs actual). Retained in notebook as per-flight diagnostic. **The aggregate PID tracking plot (Plot 2) in the summary notebook was retired** — it was redundant with RMS error metrics stored in DB. The per-flight PID view is NOT retired; they are different plots.
 
@@ -310,8 +310,17 @@ To prevent repeat attempts of low-value visualizations:
 | Battery Sag (`battery_sag.png`) | Retired | **Kept** | Interactive per-flight voltage inspection |
 | Splined MoCap Kinetic Profile | Retired | **Kept** | Detailed 3-panel rate diagnosis (replaced by EKF as standard) |
 | EKF Kinetic Profile | **Active** | **Active** | New standard — clean, dropout-free velocity |
+| Control Allocator Saturation | **Active** | **Retired** (2026-06-12) | Redundant with actuator commands plot — same data, same events |
+| Vehicle Status Panel (in actuator plot) | **Active** | **Retired** (2026-06-12) | Showed nothing useful — removed from actuator plot |
 
 ## 9. Execution Log — Italic Notes (Most Recent First)
+
+### Kinetic y-limits truncated + All plots routed to thesis/plots/ + Actuator plot fixed + Allocator retired
+*[2026-06-12] **Velocity y-limits** truncated from 0–1.25 to 0–0.85 across all four kinetic variants (MoCap raw/splined, EKF kinetic, EKF viewer/dual). **Tangential accel** from ±12 to ±8, ticks every 2. Applied consistently to `plot_velocity_profile`, `plot_ekf_kinetic_profile`, `plot_ekf_velocity_from`, `plot_ekf_dual_comparison`, and their `draw_timeline_markers` bounds.
+**Output routing:** Added `output_path` forwarding to all wrappers (except battery sag — kept interactive). Added `savefig` to the two functions that owned their own plt code (`plot_ekf_velocity_from`, `plot_ekf_dual_comparison`). All notebook cells now export to `thesis/plots/` with descriptive filenames.
+**Actuator plot:** Upper panel ylim 0.4–1.0, ylabel shortened. Center panel ylim 750–2000, ylabel explains DShot→RPM, added xlabel. Lower panel (vehicle status) removed — showed nothing useful. Unused `vehicle_status` ULog extraction removed.
+**Control Allocator Saturation:** Removed from notebook — showed nothing beyond actuator commands (same data, same saturation events). Pipeline output still generated for completeness.
+**§4 table** updated: velocity 0–0.85, accel ±8. **§5 item 10** updated. **§5 item 11** marked retired in notebook. **§8 table** updated.*
 
 ### EKF Pipeline Integration Verified & Complete
 *[2026-06-11] Audit confirmed EKF fully wired: `db_pipeline.py` → `compute_ekf_kinematics()` → `calculate_metrics()` with column override. Database repopulated 2026-06-10. DB columns `impact_speed`, `impact_accel`, `before_impact_accel` are EKF-derived. Status flag in copilot-instructions.md updated from "not yet in pipeline" to "fully integrated ✅".
