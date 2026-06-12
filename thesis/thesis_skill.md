@@ -1,3 +1,24 @@
+# Thesis Skill — Driving Toward the Research Questions
+
+## 🎯 The North Star
+
+**Everything** in the thesis manuscript, experiment design, analysis pipeline, and hardware development answers these two questions:
+
+> **RQ1:** How does the physical resilience and energy deflection capability of a freely rotating protective cage compare to a fixed cage during direct obstacle collisions?
+
+> **RQ2:** To what extent can the raw inertial data generated during these deliberate physical collisions be utilized to accurately estimate the angle of impact against an obstacle, serving as a fundamental step toward tactile spatial awareness in signal-denied environments?
+
+### Narrative structure in the manuscript
+
+The thesis is organized around these two questions:
+- **RQ1 → Part I of Experiments (§§7.3–7.4):** Mechanical flight performance. Macro deceleration, actuator saturation, recovery footprint. The rotating cage is the intervention; MoCap + PX4 EKF are the ground-truth measurements.
+- **Transition (§7.5):** IMU Footprint of Impact Angles. The parabolic gyro Y curve acts as the bridge from mechanical resilience to sensory exploitation.
+- **RQ2 → Part II of Experiments (§7.6):** Environmental sensing via ML (Random Forest, R²=0.73, MAE=4.9°). The IMU is the sensor; the impact angle is what we estimate.
+
+Every section, every figure, every paragraph should trace back to at least one of these questions. If it doesn't, it's either a setup section (Introduction, Related Work, Methodology) or scope creep.
+
+---
+
 # Thesis Citation Management Workflow
 
 ## Golden Rule

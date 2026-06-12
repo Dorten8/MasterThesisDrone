@@ -1,5 +1,17 @@
 # Copilot instructions for `MasterThesisDrone`
 
+## 🎯 Central Thesis Aim — The North Star
+
+**Everything** in this project — the drone design, the experiments, the analysis, and the thesis manuscript — exists to answer these two research questions:
+
+> **RQ1:** How does the physical resilience and energy deflection capability of a freely rotating protective cage compare to a fixed cage during direct obstacle collisions?
+
+> **RQ2:** To what extent can the raw inertial data generated during these deliberate physical collisions be utilized to accurately estimate the angle of impact against an obstacle, serving as a fundamental step toward tactile spatial awareness in signal-denied environments?
+
+Every experiment, every analysis plot, every section of the thesis manuscript should be traceable back to at least one of these questions. When writing, analyzing, or designing, ask: *Does this help answer RQ1 or RQ2?* If not, it's scope creep.
+
+**The narrative arc:** Mechanical resilience (RQ1, Part I of Experiments) → Impact sensing and interpretation (RQ2, Part II of Experiments). The rotating cage is the intervention; the IMU is the sensor; the Motion Capture environment is the ground truth.
+
 ## Build, test, and lint commands
 
 ### ROS 2 workspace (this repo as `/home/ws`)

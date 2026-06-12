@@ -84,7 +84,7 @@ However, analysis of the power consumption from the exact moment of commanded ta
 
 Before examining recovery or internal sensors, we first establish the macro-level physics of the collision event: how fast was the drone travelling at the moment of impact, and what was the resulting deceleration? These values define the mechanical envelope that the cage must manage and set the baseline for all subsequent analysis.
 
-The recorded MoCap data indicates a consistent commanded sweep speed of $0.30$--$0.50$\,m/s across both cage configurations, with the PID controller maintaining this setpoint reliably through the approach leg. Despite identical commanded velocities, the instantaneous deceleration upon column contact reveals a marked divergence between the two cage designs. ***THIS PARAGRAPH NEEDS SPECIFIC ANALYSIS: report the mean impact speed per configuration (from MoCap), the peak deceleration values, and frame the results in terms of momentum $p = mv$ and impulse $J = \Delta p$.***
+The recorded MoCap data indicates a consistent commanded sweep speed of $0.30$--$0.50$\,m/s across both cage configurations, with the PID controller maintaining this setpoint reliably through the approach leg. Despite identical commanded velocities, the instantaneous deceleration upon column contact reveals a marked divergence between the two cage designs.
 
 \begin{figure}[htbp]
     \centering
@@ -93,16 +93,37 @@ The recorded MoCap data indicates a consistent commanded sweep speed of $0.30$--
     \label{fig:global_deceleration}
 \end{figure}
 
-***PLACEHOLDER: Insert a dedicated speed-at-impact figure here if available (e.g. Figures/impact\_speed\_vs\_angle.pdf). If not, fold the speed discussion into the text above.***
+***PLACEHOLDER: Insert a dedicated speed-at-impact figure here if available (Figures/impact\_speed\_vs\_angle.pdf). If not, fold the speed discussion into the text above.***
 
-The broader implication is that the drone's momentum at impact is comparable in both configurations, but the \emph{rate} at which this momentum is dissipated --- the deceleration pulse shape --- differs fundamentally. The fixed cage behaves as a stiff spring: higher instantaneous peak force, shorter impulse duration. The rotating cage, by contrast, extends the deceleration event, which reduces the peak load on the airframe but introduces a rotational coupling that complicates the post-impact dynamics. ***THIS PARAGRAPH NEEDS SPECIFIC ANALYSIS: quantify the momentum transfer, impulse duration, and energy dissipation differences between the two cage types.***
+***THIS PARAGRAPH NEEDS SPECIFIC ANALYSIS: report the mean impact speed per configuration (from MoCap), the peak deceleration values, and frame the results in terms of momentum $p = mv$ and impulse $J = \Delta p$. Discuss whether the fixed cage's lower deceleration means it genuinely absorbs less energy or simply distributes the impulse over a longer time window.***
 
 \subsection{Actuator Saturation and Recovery Effort}
 \label{sec:actuator_saturation}
 
 Now that we have quantified the macro-level hit (\autoref{sec:velocity_acceleration_dynamics}), we ask: how hard did the motors have to work to arrest the induced deviation and return the drone to its commanded trajectory? This section completes the mechanical evaluation by examining whether the rotating cage's energy deflection behaviour translates into reduced actuator effort.
 
+We employ a \emph{micro-to-macro} visual strategy: first examining a single representative collision to understand the \emph{anatomy} of the recovery effort, then aggregating across all flights to establish statistical trends.
+
+\subsubsection{Single-Flight Anatomy of Allocator Saturation}
+
 When the drone collides with the column, the position controller commands a corrective torque to cancel the lateral velocity. This torque demand must be satisfied by the four rotors, each limited to a finite thrust range $[0, T_\text{max}]$. If the demanded torque exceeds what the rotors can deliver at their current operating point, the control allocator saturates --- the unallocated torque is discarded, and the drone drifts until aerodynamic forces naturally arrest the motion.
+
+%% ── MICRO: Single-flight allocator timeline ──
+%% TODO: Generate this plot from flight_loader and place at Figures/single_flight_allocator.pdf.
+%% The timeline should show actuator commands (Motors 1--4), the saturation flag, and the impact marker.
+%% Key observation: motors saturate for approximately X s immediately following the impact spike.
+%\begin{figure}[htbp]
+%    \centering
+%    \includegraphics[width=\textwidth]{Figures/single_flight_allocator.pdf}
+%    \caption{Timeline of control allocator saturation for a single representative collision pass. The vertical dashed line marks the impact event. Motors 1 and 3 saturate for approximately $X$\,s post-impact as the controller commands full corrective torque. After $Y$\,s the allocator returns to its linear operating regime.}
+%    \label{fig:single_allocator}
+%\end{figure}
+
+***PLACEHOLDER: Replace the commented-out figure above with a real single-flight allocator timeline once generated. In the text, describe which motors saturate, for how long, and how the fixed vs. rotating cage differ in their saturation profile for one representative pass each.***
+
+\subsubsection{Aggregate Allocator Performance}
+
+The single-flight timeline reveals \emph{when} saturation occurs. The aggregate analysis reveals \emph{whether} the cage configuration makes a statistical difference.
 
 \begin{figure}[htbp]
     \centering
@@ -111,7 +132,7 @@ When the drone collides with the column, the position controller commands a corr
     \label{fig:allocator_saturation}
 \end{figure}
 
-***THIS PARAGRAPH NEEDS SPECIFIC ANALYSIS: report the numerical saturation durations, unallocated torque magnitudes, and the fraction of flights where saturation exceeded a critical threshold. Compare fixed vs. rotating cage and discuss the physical mechanism behind any observed differences.***
+***THIS PARAGRAPH NEEDS SPECIFIC ANALYSIS: report the numerical saturation durations, unallocated torque magnitudes, and the fraction of flights where saturation exceeded a critical threshold. Compare fixed vs. rotating cage.***
 
 \begin{figure}[htbp]
     \centering
@@ -120,9 +141,9 @@ When the drone collides with the column, the position controller commands a corr
     \label{fig:pid_tracking}
 \end{figure}
 
-***THIS PARAGRAPH NEEDS SPECIFIC ANALYSIS: quantify the mean tracking error per axis per configuration, and discuss the yaw-dominant recovery signature of the rotating cage.***
+The PID tracking errors corroborate the allocator findings. The rotating cage exhibits elevated tracking errors across all three axes, with the yaw channel being most affected --- consistent with the physical expectation that a spinning cage introduces a dominant yaw disturbance. The fixed cage recovers cleanly with minimal tracking error, reinforcing the conclusion that its rigid structure produces a mechanically simpler disturbance profile. ***THIS PARAGRAPH NEEDS SPECIFIC ANALYSIS: quantify the mean tracking error per axis per configuration.***
 
-The consequence for the recovery trajectory is that flights with higher allocator saturation and larger PID tracking errors require more spatial area to re-establish the commanded path. The spatial footprint of recovery --- quantified as the integrated area between the executed and commanded trajectories from impact to full stabilization --- is tightly correlated with the allocator saturation metrics, establishing a causal chain: cage design $\rightarrow$ disturbance complexity $\rightarrow$ allocator saturation $\rightarrow$ recovery footprint.
+The consequence for the recovery trajectory is that flights with higher allocator saturation and larger PID tracking errors require more spatial area to re-establish the commanded path. The spatial footprint of recovery --- quantified as the integrated area between the executed and commanded trajectories from impact to full stabilization --- correlates tightly with these actuator metrics, establishing the causal chain: cage design $\rightarrow$ disturbance complexity $\rightarrow$ allocator saturation $\rightarrow$ recovery footprint.
 
 \begin{figure}[htbp]
     \centering
@@ -134,9 +155,30 @@ The consequence for the recovery trajectory is that flights with higher allocato
 \subsection{The IMU Footprint of Impact Angles}
 \label{sec:imu_footprint}
 
-The preceding sections have established the macro-level deceleration (\autoref{sec:velocity_acceleration_dynamics}) and the actuators' effort to recover (\autoref{sec:actuator_saturation}). We now zoom into the drone's internal ``nervous system'' --- the IMU mounted on the flight controller --- to examine how the forces from the impact penetrated through the cage and registered on the onboard sensors. This section transitions the thesis narrative from \emph{mechanical protection} to \emph{environmental sensing}.
+The preceding sections established the macro-level deceleration (\autoref{sec:velocity_acceleration_dynamics}) and the actuators' effort to recover (\autoref{sec:actuator_saturation}). We now zoom into the drone's internal ``nervous system'' --- the IMU mounted on the flight controller --- to examine how the forces from the impact penetrated through the cage and registered on the onboard sensors. This section transitions the thesis narrative from \emph{mechanical protection} to \emph{environmental sensing}.
 
-If the cage merely absorbed and redirected energy, the IMU would show a simple, scaled-down version of the macro deceleration. Instead, analysis of the onboard data reveals a fundamentally non-linear and multi-dimensional relationship between impact angle and the resulting sensor readings. The transfer of force through the cage depends intricately on the angle of incidence, creating a complex physical ``fingerprint'' rather than a straight-line correlation.
+If the cage merely absorbed and redirected energy, the IMU would show a simple, scaled-down version of the macro deceleration. Instead, analysis of the onboard data reveals a fundamentally non-linear and multi-dimensional relationship between impact angle and the resulting sensor readings. We again employ the micro-to-macro strategy: first visualizing the raw IMU signature of a single collision, then aggregating across all flights to reveal the angle-dependent fingerprint.
+
+\subsubsection{Single-Flight IMU Impact Signature}
+
+%% ── MICRO: Single-flight IMU timeline ──
+%% TODO: Generate this plot from flight_loader and place at Figures/single_flight_imu.pdf.
+%% The timeline should show pre-impact steady flight, the impact spike across all six IMU axes
+%% (Accel X, Y, Z and Gyro X, Y, Z), and the subsequent ring-down.
+%% The impact event is typically < 0.1 s in duration.
+%\begin{figure}[htbp]
+%    \centering
+%    \includegraphics[width=\textwidth]{Figures/single_flight_imu.pdf}
+%    \caption{Timeline of IMU accelerometer and gyroscope readings for a single representative collision pass. The impact event spans approximately $0.1$\,s, with peak accelerations exceeding $X$\,G and gyro rates exceeding $Y$\,rad/s on the pitch axis. The ring-down period following the spike lasts approximately $Z$\,s before the IMU returns to steady flight levels.}
+%    \label{fig:single_imu}
+%\end{figure}
+
+***PLACEHOLDER: Replace the commented-out figure above with a real single-flight IMU timeline once generated. In the text, describe the impact spike duration, peak values per axis, the post-impact ring-down behaviour, and how the fixed vs. rotating cage differ in their IMU signature for a representative pass.***
+
+\subsubsection{Aggregate Angle-Dependent Signal}
+\label{sec:aggregate_imu_signal}
+
+The single-flight timeline reveals the raw \emph{violence} of the impact. The aggregate analysis reveals its \emph{structure}: the IMU readings are not random noise but systematic functions of the impact geometry.
 
 \begin{figure}[htbp]
     \centering
@@ -145,25 +187,13 @@ If the cage merely absorbed and redirected energy, the IMU would show a simple, 
     \label{fig:top3_imu_scatter}
 \end{figure}
 
-The parabolic curvature in the gyro Y (pitch-axis) panel is the most physically significant finding in this section. A shallow grazing impact ($\sim 20^\circ$) torques the drone around its pitch axis, producing high rotational vibration. As the impact angle approaches $45^\circ$, this rotational disturbance is maximal because the collision force vector has comparable normal and tangential components relative to the column surface. At near-head-on angles ($75^\circ$--$88^\circ$), the cage absorbs the energy primarily through compression, reducing rotational excitation. This curvature means a single linear coefficient cannot adequately describe the relationship --- a straight-line fit would miss the mid-range peak entirely.
+The parabolic curvature in the Vibration Gyro Y (pitch-axis) panel is the most physically significant feature in the entire IMU dataset. A shallow grazing impact ($\sim 20^\circ$) torques the drone around its pitch axis, producing high rotational vibration. As the impact angle approaches $45^\circ$, this rotational disturbance is maximal because the collision force vector has comparable normal and tangential components relative to the column surface. At near-head-on angles ($75^\circ$--$88^\circ$), the cage absorbs the energy primarily through compression, reducing rotational excitation. This curvature means a single linear coefficient cannot adequately describe the relationship --- a straight-line fit would miss the mid-range peak entirely.
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{plots/Fixed Cage IMU Feature Correlation Heatmap with Impact Angle.png}
-    \caption{Pearson correlation heatmap of all 26 aggregate IMU features against impact angle, sorted by absolute correlation strength. Features are grouped by type (Peak Accel, Peak Gyro, Accel Energy, Gyro Energy, Vibration, Settling Time, Accel Spread). Significance stars annotate each cell. The dominance of gyro-axis features and the presence of multiple feature types with $|r| > 0.5$ confirm that the IMU footprint of an impact is distributed across the sensor suite.}
-    \label{fig:imu_correlation_heatmap}
-\end{figure}
+The accompanying panels reveal complementary structure. The Peak Accel Z panel shows a negative linear trend, indicating that head-on impacts transfer less Z-axis acceleration than glancing blows --- consistent with the cage deflecting energy laterally at shallow angles. The Accel Spread Z panel quantifies the variance of the Z-acceleration during the impact window, capturing how ``chaotic'' the collision was. A grazing impact produces a prolonged, jittery acceleration profile; a head-on strike is a clean, high-magnitude spike.
 
-Critically, no single IMU metric tells the full story. The gyro axes carry the strongest individual signal because the collision torque acts primarily around the pitch and yaw axes. However, the accel spread metrics --- which capture the variance of acceleration during the impact window --- contribute independent information about how ``chaotic'' the collision was. A grazing impact produces a prolonged, jittery acceleration profile; a head-on strike is a clean, high-magnitude spike. Together, these complementary measurements form the multi-dimensional fingerprint that the subsequent section will decode.
+***THIS PARAGRAPH NEEDS SPECIFIC ANALYSIS: quantify the individual correlation coefficients for the top-5 features and discuss their physical interpretation. Reference the specific r values from the correlation heatmap and note the sign and magnitude pattern.***
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{plots/IMU Z-Axis Peak Acceleration vs Motor RPM.png}
-    \caption{Peak Z-axis acceleration recorded during each collision pass versus commanded motor speed at the moment of impact. The lack of a strong correlation between motor output and IMU Z-peak confirms that the observed acceleration is dominated by collision mechanics rather than actuator response.}
-    \label{fig:imu_z_vs_rpm}
-\end{figure}
-
-***THIS PARAGRAPH NEEDS SPECIFIC ANALYSIS: quantify the individual correlation coefficients for the top-5 features and discuss their physical interpretation.***
+The scatter plots in \autoref{fig:top3_imu_scatter} tell the essential story: the impact angle leaves a distinct, non-linear, multi-dimensional fingerprint in the IMU data, distributed across the sensor suite rather than concentrated in a single axis. The next section asks whether that fingerprint can be decoded.
 
 \subsection{Environmental Sensing via Machine Learning}
 \label{sec:environmental_sensing}
@@ -173,8 +203,8 @@ The previous section established that the IMU records a complex, non-linear, mul
 We selected a Random Forest Regressor for three reasons:
 
 \begin{enumerate}
-    \item \textbf{Non-linearity.} As demonstrated in \autoref{sec:imu_footprint}, the IMU features exhibit parabolic and multi-modal relationships with impact angle --- particularly the gyro vibration metrics. A linear model (ordinary or Huber-robust) cannot capture this curvature.
-    \item \textbf{Multi-dimensional interaction.} The correlation heatmap (\autoref{fig:imu_correlation_heatmap}) shows that no single axis dominates the angle signal. The model must combine information from multiple IMU axes to disambiguate angles that produce similar readings on a single axis.
+    \item \textbf{Non-linearity.} As demonstrated in \autoref{sec:aggregate_imu_signal}, the IMU features exhibit parabolic and multi-modal relationships with impact angle --- particularly the Vibration Gyro Y metric. A linear model (ordinary or Huber-robust) cannot capture this curvature.
+    \item \textbf{Multi-dimensional interaction.} The scatter plots in \autoref{fig:top3_imu_scatter} show that no single axis dominates the angle signal. The model must combine information from multiple IMU axes to disambiguate angles that produce similar readings on a single axis.
     \item \textbf{Generalisation without overfitting.} With $\sim 70$ Fixed Cage collision passes, a high-capacity model would memorise individual flights. The Random Forest's ensemble averaging and conservative hyperparameters ($\text{max\_depth} = 6$, $\text{min\_samples\_leaf} = 3$) force it to learn general physical patterns.
 \end{enumerate}
 
@@ -198,7 +228,7 @@ The Random Forest achieves a cross-validated $R^2$ of $0.73$, a mean absolute er
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plots/Fixed Cage Random Forest Feature Importance (MDI).png}
-    \caption{Random Forest feature importance measured by Mean Decrease in Impurity (MDI). The horizontal bar chart shows the relative contribution of each IMU feature to the model's predictions, grouped by feature type. Accel Spread (Impact) X and Vibration Gyro Y dominate, confirming the physical interpretation from \autoref{sec:imu_footprint}: the pitch-axis rotational vibration and the impact-window acceleration variance are the most discriminative signals for impact angle.}
+    \caption{Random Forest feature importance measured by Mean Decrease in Impurity (MDI). The horizontal bar chart shows the relative contribution of each IMU feature to the model's predictions, grouped by feature type. Accel Spread (Impact) X and Vibration Gyro Y dominate, confirming the physical interpretation from \autoref{sec:aggregate_imu_signal}: the pitch-axis rotational vibration and the impact-window acceleration variance are the most discriminative signals for impact angle.}
     \label{fig:rf_feature_importance}
 \end{figure}
 
