@@ -207,7 +207,7 @@ def select_features(df, corr_threshold=0.3, redundancy_threshold=0.85):
 #  2.  Main RF Pipeline
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_rf_pipeline(save_to_disk=True, show_plots=True):
+def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=True):
     """
     Full Random Forest pipeline:
       1. Load & select features
@@ -215,11 +215,14 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
       3. 5-fold CV with final model
       4. Actual-vs-Predicted plot
       5. MDI Feature Importance plot
-      6. Cross-condition transfer (Fixed → Rotating)
+      6. Cross-condition transfer (train → other condition)
       7. Permutation importance + learning curve + Huber baseline
 
     Parameters
     ----------
+    train_condition : str
+        Condition to train on — 'Fixed Cage' (default) or 'Rotating Cage'.
+        The model is then tested on the other condition for transfer analysis.
     save_to_disk : bool
         If True, save figures to GRAPHICS_DIR.
     show_plots : bool
@@ -230,22 +233,29 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
     results : dict
         Keys: model, features, cv_scores, predictions, importance_df, ...
     """
+    transfer_condition = 'Rotating Cage' if train_condition == 'Fixed Cage' else 'Fixed Cage'
+    file_prefix = '' if train_condition == 'Fixed Cage' else f"{train_condition.lower().replace(' ', '_')}_"
+
     print("=" * 72)
-    print("🌲 RandomForestRegressor: Impact Angle Prediction Pipeline")
+    print(f"🌲 RandomForestRegressor: Impact Angle Prediction Pipeline <{train_condition}>")
     print("=" * 72)
 
     # ── 1. Load data & select features ─────────────────────────────────────
     df_fixed, df_rot = load_data()
 
+    # Select train/transfer data based on condition
+    df_train = df_fixed if train_condition == 'Fixed Cage' else df_rot
+    df_transfer = df_rot if train_condition == 'Fixed Cage' else df_fixed
+
     # Drop rows with NaN in any IMU_COLS or impact_angle
     keep_cols = ['impact_angle', 'condition', 'flight_name'] + IMU_COLS
-    df_fixed = df_fixed[keep_cols].dropna(subset=IMU_COLS + ['impact_angle'])
-    print(f"   → {len(df_fixed)} Fixed Cage flights with complete IMU data")
+    df_train = df_train[keep_cols].dropna(subset=IMU_COLS + ['impact_angle'])
+    print(f"   → {len(df_train)} {train_condition} flights with complete IMU data")
 
-    selected_features, sel_df = select_features(df_fixed)
+    selected_features, sel_df = select_features(df_train)
 
-    X_all = df_fixed[selected_features].values
-    y_all = df_fixed['impact_angle'].values
+    X_all = df_train[selected_features].values
+    y_all = df_train['impact_angle'].values
     n_samples = len(y_all)
 
     if n_samples < 20:
@@ -387,7 +397,7 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
 
     ax1.set_xlabel('Actual Impact Angle (°)', fontweight='bold')
     ax1.set_ylabel('Predicted Impact Angle (°)', fontweight='bold')
-    ax1.set_title(f'<Fixed Cage> 5-Fold CV: Predicted vs Actual\n'
+    ax1.set_title(f'<{train_condition}> 5-Fold CV: Predicted vs Actual\n'
                   f'R² = {overall_r2:.3f}  MAE = {overall_mae:.1f}°  '
                   f'RMSE = {overall_rmse:.1f}°',
                   fontweight='bold', fontsize=11)
@@ -414,7 +424,7 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
 
     fig.tight_layout()
     if save_to_disk:
-        path = os.path.join(GRAPHICS_DIR, "rf_actual_vs_predicted.png")
+        path = os.path.join(GRAPHICS_DIR, f"{file_prefix}rf_actual_vs_predicted.png")
         plt.savefig(path, dpi=300, bbox_inches='tight')
         print(f"   💾 Saved → {os.path.relpath(path, os.path.dirname(__file__))}")
     if show_plots:
@@ -443,7 +453,7 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
                 f'{val:.3f}', va='center', fontsize=8.5, fontweight='bold')
 
     ax.set_xlabel('MDI Feature Importance', fontweight='bold')
-    ax.set_title(f'<Fixed Cage> Random Forest Feature Importance (MDI)\n'
+    ax.set_title(f'<{train_condition}> Random Forest Feature Importance (MDI)\n'
                  f'{len(selected_features)} features, OOB R² = {rf_full.oob_score_:.3f}',
                  fontweight='bold', fontsize=12)
     ax.grid(True, linestyle=':', alpha=0.4, axis='x')
@@ -458,69 +468,70 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
 
     fig.tight_layout()
     if save_to_disk:
-        path = os.path.join(GRAPHICS_DIR, "rf_feature_importance.png")
+        path = os.path.join(GRAPHICS_DIR, f"{file_prefix}rf_feature_importance.png")
         plt.savefig(path, dpi=300, bbox_inches='tight')
         print(f"   💾 Saved → {os.path.relpath(path, os.path.dirname(__file__))}")
     if show_plots:
         plt.show()
     plt.close(fig)
 
-    # ── 6. Cross-Condition Transfer: Fixed → Rotating ──────────────────────
-    print(f"\n🔄 Cross-Condition Transfer: Fixed Cage model → Rotating Cage...")
-    rot_data = df_rot[selected_features + ['impact_angle']].dropna()
-    print(f"   Rotating Cage: {len(rot_data)} flights with complete data")
+    # ── 6. Cross-Condition Transfer: train → transfer ──────────────────────
+    print(f"\n🔄 Cross-Condition Transfer: {train_condition} model → {transfer_condition}...")
+    transfer_data = df_transfer[selected_features + ['impact_angle']].dropna()
+    print(f"   {transfer_condition}: {len(transfer_data)} flights with complete data")
 
-    results_rot = None
-    if len(rot_data) > 0:
-        X_rot = rot_data[selected_features].values
-        y_rot = rot_data['impact_angle'].values
-        y_rot_pred = rf_full.predict(X_rot)
-        rot_r2 = r2_score(y_rot, y_rot_pred)
-        rot_mae = mean_absolute_error(y_rot, y_rot_pred)
-        rot_rmse = np.sqrt(mean_squared_error(y_rot, y_rot_pred))
+    results_transfer = None
+    if len(transfer_data) > 0:
+        X_transfer = transfer_data[selected_features].values
+        y_transfer = transfer_data['impact_angle'].values
+        y_transfer_pred = rf_full.predict(X_transfer)
+        transfer_r2 = r2_score(y_transfer, y_transfer_pred)
+        transfer_mae = mean_absolute_error(y_transfer, y_transfer_pred)
+        transfer_rmse = np.sqrt(mean_squared_error(y_transfer, y_transfer_pred))
 
         fig, ax = plt.subplots(figsize=(7, 6), dpi=150)
 
-        # Fixed Cage CV points (grey, light)
+        # Train condition CV points (grey, light)
         ax.scatter(all_y_true_arr, all_y_pred_arr,
                    c='#AAAAAA', s=35, alpha=0.3, edgecolor='none',
-                   label=f'Fixed Cage CV (R² = {overall_r2:.3f})', zorder=2)
+                   label=f'{train_condition} CV (R² = {overall_r2:.3f})', zorder=2)
 
-        # Rotating Cage points (strong color)
-        ax.scatter(y_rot, y_rot_pred,
+        # Transfer condition points (strong color)
+        ax.scatter(y_transfer, y_transfer_pred,
                    c='#D62728', s=70, alpha=0.8, edgecolor='white',
                    linewidth=0.8, marker='D',
-                   label=f'Rotating Cage (R² = {rot_r2:.3f})', zorder=3)
+                   label=f'{transfer_condition} (R² = {transfer_r2:.3f})', zorder=3)
 
         # y = x line
-        all_vals = np.concatenate([all_y_true_arr, all_y_pred_arr, y_rot, y_rot_pred])
+        all_vals = np.concatenate([all_y_true_arr, all_y_pred_arr, y_transfer, y_transfer_pred])
         lims = [all_vals.min() - 5, all_vals.max() + 5]
         ax.plot(lims, lims, 'k--', linewidth=1.2, alpha=0.6, label='y = x', zorder=1)
 
         ax.set_xlabel('Actual Impact Angle (°)', fontweight='bold')
         ax.set_ylabel('Predicted Impact Angle (°)', fontweight='bold')
-        ax.set_title('<Fixed Cage> → <Rotating Cage> Cross-Condition Transfer\n'
-                     f'Rotating Cage: R² = {rot_r2:.3f}  '
-                     f'MAE = {rot_mae:.1f}°  RMSE = {rot_rmse:.1f}°',
+        ax.set_title(f'<{train_condition}> → <{transfer_condition}> Cross-Condition Transfer\n'
+                     f'{transfer_condition}: R² = {transfer_r2:.3f}  '
+                     f'MAE = {transfer_mae:.1f}°  RMSE = {transfer_rmse:.1f}°',
                      fontweight='bold', fontsize=11)
         ax.legend(loc='lower right', fontsize=9, framealpha=0.85)
         ax.grid(True, linestyle=':', alpha=0.4)
 
         fig.tight_layout()
         if save_to_disk:
-            path = os.path.join(GRAPHICS_DIR, "rf_cross_condition.png")
+            path = os.path.join(GRAPHICS_DIR, f"{file_prefix}rf_cross_condition.png")
             plt.savefig(path, dpi=300, bbox_inches='tight')
             print(f"   💾 Saved → {os.path.relpath(path, os.path.dirname(__file__))}")
         if show_plots:
             plt.show()
         plt.close(fig)
 
-        results_rot = {'r2': rot_r2, 'mae': rot_mae, 'rmse': rot_rmse,
-                       'y_true': y_rot, 'y_pred': y_rot_pred}
-        print(f"   Rotating Cage R² = {rot_r2:.3f}  "
-              f"MAE = {rot_mae:.1f}°  RMSE = {rot_rmse:.1f}°")
+        results_transfer = {'r2': transfer_r2, 'mae': transfer_mae, 'rmse': transfer_rmse,
+                            'y_true': y_transfer, 'y_pred': y_transfer_pred,
+                            'condition': transfer_condition}
+        print(f"   {transfer_condition} R² = {transfer_r2:.3f}  "
+              f"MAE = {transfer_mae:.1f}°  RMSE = {transfer_rmse:.1f}°")
     else:
-        print(f"   ⚠️  No Rotating Cage data with complete features — skipping transfer.")
+        print(f"   ⚠️  No {transfer_condition} data with complete features — skipping transfer.")
 
     # ── 7a. Permutation Importance ─────────────────────────────────────────
     print(f"\n📊 Computing Permutation Importance (may be slow)...")
@@ -545,14 +556,14 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
                 capsize=3)
 
         ax.set_xlabel('Permutation Importance (Δ MSE)', fontweight='bold')
-        ax.set_title(f'<Fixed Cage> Permutation Feature Importance\n'
+        ax.set_title(f'<{train_condition}> Permutation Feature Importance\n'
                      f'{len(selected_features)} features, 20 repeats',
                      fontweight='bold', fontsize=12)
         ax.grid(True, linestyle=':', alpha=0.4, axis='x')
 
         fig.tight_layout()
         if save_to_disk:
-            path = os.path.join(GRAPHICS_DIR, "rf_permutation_importance.png")
+            path = os.path.join(GRAPHICS_DIR, f"{file_prefix}rf_permutation_importance.png")
             plt.savefig(path, dpi=300, bbox_inches='tight')
             print(f"   💾 Saved → {os.path.relpath(path, os.path.dirname(__file__))}")
         if show_plots:
@@ -595,7 +606,7 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
         ax.axhline(y=0, color='gray', linestyle=':', alpha=0.4)
         ax.set_xlabel('Training Set Size (flights)', fontweight='bold')
         ax.set_ylabel('R² Score', fontweight='bold')
-        ax.set_title(f'<Fixed Cage> Learning Curve\n'
+        ax.set_title(f'<{train_condition}> Learning Curve\n'
                      f'Final: Train R² = {train_mean[-1]:.3f}  '
                      f'Val R² = {test_mean[-1]:.3f}  '
                      f'Gap = {gap:.3f}',
@@ -605,7 +616,7 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
 
         fig.tight_layout()
         if save_to_disk:
-            path = os.path.join(GRAPHICS_DIR, "rf_learning_curve.png")
+            path = os.path.join(GRAPHICS_DIR, f"{file_prefix}rf_learning_curve.png")
             plt.savefig(path, dpi=300, bbox_inches='tight')
             print(f"   💾 Saved → {os.path.relpath(path, os.path.dirname(__file__))}")
         if show_plots:
@@ -654,7 +665,7 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
         ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
                  f'{val:.3f}', ha='center', fontweight='bold', fontsize=13)
     ax1.set_ylabel('R² Score', fontweight='bold')
-    ax1.set_title('<Fixed Cage> Model Comparison: R²', fontweight='bold', fontsize=12)
+    ax1.set_title(f'<{train_condition}> Model Comparison: R²', fontweight='bold', fontsize=12)
     ax1.set_ylim(0, max(r2_vals) * 1.25)
     ax1.grid(True, linestyle=':', alpha=0.4, axis='y')
 
@@ -666,7 +677,7 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
     ax2.plot(lims_h, lims_h, 'k--', linewidth=1.2, alpha=0.6)
     ax2.set_xlabel('Actual Impact Angle (°)', fontweight='bold')
     ax2.set_ylabel('Predicted Impact Angle (°)', fontweight='bold')
-    ax2.set_title(f'<Fixed Cage> Huber Baseline: {DISPLAY_NAMES[top_f]}\n'
+    ax2.set_title(f'<{train_condition}> Huber Baseline: {DISPLAY_NAMES[top_f]}\n'
                   f'R² = {huber_r2:.3f}  MAE = {huber_mae:.1f}°  '
                   f'RMSE = {huber_rmse:.1f}°',
                   fontweight='bold', fontsize=11)
@@ -674,7 +685,7 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
 
     fig.tight_layout()
     if save_to_disk:
-        path = os.path.join(GRAPHICS_DIR, "rf_huber_baseline.png")
+        path = os.path.join(GRAPHICS_DIR, f"{file_prefix}rf_huber_baseline.png")
         plt.savefig(path, dpi=300, bbox_inches='tight')
         print(f"   💾 Saved → {os.path.relpath(path, os.path.dirname(__file__))}")
     if show_plots:
@@ -702,7 +713,10 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
         'fold_ids': fold_ids_arr,
         'importance_df': imp_df,
         'permutation_df': perm_df,
-        'rotating_results': results_rot,
+        'rotating_results': results_transfer,  # backward compat (may be Fixed if training on Rotating)
+        'transfer_results': results_transfer,
+        'train_condition': train_condition,
+        'transfer_condition': transfer_condition,
         'huber_r2': huber_r2,
         'huber_r2_std': huber_r2_std,
         'selection_df': sel_df,
@@ -710,6 +724,7 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
 
     print(f"\n{'=' * 72}")
     print(f"✅ RF Pipeline complete. Summary:")
+    print(f"   Train condition:  {train_condition}")
     print(f"   Features: {len(selected_features)}")
     print(f"   Best params: max_depth={best_params['max_depth']}, "
           f"min_samples_leaf={best_params['min_samples_leaf']}")
@@ -717,8 +732,8 @@ def run_rf_pipeline(save_to_disk=True, show_plots=True):
           f"RMSE: {overall_rmse:.1f}°")
     print(f"   OOB R²: {rf_full.oob_score_:.3f}")
     print(f"   Huber R²: {huber_r2:.3f}")
-    if results_rot:
-        print(f"   Rotating Cage R²: {results_rot['r2']:.3f}")
+    if results_transfer:
+        print(f"   {transfer_condition} R²: {results_transfer['r2']:.3f}")
     print(f"   All plots → {os.path.relpath(GRAPHICS_DIR, os.path.dirname(__file__))}/")
     print(f"{'=' * 72}")
 

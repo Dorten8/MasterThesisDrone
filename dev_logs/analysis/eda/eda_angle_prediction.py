@@ -8,8 +8,8 @@ if not os.environ.get("DISPLAY") and "JPY_SESSION_NAME" not in os.environ:
 eda_angle_prediction.py — Exploratory Data Analysis for Impact Angle Prediction
 
 Goal: Visually prove that impact_angle leaves a distinct, measurable footprint
-in high-frequency IMU data. Focuses on Fixed Cage collisions only (Rotating
-Cage introduces different collision physics — the cage spins the drone).
+in high-frequency IMU data. Supports both Fixed Cage and Rotating Cage
+(parameterized via `condition` argument).
 
 Outputs (to graphics/):
   - eda_correlation_heatmap.png     Pearson r of every IMU feature vs impact_angle
@@ -194,9 +194,14 @@ def huber_regressor(x, y, delta=1.345, max_iter=100, tol=1e-5):
 #  1.  Data Extraction
 # ══════════════════════════════════════════════════════════════════════════════
 
-def load_impact_data():
+def load_impact_data(condition='Fixed Cage'):
     """
-    Load Fixed Cage flights with verified impacts and all IMU columns.
+    Load impact flights with verified impacts and all IMU columns.
+
+    Parameters
+    ----------
+    condition : str
+        Cage condition to filter by — 'Fixed Cage' (default) or 'Rotating Cage'.
 
     Returns
     -------
@@ -207,9 +212,9 @@ def load_impact_data():
     print("📡 Loading flight data from SQLite database...")
     df_all = get_database_df()
 
-    # Filter: only Fixed Cage collisions with detected impact
-    df = df_all.query("impact_detected == 1 and condition == 'Fixed Cage'").copy()
-    print(f"   → {len(df)} Fixed Cage impact flights found (out of {len(df_all)} total).")
+    # Filter: only collisions with detected impact for the given condition
+    df = df_all.query(f"impact_detected == 1 and condition == '{condition}'").copy()
+    print(f"   → {len(df)} {condition} impact flights found (out of {len(df_all)} total).")
 
     # Keep only relevant columns
     keep_cols = ['impact_angle', 'battery_at_start'] + IMU_COLS
@@ -227,7 +232,7 @@ def load_impact_data():
 #  2.  Correlation Heatmap
 # ══════════════════════════════════════════════════════════════════════════════
 
-def plot_correlation_heatmap(df, save_path=None, show=True,
+def plot_correlation_heatmap(df, condition='Fixed Cage', save_path=None, show=True,
                               figsize_width=3.85, cbar_fraction=0.06):
     """
     Single-panel heatmap showing Pearson correlation of each IMU feature
@@ -241,6 +246,8 @@ def plot_correlation_heatmap(df, save_path=None, show=True,
     ----------
     df : pd.DataFrame
         Data with IMU columns and impact_angle.
+    condition : str
+        Cage condition label for plot titles — 'Fixed Cage' (default) or 'Rotating Cage'.
     save_path : str or None
         If given, saves the figure to disk at this path.
     show : bool
@@ -305,7 +312,7 @@ def plot_correlation_heatmap(df, save_path=None, show=True,
     cbar.ax.tick_params(labelsize=9)
 
     # ── Title & labels ──────────────────────────────────────────────────────
-    ax.set_title('<Fixed Cage> IMU Feature Correlation with Impact Angle',
+    ax.set_title(f'<{condition}> IMU Feature Correlation with Impact Angle',
                  fontweight='bold', fontsize=13, pad=10)
     ax.set_xlabel('← Negative correlation    |    Positive correlation →',
                   fontsize=9, labelpad=5, fontstyle='italic')
@@ -320,7 +327,7 @@ def plot_correlation_heatmap(df, save_path=None, show=True,
             fontsize=7.5, fontstyle='italic', color='#555555')
 
     # ── Data origin (per skill doc §4) ─────────────────────────────────
-    ax.text(0.98, 0.01, f"Source: flights_summary (Fixed Cage, impact_detected=1, N={len(df)})",
+    ax.text(0.98, 0.01, f"Source: flights_summary ({condition}, impact_detected=1, N={len(df)})",
             transform=fig.transFigure, ha='right', va='bottom',
             fontsize=7.5, fontweight='bold',
             bbox=dict(boxstyle='round,pad=0.15', facecolor='white', alpha=0.8, edgecolor='none'))
@@ -341,7 +348,7 @@ def plot_correlation_heatmap(df, save_path=None, show=True,
 #  3.  Top-3 Scatter Plots (with Robust Trendline)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def plot_top3_scatter(df, save_path=None, show=True):
+def plot_top3_scatter(df, condition='Fixed Cage', save_path=None, show=True):
     """
     3-row figure: one row per top-IMU feature (by |Pearson r| with
     impact_angle).  Each row shows:
@@ -354,6 +361,8 @@ def plot_top3_scatter(df, save_path=None, show=True):
     ----------
     df : pd.DataFrame
         Data with IMU columns and impact_angle.
+    condition : str
+        Cage condition label for plot titles — 'Fixed Cage' (default) or 'Rotating Cage'.
     save_path : str or None
         If given, saves the figure to disk at this path.
     show : bool
@@ -437,12 +446,12 @@ def plot_top3_scatter(df, save_path=None, show=True):
     cbar.ax.tick_params(labelsize=9)
 
     # ── Super title ─────────────────────────────────────────────────────────
-    fig.suptitle('<Fixed Cage> Top IMU Features vs. Impact Angle\n'
+    fig.suptitle(f'<{condition}> Top IMU Features vs. Impact Angle\n'
                  '(Points colored by battery state at start of flight)',
                  fontweight='bold', fontsize=13, y=0.98)
 
     # ── Data origin (per skill doc §4) ─────────────────────────────────
-    fig.text(0.98, 0.02, f"Source: flights_summary (Fixed Cage, impact_detected=1, N={len(df)})",
+    fig.text(0.98, 0.02, f"Source: flights_summary ({condition}, impact_detected=1, N={len(df)})",
              ha='right', va='bottom', fontsize=8, fontweight='bold',
              bbox=dict(boxstyle='round,pad=0.15', facecolor='white', alpha=0.8, edgecolor='none'))
 
@@ -462,7 +471,7 @@ def plot_top3_scatter(df, save_path=None, show=True):
 #  4.  (Bonus) Parallel Coordinates
 # ══════════════════════════════════════════════════════════════════════════════
 
-def plot_parallel_coordinates(df, save_path=None, show=True):
+def plot_parallel_coordinates(df, condition='Fixed Cage', save_path=None, show=True):
     """
     Parallel coordinates plot: normalized IMU features connected by lines
     colored by impact-angle bin.  Quick visual check for clustering/separation
@@ -472,6 +481,8 @@ def plot_parallel_coordinates(df, save_path=None, show=True):
     ----------
     df : pd.DataFrame
         Data with IMU columns and impact_angle.
+    condition : str
+        Cage condition label for plot titles — 'Fixed Cage' (default) or 'Rotating Cage'.
     save_path : str or None
         If given, saves the figure to disk at this path.
     show : bool
@@ -515,7 +526,7 @@ def plot_parallel_coordinates(df, save_path=None, show=True):
     ax.set_xticklabels([DISPLAY_NAMES[c] for c in top_cols], rotation=30, ha='right', fontsize=9)
     ax.set_ylabel('Normalized value', fontweight='bold')
     ax.set_ylim(-0.05, 1.05)
-    ax.set_title('<Fixed Cage> Parallel Coordinates — IMU Features by Impact-Angle Group',
+    ax.set_title(f'<{condition}> Parallel Coordinates — IMU Features by Impact-Angle Group',
                  fontweight='bold', fontsize=13, pad=10)
     ax.grid(True, linestyle=':', alpha=0.3, axis='y')
 
@@ -526,7 +537,7 @@ def plot_parallel_coordinates(df, save_path=None, show=True):
               title_fontsize=10, loc='upper right')
 
     # ── Data origin (per skill doc §4) ─────────────────────────────────
-    fig.text(0.98, 0.02, f"Source: flights_summary (Fixed Cage, impact_detected=1, N={len(df)})",
+    fig.text(0.98, 0.02, f"Source: flights_summary ({condition}, impact_detected=1, N={len(df)})",
              ha='right', va='bottom', fontsize=8, fontweight='bold',
              bbox=dict(boxstyle='round,pad=0.15', facecolor='white', alpha=0.8, edgecolor='none'))
 
@@ -547,7 +558,7 @@ def plot_parallel_coordinates(df, save_path=None, show=True):
 
 def main():
     print("=" * 70)
-    print("🧪 EDA: Impact Angle vs. IMU Footprint (Fixed Cage Only)")
+    print("🧪 EDA: Impact Angle vs. IMU Footprint")
     print("=" * 70)
 
     # 1. Load data
