@@ -644,10 +644,10 @@ def plot_ekf_dual_comparison(rot_data, fix_data):
           f"Fixed ({ekf_fix['rate']} Hz) | Rotating ({ekf_rot['rate']} Hz)")
 
 
-def plot_full_loop_geometry_from(angle_deg=45):
+def plot_full_loop_geometry_from(angle_deg=45, output_path=None, show_plot=True):
     """Theoretical full-loop geometry — wrapper for notebook.
 
     Calls ``plot_full_loop_geometry()`` from ``kin_plot_trajectory`` with
     the selected angle (45 or 75).  No flight data needed.
     """
-    plot_full_loop_geometry(angle_deg=angle_deg, show_plot=True)
+    plot_full_loop_geometry(angle_deg=angle_deg, output_path=output_path, show_plot=show_plot)
