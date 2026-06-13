@@ -406,9 +406,9 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
     ax.set_xticks(np.arange(-1.5, 1.6, 0.5))
     ax.set_yticks(np.arange(-0.5, 1.1, 0.5))
 
-    # Lower right corner text for flight name and pass identification
+    # Flight name label (below x-axis, figure-bottom)
     if flight_name:
-        ax.text(0.98, 0.02, f"{flight_name}", transform=ax.transAxes,
+        fig.text(0.98, 0.01, f"{flight_name}", transform=fig.transFigure,
                 ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA', boxstyle='round,pad=0.2'))
 
@@ -451,8 +451,8 @@ def plot_trajectory(df_mocap, wp_events, column_x=0.408, column_y=0.358,
 
     ax.legend(handles, aligned_labels, loc='upper left', prop={'family': 'monospace', 'size': 8.5})
     ax.grid(True, color='#EAEAEA')
-    plt.tight_layout()
-    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.97])
+
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         plt.savefig(output_path, dpi=300)
@@ -701,7 +701,7 @@ def plot_full_loop_geometry(angle_deg=45, output_path=None, show_plot=True):
     ax.grid(True, color='#EAEAEA')
     ax.set_title(f'{angle_deg}° Column Collision Loop — Full Mission Geometry',
                  fontsize=12, fontweight='bold')
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.03, 1, 0.97])
 
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)

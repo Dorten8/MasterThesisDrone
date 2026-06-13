@@ -140,7 +140,13 @@ def select_features(df, corr_threshold=0.3, redundancy_threshold=0.85):
         if df[col].isna().all():
             continue
         x = df[col].values
+        # Pearson r: measures linear correlation (sensitive to outliers, assumes
+        # normally-distributed residuals for p-value validity).
         r_p, p_p = pearsonr(x, y)
+        # Spearman ρ: rank-based correlation — converts raw values to ranks
+        # first, then computes Pearson r on the ranks. This captures monotonic
+        # (but not necessarily linear) relationships and is robust to outliers
+        # because ranks are bounded regardless of extreme raw values.
         r_s, p_s = spearmanr(x, y)
         records.append({
             'feature': col, 'label': DISPLAY_NAMES[col],
@@ -152,7 +158,12 @@ def select_features(df, corr_threshold=0.3, redundancy_threshold=0.85):
 
     sel_df = pd.DataFrame(records)
 
-    # Pass both filters: |Pearson| > threshold OR |Spearman| > threshold
+    # Dual filter: a feature passes if EITHER |Pearson r| > threshold OR
+    # |Spearman ρ| > threshold. The OR logic ensures we catch both purely
+    # linear signals (caught by Pearson) and non-linear but monotonic signals
+    # (caught by Spearman). Using both is more permissive than either alone,
+    # which is appropriate for a tree-based model that can exploit non-linear
+    # associations.
     sel_df['passes_corr'] = (sel_df['abs_pearson'] > corr_threshold) | \
                              (sel_df['abs_spearman'] > corr_threshold)
     candidates = sel_df[sel_df['passes_corr']].copy()
@@ -165,13 +176,27 @@ def select_features(df, corr_threshold=0.3, redundancy_threshold=0.85):
         print(f"   ⚠️  No features passed filter — falling back to top 10 by |r|")
 
     # ── Redundancy filter ──────────────────────────────────────────────────
-    # Compute pairwise correlations among candidates, drop the weaker of
-    # each pair with |r| > redundancy_threshold
+    # Compute pairwise Pearson correlations among all candidates. For every
+    # pair whose absolute cross-correlation exceeds redundancy_threshold
+    # (default 0.85), we keep only the feature with the stronger correlation
+    # to the target (impact_angle) and drop the other.
+    #
+    # Why: highly correlated features (e.g., Peak Accel X vs Accel Energy X)
+    # carry nearly identical information. Keeping both inflates feature
+    # importance estimates (MDI splits the importance between them) and adds
+    # noise to permutation importance without improving prediction.
+    #
+    # The upper-triangle mask (np.triu, k=1) ensures each pair is checked only
+    # once; the feature with the smaller |r| to impact_angle is marked for
+    # removal from the final selected set.
     cand_cols = candidates['feature'].tolist()
     selected = list(cand_cols)
     if len(cand_cols) > 1:
         cand_data = df[cand_cols]
+        # Pairwise absolute Pearson correlation matrix among candidate features
         corr_matrix = cand_data.corr().abs()
+        # Extract the upper triangle (above diagonal), masking out the diagonal
+        # and lower triangle so each pair is compared only once.
         upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
         to_drop = set()
         for i in range(len(cand_cols)):
@@ -263,11 +288,23 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
         return None
 
     # ── 2. Nested grid search: max_depth × min_samples_leaf ─────────────────
-    # Outer: 5-fold stratified by angle quartile bins
+    # Outer CV: 5-fold stratified by angle quartile bins.
+    # pd.qcut(y_all, q=5) partitions impact_angle into 5 equal-frequency bins
+    # (quintiles). StratifiedKFold then ensures each fold contains roughly the
+    # same proportion of flights from each angle bin. This prevents a fold from
+    # accidentally containing only shallow-angle (or only steep-angle) flights,
+    # which would give an overly optimistic or pessimistic R² estimate.
     angle_bins = pd.qcut(y_all, q=5, labels=False, duplicates='drop')
     outer_cv = StratifiedKFold(n_splits=min(5, n_samples // 3), shuffle=True,
                                random_state=42)
 
+    # Nested cross-validation: the outer loop (StratifiedKFold) evaluates
+    # generalization performance, while the inner loop (this grid search over
+    # max_depth × min_samples_leaf) selects hyperparameters. By searching
+    # within each outer fold, we avoid leaking validation information into
+    # hyperparameter selection — each test fold is truly unseen during tuning.
+    #   max_depth:        maximum tree depth (smaller = more regularization)
+    #   min_samples_leaf: minimum samples per leaf node (larger = smoother trees)
     param_grid = [
         {'max_depth': d, 'min_samples_leaf': l}
         for d in [3, 4, 5, 6]
@@ -322,6 +359,21 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
     all_y_true, all_y_pred = [], []
     fold_ids = []
 
+    # RandomForestRegressor configuration:
+    #   n_estimators=200      — 200 trees; more trees reduce variance of the
+    #                            ensemble at the cost of linear compute time.
+    #   max_features='sqrt'   — each split considers √p features (p = total
+    #                            features); this decorrelates trees, reducing
+    #                            ensemble variance (standard Breiman recipe).
+    #   max_depth             — limits tree depth to prevent overfitting (from
+    #                            the grid search best params).
+    #   min_samples_leaf      — minimum samples per leaf; enforces smoothness
+    #                            (from grid search best params).
+    #   min_samples_split     — must have ≥ this many samples to split a node
+    #                            (set to max(10, leaf*2) as a floor).
+    #   oob_score=True        — Out-Of-Bag score: each tree is tested on the
+    #                            ~37% of samples not in its bootstrap sample,
+    #                            giving a free unbiased performance estimate.
     rf_final = RandomForestRegressor(
         n_estimators=200, max_features='sqrt',
         max_depth=best_params['max_depth'],
@@ -404,7 +456,12 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
     ax1.legend(loc='lower right', fontsize=8, framealpha=0.85)
     ax1.grid(True, linestyle=':', alpha=0.4)
 
-    # Right: residuals vs predicted
+    # Right: residuals vs predicted.
+    # Residual = actual − predicted (positive = model under-predicts).
+    # A good model shows residuals centered at zero (no systematic bias),
+    # with roughly constant spread across the predicted range (homoscedasticity).
+    # The ±5° band highlights whether prediction errors stay within a
+    # practically useful tolerance for impact angle estimation.
     residuals = all_y_true_arr - all_y_pred_arr
     for fi in range(final_cv.get_n_splits()):
         mask = fold_ids_arr == fi
@@ -432,7 +489,16 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
     plt.close(fig)
 
     # ── 5. MDI Feature Importance ──────────────────────────────────────────
+    # MDI (Mean Decrease in Impurity): for each feature, sum the reduction in
+    # MSE (or Gini for classification) across every split that uses that feature,
+    # averaged over all 200 trees. A high MDI means the feature is frequently
+    # used at splits that substantially reduce prediction error.
+    # CAVEAT: MDI is biased toward high-cardinality and continuous features
+    # (they offer more split points). This is why we also compute permutation
+    # importance (section 7a) as a less biased alternative.
     print(f"\n📊 Generating MDI Feature Importance...")
+    # rf_full.feature_importances_ returns one value per feature, normalized
+    # so they sum to 1.0 across all features.
     importances = rf_full.feature_importances_
     imp_df = pd.DataFrame({
         'feature': selected_features,
@@ -476,6 +542,12 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
     plt.close(fig)
 
     # ── 6. Cross-Condition Transfer: train → transfer ──────────────────────
+    # Test generalization across experimental conditions: train the RF on one
+    # cage type (e.g., Fixed Cage) and evaluate it on the other (e.g., Rotating
+    # Cage) WITHOUT any retraining. This is a stronger test than within-condition
+    # CV because it checks whether the learned IMU→angle mapping is invariant
+    # to the mechanical change in the obstacle setup. A large drop in R² would
+    # indicate that the cage mechanism changes the IMU footprint fundamentally.
     print(f"\n🔄 Cross-Condition Transfer: {train_condition} model → {transfer_condition}...")
     transfer_data = df_transfer[selected_features + ['impact_angle']].dropna()
     print(f"   {transfer_condition}: {len(transfer_data)} flights with complete data")
@@ -534,6 +606,17 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
         print(f"   ⚠️  No {transfer_condition} data with complete features — skipping transfer.")
 
     # ── 7a. Permutation Importance ─────────────────────────────────────────
+    # Permutation importance measures how much model performance degrades when
+    # a feature's values are randomly shuffled (breaking its association with
+    # the target). Algorithm:
+    #   1. Fit model on original data, record baseline MSE.
+    #   2. Shuffle one feature column, breaking its link to impact_angle.
+    #   3. Re-score model; importance = increase in MSE from baseline.
+    #   4. Repeat n_repeats=20 times to get mean ± std of importance.
+    # Unlike MDI, permutation importance is model-agnostic, does not favor
+    # high-cardinality features, and reflects actual predictive value (not
+    # just split frequency). The trade-off: it is computationally expensive
+    # because the model must be re-scored 20 times per feature.
     print(f"\n📊 Computing Permutation Importance (may be slow)...")
     try:
         perm_result = permutation_importance(
@@ -574,9 +657,20 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
         perm_df = None
 
     # ── 7b. Learning Curve ─────────────────────────────────────────────────
+    # A learning curve plots model performance (R²) against training set size.
+    # sklearn's learning_curve() trains the model on progressively larger
+    # subsets of the data (30%, 40%, ..., 100%) and evaluates both training
+    # and validation R² at each step via cross-validation (lc_cv).
+    #
+    # Diagnostic value:
+    #   - Large gap (train >> val) → overfitting; more data or regularization helps.
+    #   - Small gap, both low       → underfitting; model too simple.
+    #   - Val R² still climbing     → more data would likely improve performance.
+    #   - Val R² plateaued          → data is no longer the bottleneck.
     print(f"\n📊 Generating Learning Curve...")
     try:
         from sklearn.model_selection import KFold
+        # Test 8 training sizes from 30% to 100% of the data, evenly spaced.
         train_sizes = np.linspace(0.3, 1.0, 8)
         lc_cv = KFold(n_splits=min(5, n_samples // 3), shuffle=True,
                       random_state=42)
@@ -627,6 +721,16 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
         train_mean, test_mean, gap = None, None, None
 
     # ── 7c. Huber Baseline Comparison ──────────────────────────────────────
+    # Establish a simple linear baseline: fit a robust Huber regression using
+    # only the single best (highest |r|) IMU feature, evaluated on the same
+    # cross-validation folds as the RF. This answers the question: "Does the
+    # multi-feature, non-linear Random Forest actually outperform a simple
+    # linear model on the single best sensor channel?"
+    #
+    # The top feature (selected_features[0]) is the one with strongest |r|
+    # against impact_angle after the redundancy filter. Using the same CV
+    # splits ensures the comparison is fair (both models see identical
+    # train/validation partitions).
     print(f"\n📊 Huber Linear Baseline Comparison...")
     huber_scores = []
     huber_fold_preds = {'y_true': [], 'y_pred': [], 'fold': []}
@@ -637,6 +741,7 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
 
         # Use the top feature (strongest |r| with impact_angle)
         top_f = selected_features[0]
+        # Fit Huber robust regression on the single best feature column
         slope, intercept = huber_regressor(X_tr[:, 0], y_tr)
         y_pred_huber = slope * X_val[:, 0] + intercept
 
@@ -652,7 +757,12 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
     huber_rmse = np.sqrt(mean_squared_error(huber_fold_preds['y_true'],
                                              huber_fold_preds['y_pred']))
 
-    # Comparison bar chart
+    # Comparison bar chart: side-by-side visual of Huber (1-feature linear)
+    # vs. Random Forest (multi-feature non-linear) on the same CV folds.
+    # Error bars show ±1 std across folds, capturing fold-to-fold variability.
+    # If the RF bar is substantially higher than the Huber bar, the extra
+    # features and non-linear interactions provide real predictive value
+    # beyond what a single linear channel can capture.
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), dpi=150)
 
     # Bar chart: R² comparison

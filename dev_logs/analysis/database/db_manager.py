@@ -29,12 +29,18 @@ def get_approved_cutoff():
 
 def _extract_flight_timestamp(folder_name):
     """Extract YYYYMMDD-HHMM from a flight folder name, or None if unparseable."""
+    # Flight folders follow the naming convention "flight_YYYYMMDD-HHMM_..."
+    # The regex captures the date-time group \d{8}-\d{4} directly after "flight_".
+    # This timestamp is used as a sortable string key for cutoff filtering,
+    # since YYYYMMDD-HHMM compares lexicographically the same as chronologically.
     m = re.search(r'flight_(\d{8}-\d{4})', folder_name)
     return m.group(1) if m else None
 
 
 def is_approved_flight(folder_name):
     """Return True if the flight folder timestamp is >= the approved cutoff."""
+    # Lexicographic comparison works because the timestamp format
+    # YYYYMMDD-HHMM is naturally sortable as a plain string.
     ts = _extract_flight_timestamp(folder_name)
     return ts is not None and ts >= APPROVED_CUTOFF
 
@@ -58,6 +64,7 @@ _exclusion_cache = None
 def _load_exclusion_config():
     """Load config_db.json, returning {db_pass_name: {excluded, reason, notes}}."""
     global _exclusion_cache
+    # Cache once per process lifetime — the config is small and rarely changes.
     if _exclusion_cache is not None:
         return _exclusion_cache
     _exclusion_cache = {}
@@ -65,6 +72,9 @@ def _load_exclusion_config():
         return _exclusion_cache
     with open(CONFIG_PATH, 'r') as f:
         cfg = json.load(f)
+    # The JSON structure is: {"excluded_passes": {"folder_name": {"reason": "...", "passes": [1,3,5]}}}
+    # For each numeric pass index we construct the canonical DB flight_name key
+    # "folder_name - Pass-NN" so it exactly matches what insert_or_replace_flight() writes.
     excluded = cfg.get('excluded_passes', {})
     for folder_name, entry in excluded.items():
         if not isinstance(entry, dict):
@@ -101,6 +111,9 @@ def apply_exclusion_config_to_db():
     exclusion_reason for every pass listed in excluded_passes.
     Does NOT remove rows — only marks them so queries can filter.
     """
+    # This function is designed to be re-run safely after new passes are
+    # inserted or after the JSON config is edited.  Only rows matching the
+    # flight_name are touched; all other rows retain their current values.
     cfg = _load_exclusion_config()
     if not cfg:
         print("[EXCLUSION] No exclusion config found — nothing to sync.")
@@ -128,10 +141,30 @@ def get_connection():
     return conn
 
 def init_db():
-    """Initializes the SQLite database schema if it doesn't already exist."""
+    """Initializes the SQLite database schema if it doesn't already exist.
+
+    Design rationale:
+    - A single flights_summary table stores per-pass metrics keyed by
+      flight_name (which encodes folder + pass number).  This flat schema
+      is deliberately denormalised — all metrics live in one wide row per
+      pass so that downstream pandas/plotting code can SELECT * and get
+      everything in one query without JOINs.
+
+    Migration strategy (backwards-compatible):
+    - The schema evolves over time as new IMU, motor, and allocator metrics
+      are added.  Rather than requiring a destructive DROP + recreate, we
+      use ALTER TABLE ADD COLUMN for each new field.  If the column already
+      exists, sqlite3 raises OperationalError which we silently catch and
+      ignore — this makes init_db() idempotent across schema versions.
+    - Renamed columns (e.g. timestamp -> timestamp_db) are populated via
+      UPDATE ... WHERE new_col IS NULL to copy old values without data loss.
+    """
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = get_connection()
     cursor = conn.cursor()
+    # ── Core flights_summary table (one row per pass) ──────────────────
+    # flight_name is the PRIMARY KEY: "folder_name - Pass-NN" format.
+    # condition encodes the experimental regime (e.g. "Fixed Cage").
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS flights_summary (
             flight_name      TEXT PRIMARY KEY,
@@ -207,7 +240,10 @@ def init_db():
             exclusion_reason TEXT
         )
     """)
-    # Initialize raw flight battery and efficiency table
+    # ── Battery / efficiency auxiliary table ──────────────────────────
+    # Stores per-FLIGHT (not per-pass) battery metrics — armed time,
+    # voltage sag, capacity drain rates.  Separate table because these
+    # metrics span the whole flight log, not individual column passes.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS flights_battery_efficiency (
             flight_name                     TEXT PRIMARY KEY,
@@ -234,7 +270,12 @@ def init_db():
             timestamp_db                    TEXT
         )
     """)
-    # Migrate: add new columns if they don't yet exist (backwards compat with old DB)
+    # ── Schema migration: add new columns idempotently ─────────────────
+    # Each (column_name, type) pair is ALTER TABLE ADD COLUMN'd.
+    # sqlite3.OperationalError is raised if the column already exists
+    # (from a prior init_db run or newer DB file); we catch and skip
+    # silently.  This means old databases opened by a newer version of the
+    # code get all missing columns added with NULL defaults — no data loss.
     new_cols = [
         ("sweep_speed", "REAL"),
         ("battery_at_start", "REAL"),
@@ -314,14 +355,18 @@ def init_db():
             cursor.execute(f"ALTER TABLE flights_summary ADD COLUMN {col} {coltype}")
         except sqlite3.OperationalError:
             pass  # Column already exists
-    # Migrate data: copy old column values to renamed columns (flights_summary)
+    # ── Data migration: copy old column values to renamed columns ──────
+    # When a column was renamed (e.g. "timestamp" -> "timestamp_db"), the
+    # ALTER TABLE ADD COLUMN above creates the new column with NULLs.
+    # We then backfill: UPDATE ... SET new = old WHERE new IS NULL.
+    # This is a one-way, non-destructive migration — old column is kept.
     for old, new in [("timestamp", "timestamp_db"),
                      ("timestamp_PX4", "e_sp_timestamp_PX4")]:
         try:
             cursor.execute(f'UPDATE flights_summary SET "{new}" = {old} WHERE "{new}" IS NULL')
         except sqlite3.OperationalError:
             pass
-    # Migrate battery table: timestamp → timestamp_db
+    # ── Battery table migration: timestamp → timestamp_db ─────────────
     try:
         cursor.execute("ALTER TABLE flights_battery_efficiency ADD COLUMN timestamp_db TEXT")
     except sqlite3.OperationalError:
@@ -334,7 +379,20 @@ def init_db():
     conn.close()
 
 def is_already_cached(flight_name, check_columns=None):
-    """Returns True if this pass is present in the database AND all specified check_columns are NOT NULL."""
+    """Returns True if this pass is present in the database AND all specified check_columns are NOT NULL.
+
+    Two-level cache check:
+    1. Without check_columns: a simple SELECT 1 — the row exists, done.
+    2. With check_columns: the row must exist AND every named column must be
+       non-NULL.  This catches the case where a pass was inserted by an older
+       version of the pipeline BEFORE certain metrics were added to the schema.
+       The row exists (step 1 would return True) but the desired columns are
+       still NULL because they were never computed for that pass.
+
+    The sqlite3.OperationalError catch handles the edge case where a column
+    name doesn't even exist in the schema yet (e.g. code references a brand-new
+    metric before init_db() migration has been run on this DB file).
+    """
     init_db()
     conn = get_connection()
     cursor = conn.cursor()
@@ -346,6 +404,8 @@ def is_already_cached(flight_name, check_columns=None):
             if row is None:
                 is_cached = False
             else:
+                # all() over the row values: every requested column must have
+                # a real value (not NULL) for the pass to be considered cached
                 is_cached = all(val is not None for val in row)
         except sqlite3.OperationalError:
             # Column doesn't exist yet (needs init/migration)
@@ -438,9 +498,19 @@ def insert_or_replace_flight(flight_name, condition, metrics):
     imu_ay_spread_regular = metrics.get('imu_ay_spread_regular')
     imu_az_spread_regular = metrics.get('imu_az_spread_regular')
 
-    # Impact Heuristic (simplified):
-    # 1. Primary: closest_clearance must be negative (cage penetrated column boundary)
-    # 2. Secondary: look for a deceleration spike of magnitude ≤ -1 m/s² within ±0.6s of closest approach
+    # ── Impact detection heuristic ─────────────────────────────────────
+    # This is a PROXY, not ground truth.  The definitive classification comes
+    # from manual review stored in config_db.json (see exclusion config above).
+    #
+    # Heuristic: closest_clearance is the minimum Euclidean distance between
+    # the drone MoCap position and the column center, minus the column radius.
+    # A NEGATIVE clearance means the drone position penetrated the column's
+    # geometric boundary — the simplest possible impact signal.
+    #
+    # Originally there was a secondary check for a deceleration spike
+    # (≤ -1 m/s^2 within ±0.6 s of closest approach), but in practice the
+    # negative-clearance test alone proved sufficient as a first-pass filter.
+    # The manual review in config_db.json then overrides false positives.
     impact_detected = 0
     if closest_clearance_cm is not None and closest_clearance_cm < 0.0:
         impact_detected = 1  # Negative clearance = impact by default
@@ -512,6 +582,12 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         imu_ax_spread_regular, imu_ay_spread_regular, imu_az_spread_regular
     )
 
+    # ── INSERT OR REPLACE pattern ──────────────────────────────────────
+    # Because flight_name is the PRIMARY KEY, INSERT OR REPLACE atomically
+    # deletes the old row (if any) and inserts the new one in a single
+    # statement.  This is the natural upsert for SQLite and means the
+    # pipeline can be re-run on the same pass without manual cleanup —
+    # re-computed metrics simply overwrite the previous values.
     query = f"INSERT OR REPLACE INTO flights_summary ({', '.join(cols)}) VALUES ({', '.join(['?'] * len(cols))})"
     cursor.execute(query, vals)
     conn.commit()
@@ -585,7 +661,15 @@ def get_database_summary_markdown():
     return "\n".join([md_header, divider] + md_rows)
 
 def get_database_df():
-    """Queries all results from the SQLite database and returns them as a pandas DataFrame."""
+    """Queries all results from the SQLite database and returns them as a pandas DataFrame.
+
+    This is the primary bridge between the SQLite cache layer and the
+    analysis/plotting code.  pd.read_sql_query() hands the SQL execution
+    off to SQLite and constructs a DataFrame directly from the result set —
+    column names and types are inferred from the table schema, and NULLs
+    become NaN automatically.  The conn.close() in a finally block
+    guarantees the connection is released even if the query fails.
+    """
     import pandas as pd
     init_db()
     conn = get_connection()

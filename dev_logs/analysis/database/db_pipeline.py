@@ -19,16 +19,35 @@ from dev_logs.analysis.database.db_manager import insert_or_replace_flight, get_
 # Per-pass MCAP windows are too short (~10 s) for meaningful battery drain rates;
 # the flights_battery_efficiency table provides flight-level rates computed from
 # the full-flight takeoff→landing window using unsliced MCAPs.
+# We cache the lookup table globally (lazy, loaded once on first call) rather than
+# re-querying the DB for every pass, since all passes share the same flight-level
+# rates and the DB table does not change during a pipeline run.
 _battery_lookup = None
 
 
 def _get_battery_rates(flight_folder_name):
-    """Return (capacity_drain_rate_flying, voltage_drop_rate_flying) for a flight."""
+    """Return (capacity_drain_rate_flying, voltage_drop_rate_flying) for a flight.
+
+    Why flight-level and not per-pass?
+    -----------------------------------
+    Per-pass MCAP windows are ~10 s. Battery voltage and capacity drift on the
+    order of tenths of a volt / few percent over a full flight (several minutes).
+    Dividing that drift over a 10 s window would produce physically meaningless
+    rates dominated by measurement noise (the ADC noise floor is larger than the
+    true signal over such a short interval). The flights_battery_efficiency table
+    instead computes drain rates over the full unsliced MCAP's takeoff→landing
+    interval, typically 120--180 s, where the cumulative drift is well above the
+    noise floor and the resulting per-minute rate is stable and physically plausible.
+
+    Lazily caches the entire lookup table on first call to avoid re-querying the
+    SQLite DB for every pass (all passes within a flight share the same rate).
+    """
     global _battery_lookup
     if _battery_lookup is None:
         try:
             df = get_battery_efficiency_df()
             if not df.empty:
+                # Index by flight_name so lookups are O(1) dict access
                 _battery_lookup = df.set_index('flight_name').to_dict('index')
             else:
                 _battery_lookup = {}
@@ -42,13 +61,49 @@ def _get_battery_rates(flight_folder_name):
 
 
 def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
+    """Extract per-motor control, allocator saturation, and PID tracking metrics
+    from the PX4 ULog file, aligned to the MCAP time reference via clock sync.
+
+    Clock synchronization strategy (two-tier fallback)
+    --------------------------------------------------
+    The MCAP and ULog file are recorded by different clocks (ROS host wall-clock
+    vs PX4 µs monotonic on the flight controller). We must estimate the offset
+    between them before any cross-file analysis is possible.
+
+    Tier 1 — timesync_status observed_offset (precise, O(~1 µs) accuracy)
+        PX4 publishes `/fmu/out/timesync_status` which contains the
+        `observed_offset` field — the computed clock offset between the on-board
+        companion computer (ROS) and the flight controller (PX4) in microseconds.
+        This is a NTP-like round-trip-time protocol running over MAVLink/RTPS
+        and is the gold-standard sync source when available.
+        We negate it (PX4 time = ROS time - offset) and convert µs → seconds.
+
+    Tier 2 — EKF velocity correlation fallback (heuristic, O(~1 ms) accuracy)
+        When timesync_status is missing from the MCAP, we pick one
+        vehicle_odometry message from the MCAP (ROS time-stamped) and scan the
+        entire ULog vehicle_local_position timeline to find the sample whose
+        (vx, vy, vz) velocity vector has the smallest Euclidean distance to the
+        MCAP message's velocity. The offset is then:
+            offset_sec = MCAP_log_time - ULog_timestamp
+        This works because at 10 m/s the drone moves <10 mm per 1 ms — the
+        velocity signal changes slowly enough that the nearest-neighbour match
+        is unambiguous.
+        We reject the match if min_err > 0.01 (m/s)^2 (drift guard).
+
+    Once offset_sec is known, `ulog_to_rel_sec(t_us)` converts a PX4 µs
+    timestamp into seconds relative to bag_start_ns (MCAP time origin):
+        t_rel = t_us*1e-6 + offset_sec - bag_start_ns*1e-9
+    This is the canonical time axis for all ULog-derived metrics below.
+    """
     import glob
     import os
     import numpy as np
     import pyulog
     from mcap_ros2.reader import read_ros2_messages
 
-    # Initialize empty metrics
+    # Initialize empty metrics — every field defaults to None so that missing
+    # ULog topics produce well-defined NULLs in the SQLite DB rather than
+    # crashing the pipeline.
     motor_metrics = {
         'motor_avg_before': None,
         'motor_max_before': None,
@@ -67,7 +122,12 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
     if not ulg_files:
         return motor_metrics
 
-    # Extract timesync status from MCAP to compute exact clock offset
+    # ── Tier 1: Extract timesync_status observed_offset from MCAP ────────────
+    # PX4 publishes a timesync_status message on /fmu/out/timesync_status that
+    # contains the computed clock offset (µs) between the ROS companion computer
+    # and the flight controller. We search the current pass MCAP first; if not
+    # found there (e.g., timesync was published between passes), we fall back to
+    # scanning all other MCAPs in the flight directory.
     observed_offset = None
     try:
         # Check current pass MCAP first
@@ -75,7 +135,7 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
             if msg.channel.topic == "/fmu/out/timesync_status":
                 observed_offset = msg.ros_msg.observed_offset
                 break
-        
+
         # If not in pass, check other MCAPs in directory
         if observed_offset is None:
             mcap_files = glob.glob(os.path.join(flight_dir, "*.mcap"))
@@ -94,12 +154,26 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
     # Load ULog
     try:
         ulg_path = ulg_files[0]
-        
+
         if observed_offset is not None:
+            # PX4 timesync reports the ROS→PX4 offset in µs. Our convention:
+            # PX4 time = ROS time - offset, so we negate and convert to seconds.
+            # Typical values are on the order of ±0.1 ms (stabilised by the
+            # timesync convergence loop), which is negligible for our 1-2 s analysis
+            # windows but critical for aligning per-sample ULog<->MCAP comparisons.
             offset_sec = - (observed_offset * 1e-6)
             print(f"  ⚡ Clock sync: Using exact timesync offset_sec={offset_sec:.6f}s")
         else:
-            # Fallback to EKF velocity correlation
+            # ── Tier 2: EKF velocity correlation fallback ────────────────────
+            # Rationale: the EKF velocity estimate (vehicle_odometry in MCAP,
+            # vehicle_local_position in ULog) is a continuous, slowly-varying
+            # signal — even at 10 m/s the drone moves <10 mm per 1 ms, so the
+            # velocity vector at a given instant is essentially a unique
+            # fingerprint. We find the ULog sample whose (vx, vy, vz) is closest
+            # to the MCAP message's velocity and deduce the clock offset from
+            # the timestamp difference.
+            # Acceptable error threshold: 0.01 (m/s)^2  (~0.1 m/s per axis).
+            # Above this we cannot be confident of a true match.
             print("  ⚠️ Timesync status not found in MCAP. Falling back to EKF velocity correlation...")
             mcap_odom = None
             try:
@@ -128,7 +202,11 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
             u_vy = u_odom.data["vy"]
             u_vz = u_odom.data["vz"]
 
-            # Find matching message in ULog by velocity correlation
+            # Brute-force linear scan to find the ULog sample whose velocity
+            # vector has minimum Euclidean distance to the MCAP message.
+            # O(n) in the number of ULog samples (~60k for a 2 min flight at
+            # 500 Hz), which is fast enough to not warrant a KD-tree or
+            # bisection optimisation.
             best_idx = None
             min_err = float('inf')
             for i in range(len(u_timestamps)):
@@ -137,14 +215,24 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
                     min_err = err
                     best_idx = i
 
+            # Drift guard: if the closest velocity match still exceeds
+            # 0.01 (m/s)^2, the velocity signals are likely from different
+            # manoeuvres and the offset would be unreliable.
             if best_idx is None or min_err > 0.01:
                 print(f"  [WARN] Failed to find close velocity match in ULog (min_err={min_err:.6e}).")
                 return motor_metrics
 
+            # Offset = MCAP log-time (ROS ns) - ULog timestamp (PX4 µs), both
+            # converted to seconds. Positive means ULog leads MCAP.
             offset_sec = (mcap_odom['log_time_ns'] * 1e-9) - (u_timestamps[best_idx] * 1e-6)
             print(f"  ⚡ Clock sync: Using EKF velocity correlation offset_sec={offset_sec:.6f}s (min_err={min_err:.3e})")
 
 
+        # ── Canonical time conversion ────────────────────────────────────────
+        # Maps a PX4 µs timestamp to seconds relative to the MCAP bag start.
+        #  - t_us * 1e-6       → PX4 seconds (from FC boot)
+        #  - + offset_sec       → align to ROS/MCAP wall-clock
+        #  - - bag_start_ns*1e-9  → re-reference to bag-start (relative t=0)
         def ulog_to_rel_sec(t_us):
             return (t_us * 1e-6) + offset_sec - (bag_start_ns * 1e-9)
 
@@ -163,22 +251,34 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
         c2 = motors_data.data["control[2]"]
         c3 = motors_data.data["control[3]"]
 
-        # Calculate average of the 4 motors
+        # Average across the 4 main rotors — represents the total thrust
+        # command envelope. Individual motors may saturate independently but
+        # the mean captures the overall throttle demand.
         motor_avg_signal = (c0 + c1 + c2 + c3) / 4.0
 
-        # Define time windows based on collision/impact timestamp (prioritizing exact Column Impact if detected)
+        # ── Analysis windows (relative to impact) ────────────────────────────
+        # Impact time is the "Column Impact" detection from waypoint analysis,
+        # or falls back to WP2 (experiment start point), or the mid-point of
+        # the sweep pass if neither is available.
         t_impact = wp_events.get('Column Impact') or wp_events.get('WP2', None)
         if t_impact is None or np.isnan(t_impact):
-            # If no impact, use the middle of the sweep pass (between WP1 and WP3)
+            # No impact detected — use the geometric mid-point of the sweep
+            # as a proxy reference for window placement.
             t_start = wp_events.get('WP1', 0.0)
             t_end = wp_events.get('WP3', 10.0)
             t_impact = (t_start + t_end) / 2.0
 
-        # Windows:
-        # Before impact: [-1.0, 0.0] relative to t_impact
-        # After impact: [0.0, 1.0] relative to t_impact
-        # Imbalance after impact: standard deviation of motor outputs in [0.0, 0.4]
-        # Thrust surge: max in [0.0, 1.0] - average in [-1.0, 0.0]
+        # Window design rationale:
+        #   Before  [-1.0, 0.0]:  steady-state hover/horizontal-sweep thrust,
+        #                          averaged to get a clean pre-impact baseline.
+        #   After   [ 0.0, 1.0]:  captures the full thrust transient including
+        #                          the surge and any secondary oscillation.
+        #   Imbal.  [ 0.0, 0.4]:  shorter 400 ms window — the motor imbalance
+        #                          spike is a fast transient (20-100 ms) caused
+        #                          by the physical impulse of the collision
+        #                          twisting the drone; averaging over 400 ms
+        #                          captures the peak without diluting it into
+        #                          the post-recovery steady state.
         mask_before = (motor_t >= (t_impact - 1.0)) & (motor_t < t_impact)
         mask_after = (motor_t >= t_impact) & (motor_t <= (t_impact + 1.0))
         mask_after_04 = (motor_t >= t_impact) & (motor_t <= (t_impact + 0.4))
@@ -191,11 +291,16 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
             max_before = None
             
         try:
-            # Find the active instance of actuator_outputs
+            # ── Find the instance of actuator_outputs that actually carries motor data ──
+            # PX4 ULogs may contain multiple actuator_outputs instances (e.g., for
+            # different actuator groups or multiple FMU I/O channels). We select the
+            # instance with the largest peak output[0..3] value — this is the one
+            # driving the actual ESC/motors. Silent instances (servo-only or unused
+            # PWM groups) stay near their min/mid values and are automatically skipped.
             actuator_output_datasets = [d for d in ulog_all.data_list if d.name == "actuator_outputs"]
             best_actuator_outputs = None
             max_val_found = -1.0
-            
+
             for inst in actuator_output_datasets:
                 vals = [np.max(inst.data[f"output[{j}]"]) for j in range(4) if f"output[{j}]" in inst.data and len(inst.data[f"output[{j}]"]) > 0]
                 if vals:
@@ -203,9 +308,16 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
                     if inst_max > max_val_found:
                         max_val_found = inst_max
                         best_actuator_outputs = inst
-            
+
             if best_actuator_outputs is not None:
-                # Convert standard PWM (1000-2000) to percentage: (PWM - 1000) / 10.0
+                # ── PWM → percentage conversion ─────────────────────────────
+                # Standard PX4 actuator_outputs use 1000–2000 µs PWM range.
+                # We map to 0–100 %:  pct = (PWM - 1000) / 10.0
+                #   - 1000 µs =   0 % (motor off / min throttle)
+                #   - 1500 µs =  50 % (hover thrust for typical 5" drone)
+                #   - 2000 µs = 100 % (full throttle)
+                # This linear mapping is the de-facto standard for PX4 PWM
+                # outputs when DShot/ESC calibration is not in use.
                 motor_metrics['max_actuator_output'] = float((max_val_found - 1000.0) / 10.0)
             else:
                 motor_metrics['max_actuator_output'] = None
@@ -220,14 +332,29 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
             max_after = None
 
         if np.any(mask_after_04):
-            # Imbalance after impact: compute standard deviation between motors at each time stamp, then average them
+            # ── Motor imbalance metric ───────────────────────────────────────
+            # For each time-stamp in the 400 ms post-impact window, compute the
+            # standard deviation of the 4 motor control values. The per-sample
+            # std dev quantifies how unevenly thrust is distributed across rotors
+            # at that instant (perfect symmetry = 0, one motor at max and one at
+            # min ≈ 0.5). We then average these per-sample std devs over the
+            # window to obtain a single scalar: motor_imbalance_after.
+            #
+            # Physical interpretation: a collision applies an asymmetric torque
+            # impulse to the airframe. The PX4 rate controller counters by
+            # differential thrust — one side of the quadrotor spools up while the
+            # other spools down. The resulting inter-motor spread is a proxy for
+            # the magnitude of the disturbance torque the controller had to fight.
             imbalances = []
             for idx in np.where(mask_after_04)[0]:
                 devs = [c0[idx], c1[idx], c2[idx], c3[idx]]
                 imbalances.append(np.std(devs))
             imbalance_after = float(np.mean(imbalances))
 
-            # Individual motor averages over the 0.4s window
+            # Individual motor averages over the 0.4s window — useful for
+            # diagnosing which rotor(s) bore the brunt of the disturbance
+            # (e.g., motor closest to the impact side will show elevated control
+            # command compared to the opposite motor).
             m1_avg_after = float(np.mean(c0[mask_after_04]))
             m2_avg_after = float(np.mean(c1[mask_after_04]))
             m3_avg_after = float(np.mean(c2[mask_after_04]))
@@ -240,22 +367,48 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
             m4_avg_after = None
 
         if avg_before is not None and max_after is not None:
+            # ── Thrust surge ─────────────────────────────────────────────────
+            # Defined as: (peak motor average in 1 s after impact) minus
+            # (mean motor average in 1 s before impact).
+            # This captures the net throttle spike the flight controller commands
+            # in response to the impact — the control system's effort to arrest
+            # the post-collision altitude drop and rotational disturbance.
+            # Positive = controller demanded more thrust after impact (typical),
+            # negative = controller cut thrust (would indicate a pre-planned
+            # motor stop or a catastrophic control inversion — not expected).
             thrust_surge = float(max_after - avg_before)
         else:
             thrust_surge = None
 
-        # Compute experiment start (PX4 command), forward start (refined), and end timestamps in PX4 µs
+        # ── Convert MCAP-relative seconds back to PX4 µs ─────────────────────
+        # Inverse of ulog_to_rel_sec:  t_px4_us = (t_rel + bag_start_s - offset_s) * 1e6
+        # This allows us to tag ULog data with the PX4 timestamps corresponding
+        # to the waypoint events detected in MoCap space.
         def _to_px4_us(t_sec):
             if t_sec is None:
                 return None
             return int(round((t_sec - offset_sec + (bag_start_ns * 1e-9)) * 1e6))
 
+        # e_sp = experiment start point (PX4 µs)
+        # WP2_cmd is the commanded start (from setpoint instruction, PX4-side),
+        # while WP2 is the MoCap-detected forward crossing of the start gate.
+        # We prefer the PX4-commanded time when available for closer alignment
+        # with the flight controller's internal state machine.
         e_sp_px4      = _to_px4_us(wp_events.get('WP2_cmd') or wp_events.get('WP2'))
+        # e_sp_forw = refined forward start (MoCap-detected crossing)
         e_sp_px4_forw = _to_px4_us(wp_events.get('WP2'))
         e_ep_px4      = _to_px4_us(wp_events.get('WP3'))
         e_impact_px4  = _to_px4_us(wp_events.get('Column Impact'))
 
-        # 50ms threshold: if command and refined forward differ by less than 50ms, suppress forw
+        # ── 50 ms suppression threshold ─────────────────────────────────────
+        # When the PX4-commanded start (WP2_cmd) and the MoCap-detected forward
+        # crossing (WP2) differ by less than 50 ms, the two timestamps are
+        # effectively co-incident at the resolution of our analysis windows
+        # (1-2 s). Duplicating them as separate columns in the DB adds noise
+        # without analytical value. Suppressing e_sp_px4_forw keeps the DB
+        # schema cleaner: non-NULL e_sp_px4_forw means "there is a meaningful
+        # time gap between commanded start and actual forward motion" (e.g.,
+        # the drone had to rotate in-place before starting the sweep).
         if e_sp_px4 is not None and e_sp_px4_forw is not None:
             if abs(e_sp_px4_forw - e_sp_px4) < 50000:   # < 50 ms in µs
                 e_sp_px4_forw = None
@@ -268,26 +421,80 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
         pitch_rate_error_rms = None
         yaw_rate_error_rms = None
 
-        # Extract Control Allocator & Motor saturation metrics
+        # ══════════════════════════════════════════════════════════════════════
+        # Control allocator saturation duration (3-tier fallback strategy)
+        # ══════════════════════════════════════════════════════════════════════
+        # Saturation occurs when the control allocator requests more motor
+        # thrust than the physical hardware can deliver (e.g., command = 1.0
+        # but max thrust = 80% of theoretical). We measure the accumulated
+        # wall-clock time any motor spends in saturation during the 1 s
+        # post-impact window using a time-weighted sum of inter-sample dt.
+        #
+        # We try three data sources in priority order, each with different
+        # fidelity and availability:
+        #
+        # Tier 1 — actuator_motors.control[i] (normalised 0..1)
+        #   The PX4 mixer output in normalised throttle space, published at
+        #   ~10 Hz. This is the "purest" signal — it reflects the allocator's
+        #   intent before ESC-specific PWM mapping and before any hardware
+        #   clipping. Saturation detected when any motor's control value
+        #   reaches ≥0.999 (upper rail) or ≤0.001 (lower rail, i.e., motor
+        #   commanded to minimum/stop). The 0.999/0.001 thresholds are used
+        #   instead of exactly 1.0/0.0 to account for floating-point rounding
+        #   at the ULog encoding boundary.
+        #
+        # Tier 2 — actuator_outputs.output[i] (PWM µs, 1000–2000)
+        #   The raw PWM values written to the ESC hardware, published at the
+        #   mixer rate (~250 Hz on PX4). Falls back when actuator_motors is
+        #   not logged (some firmware builds omit it). We auto-detect the PWM
+        #   range: if max >1500 and min <900, the outputs use the "wide"
+        #   range with reversed idle (PWM 115 µs), meaning saturation rails
+        #   are 1999 µs (upper) and 115 µs (lower). Otherwise we use standard
+        #   1000–2000 µs rails. We select the actuator_outputs instance with
+        #   the most samples (some ULogs have multiple, e.g., one per I/O
+        #   channel; the motor-driving instance always has the densest data).
+        #
+        # Tier 3 — control_allocator_status.actuator_saturation[i] (binary flags)
+        #   PX4's built-in saturation detection — each actuator gets a flag
+        #   (1 = saturated, 0 = not). This is the least granular (binary, not
+        #   continuous) but is guaranteed to be published whenever the control
+        #   allocator runs (~100 Hz on most configurations). Used as a last
+        #   resort when neither actuator_motors nor actuator_outputs is
+        #   available in the ULog.
+        #
+        # Time-weighted sum formula:
+        #   saturation_duration = Σ dt_i  for all samples i where saturated
+        #   where dt_i = t_{i+1} - t_i (forward difference, with the last
+        #   sample's dt replicated). This gives the wall-clock duration in
+        #   seconds — a 0.2 s result means the drone spent 200 ms with at
+        #   least one motor at its physical limit.
         try:
-            # 1. Compute true saturation duration from actuator_motors (10Hz)
+            # Tier 1: actuator_motors (normalised 0..1, ~10 Hz)
+            # The 0.999/0.001 thresholds account for floating-point rounding
+            # at the ULog serialisation boundary — a true 1.0 may appear as
+            # 0.999999 in the binary payload.
             motors_data = ulog_all.get_dataset("actuator_motors")
             motor_t_us = motors_data.data["timestamp"]
             motor_t = np.array([ulog_to_rel_sec(t) for t in motor_t_us])
             mask_motors = (motor_t >= t_impact) & (motor_t <= (t_impact + 1.0))
             if np.any(mask_motors):
+                # Per-axis saturation: any of the 4 motors hitting upper or lower rail
                 sat_upper = np.any([motors_data.data[f"control[{i}]"] >= 0.999 for i in range(4)], axis=0)
                 sat_lower = np.any([motors_data.data[f"control[{i}]"] <= 0.001 for i in range(4)], axis=0)
                 sat_any = sat_upper | sat_lower
+                # Forward-difference time deltas for time-weighted accumulation
                 motor_dt = np.diff(motor_t)
                 motor_dt = np.append(motor_dt, motor_dt[-1] if len(motor_dt) > 0 else 0.0)
                 allocator_saturation_duration_sec = float(np.sum(motor_dt[mask_motors & sat_any]))
         except Exception as e_motors:
             print(f"  [WARN] Failed to compute saturation from actuator_motors: {e_motors}")
-            # 2. Try actuator_outputs
+            # Tier 2: actuator_outputs (PWM µs, ~250 Hz)
             try:
                 o_ds = None
                 max_pts = -1
+                # Find the instance with the most data points — this is the
+                # motor-driving channel; other instances are for servo groups
+                # or unused I/O and have fewer or zero samples.
                 for d in ulog_all.data_list:
                     if d.name == 'actuator_outputs':
                         pts = len(d.data['timestamp'])
@@ -302,24 +509,30 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
                         o_outputs = [o_ds.data[f"output[{i}]"] for i in range(4)]
                         max_val = max([out.max() for out in o_outputs if len(out) > 0])
                         min_val = min([out.min() for out in o_outputs if len(out) > 0])
-                        
+
+                        # Auto-detect PWM range: DShot-capable builds use a
+                        # "wide" range where idle is reversed (115 µs) and max
+                        # is 1999 µs. Standard PWM builds use 1000–2000 µs.
+                        # The heuristic: if any output exceeds 1500 AND any
+                        # output dips below 900, we are in wide/reversed-idle
+                        # mode. Otherwise, standard 1000–2000.
                         if max_val > 1500 and min_val < 900:
                             upper_limit = 1999.0
                             lower_limit = 115.0
                         else:
                             upper_limit = 2000.0
                             lower_limit = 1000.0
-                            
+
                         o_sat_upper = np.any([o_ds.data[f"output[{i}]"] >= upper_limit for i in range(4)], axis=0)
                         o_sat_lower = np.any([o_ds.data[f"output[{i}]"] <= lower_limit for i in range(4)], axis=0)
                         o_sat_any = o_sat_upper | o_sat_lower
-                        
+
                         o_dt = np.diff(o_t)
                         o_dt = np.append(o_dt, o_dt[-1] if len(o_dt) > 0 else 0.0)
                         allocator_saturation_duration_sec = float(np.sum(o_dt[mask_o & o_sat_any]))
             except Exception as e_outputs:
                 print(f"  [WARN] Failed to compute saturation from actuator_outputs: {e_outputs}")
-                # 3. Fallback to control_allocator_status for saturation
+                # Tier 3: control_allocator_status.actuator_saturation (binary flags)
                 try:
                     ds_alloc = ulog_all.get_dataset("control_allocator_status")
                     alloc_t_us = ds_alloc.data["timestamp"]
@@ -327,6 +540,8 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
                     mask_alloc = (alloc_t >= t_impact) & (alloc_t <= (t_impact + 1.0))
                     if np.any(mask_alloc):
                         sat = [ds_alloc.data[f"actuator_saturation[{i}]"] for i in range(4)]
+                        # PX4 stores actuator_saturation as uint8: 0 = not
+                        # saturated, 1 (or any non-zero) = saturated.
                         sat_any = np.any([sat[i] != 0 for i in range(4)], axis=0)
                         alloc_dt = np.diff(alloc_t)
                         alloc_dt = np.append(alloc_dt, alloc_dt[-1] if len(alloc_dt) > 0 else 0.0)
@@ -334,24 +549,69 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
                 except Exception as e_alloc:
                     print(f"  [WARN] Failed to compute saturation fallback: {e_alloc}")
 
-        # Extract other control allocator status metrics
+        # ── Other control_allocator_status metrics ───────────────────────────
+        # These come from PX4's built-in control allocator diagnostics, which
+        # are published at the control loop rate (~100 Hz) regardless of
+        # whether actuator_motors or actuator_outputs are logged.
         try:
             ds_alloc = ulog_all.get_dataset("control_allocator_status")
             alloc_t_us = ds_alloc.data["timestamp"]
             alloc_t = np.array([ulog_to_rel_sec(t) for t in alloc_t_us])
             mask_alloc = (alloc_t >= t_impact) & (alloc_t <= (t_impact + 1.0))
             if np.any(mask_alloc):
+                # ││Δτ││₂ — Euclidean norm of the 3D unallocated torque vector
+                # (roll, pitch, yaw). When the allocator cannot satisfy the
+                # full demanded torque, the residual (unallocated) vector
+                # quantifies how "under-served" the attitude request is.
+                # We take the peak norm in the 1 s post-impact window — a
+                # single large value (>0.1 N·m) indicates the controller
+                # demanded more torque than the motors could deliver at that
+                # instant (saturation event).
                 unallocated_torque_norm = np.sqrt(
                     ds_alloc.data["unallocated_torque[0]"]**2 +
                     ds_alloc.data["unallocated_torque[1]"]**2 +
                     ds_alloc.data["unallocated_torque[2]"]**2
                 )
                 max_unallocated_torque = float(np.max(unallocated_torque_norm[mask_alloc]))
+                # thrust_setpoint_achieved ∈ [0, 1] — fraction of the commanded
+                # thrust that the allocator was able to assign to motors.
+                # Averaged over the 1 s window and scaled to percentage.
+                # Values < 100 % indicate thrust saturation (controller asked
+                # for more collective thrust than available).
                 thrust_setpoint_achieved_pct = float(np.mean(ds_alloc.data["thrust_setpoint_achieved"][mask_alloc]) * 100.0)
         except Exception as e:
             print(f"  [WARN] Failed to compute control allocator status metrics: {e}")
 
-        # Extract PID tracking metrics
+        # ══════════════════════════════════════════════════════════════════════
+        # PID rate tracking error (RMS)
+        # ══════════════════════════════════════════════════════════════════════
+        # Measures how well the PX4 rate controller tracked the angular
+        # velocity setpoint during the 1 s post-impact window.
+        #
+        # Data sources:
+        #   - vehicle_rates_setpoint: desired roll/pitch/yaw rate (rad/s),
+        #     published at controller loop rate (~1 kHz on PX4).
+        #   - vehicle_angular_velocity: measured angular velocity (rad/s),
+        #     from gyroscope integration + EKF correction, published at IMU
+        #     rate (~1 kHz).
+        #
+        # These two topics have different timestamps (asynchronous publication
+        # schedules). To compute the error we:
+        #   1. Resample the setpoint onto the angular velocity timestamps
+        #      using np.interp() (linear interpolation). This avoids
+        #      timestamp-matching ambiguity and preserves the velocity
+        #      signal's native sampling grid (no decimation).
+        #   2. Compute error = measured - setpoint at each velocity sample.
+        #   3. Compute RMS error = sqrt(mean(error^2)) — the root-mean-square
+        #      of the tracking error, which penalises large deviations
+        #      quadratically and is the standard metric for evaluating
+        #      closed-loop tracking performance.
+        #
+        # RMS error interpretation:
+        #   < 0.05 rad/s  → excellent tracking (normal hover/sweep)
+        #   0.05–0.2       → moderate disturbance (wind gust, contact)
+        #   > 0.2          → severe tracking loss (collision impulse or
+        #                    saturation-induced oscillation)
         try:
             ds_sp = ulog_all.get_dataset("vehicle_rates_setpoint")
             ds_vel = ulog_all.get_dataset("vehicle_angular_velocity")
@@ -360,14 +620,30 @@ def get_ulog_motor_metrics(flight_dir, pass_path, bag_start_ns, wp_events):
             mask_vel = (vel_t >= t_impact) & (vel_t <= (t_impact + 1.0))
             if np.any(mask_vel):
                 vel_t_win = vel_t[mask_vel]
+                # ── Timestamp interpolation ──────────────────────────────────
+                # np.interp() performs piecewise-linear interpolation of the
+                # setpoint (sp_t, sp_val) onto the velocity timestamps vel_t_win.
+                # Since the setpoint typically arrives at a slightly different
+                # rate (often slower, ~250 Hz vs 1 kHz), this stretches each
+                # setpoint value to fill the gaps between velocity samples. The
+                # assumption is that the setpoint varies slowly relative to the
+                # inter-sample spacing (~1-4 ms), so linear interpolation is
+                # accurate to within the setpoint's own rate of change.
                 roll_sp_interp = np.interp(vel_t_win, sp_t, ds_sp.data["roll"])
                 pitch_sp_interp = np.interp(vel_t_win, sp_t, ds_sp.data["pitch"])
                 yaw_sp_interp = np.interp(vel_t_win, sp_t, ds_sp.data["yaw"])
 
+                # Error computation on the velocity sampling grid
                 roll_err = ds_vel.data["xyz[0]"][mask_vel] - roll_sp_interp
                 pitch_err = ds_vel.data["xyz[1]"][mask_vel] - pitch_sp_interp
                 yaw_err = ds_vel.data["xyz[2]"][mask_vel] - yaw_sp_interp
 
+                # ── RMS error ────────────────────────────────────────────────
+                # sqrt(mean(err^2)) is the canonical L2 tracking metric — it
+                # penalises large errors quadratically (a 0.5 rad/s spike
+                # contributes 25x more to the metric than a 0.1 rad/s baseline).
+                # This makes it sensitive to the brief, large tracking errors
+                # characteristic of collision events.
                 roll_rate_error_rms = float(np.sqrt(np.mean(roll_err**2)))
                 pitch_rate_error_rms = float(np.sqrt(np.mean(pitch_err**2)))
                 yaw_rate_error_rms = float(np.sqrt(np.mean(yaw_err**2)))
@@ -509,14 +785,34 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                 mocap_rate = dfs.get('mocap_rate', 240.0)
                 dynamic_waypoints = dfs.get('dynamic_waypoints', [])
                 
-                # Compute both raw and smoothed velocity derivative signals
+                # Compute both raw and smoothed velocity derivative signals from MoCap.
+                # Raw: velocity computed from raw MoCap positions via Savitzky-Golay
+                # (no resampling) — preserves original time spacing, useful for
+                # debugging MoCap dropout artefacts.
+                # Smoothed: resampled to uniform grid before S-G differentiation —
+                # produces smoother derivatives, used for waypoint detection.
                 df_mocap_raw = compute_velocity(df_mocap.copy(), resample=False)
                 df_mocap = compute_velocity(df_mocap, resample=True)
 
                 # === ENABLED: EKF Kinematics (2026-06-09) ===
                 # Compute velocity/acceleration from PX4 EKF odometry (vehicle_odometry).
-                # EKF fuses MoCap + IMU at 100-250 Hz — inherently smooth even during
-                # Fixed Cage MoCap dropouts. Passed to calculate_metrics() as df_ekf_kin.
+                # Architecture:
+                #   The PX4 Extended Kalman Filter fuses MoCap pose measurements
+                #   (at 120 Hz for Rotating Cage / ~10 Hz for Fixed Cage due to
+                #   optical dropout) with the onboard IMU (gyro + accel at 1 kHz).
+                #   This fusion runs at 100–250 Hz on the flight controller and
+                #   produces a state estimate that is:
+                #     - Smooth (IMU dead-reckoning bridges MoCap gaps) even during
+                #       Fixed Cage optical blackouts where MoCap drops to ~10 Hz.
+                #     - Drift-free (MoCap corrections bound the IMU integration).
+                #   The resulting velocity signal is inherently smoother than pure
+                #   MoCap S-G differentiation because the EKF internally applies
+                #   a kinematic model with IMU propagation, rather than a purely
+                #   geometric filter (S-G) that has no physics model.
+                #
+                #   Passed to calculate_metrics() as df_ekf_kin, which uses it for
+                #   impact speed, acceleration, and tangential acceleration metrics
+                #   in preference to the MoCap-derived velocities.
                 df_odom = dfs.get('odom', pd.DataFrame())
                 df_ekf_kin = compute_ekf_kinematics(df_odom, df_mocap)
                 if df_ekf_kin is not None:
@@ -527,8 +823,20 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                 # Previously, all velocity/accel came from SG differentiation of MoCap
                 # positions. Works for Rotating Cage (120 Hz) but produces dropout kinks
                 # for Fixed Cage (~10 Hz). EKF replaces this when available.
-                
-                # Determine column position for this flight dynamically
+
+                # ── Dynamic column position detection ────────────────────────
+                # The obstacle column may be placed at slightly different
+                # positions in each flight (small setup variations). Instead of
+                # relying on a hardcoded nominal XY, we detect the actual column
+                # position from the first 50 MoCap samples.
+                #
+                # Why the mean of the first 50 samples?
+                #   The column is a static rigid body tracked by the MoCap
+                #   system. Its pose is published at MoCap rate (120 Hz) from
+                #   the moment the system is armed. The first 50 samples (~0.4 s)
+                #   provide a reliable static position estimate before the drone
+                #   takes off. Averaging reduces single-frame MoCap jitter
+                #   (typically ±1-2 mm for a rigid body).
                 if df_column is not None and not df_column.empty:
                     col_x_flight = df_column['x'].head(50).mean()
                     col_y_flight = df_column['y'].head(50).mean()
@@ -537,8 +845,18 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     col_x_flight = column_x
                     col_y_flight = column_y
                     print(f"📍 [{base_folder}] Column not found in poses. Falling back to default: ({col_x_flight:.3f}, {col_y_flight:.3f})")
-                
-                # Detect Takeoff Trigger (using MoCap Z height crossing 0.15m)
+
+                # ── Takeoff detection ────────────────────────────────────────
+                # Simple Z-height threshold: the drone is considered airborne
+                # when its MoCap Z coordinate exceeds 0.15 m (150 mm) above the
+                # ground plane. The 0.15 m threshold is chosen because:
+                #   - It is well above ground-effect altitude (~50 mm for a
+                #     5-inch prop at takeoff RPM).
+                #   - It is high enough to reject MoCap Z jitter (<5 mm RMS for
+                #     a well-calibrated OptiTrack system) while low enough to
+                #     capture the beginning of the climb phase.
+                #   - If the drone never crosses 0.15 m (e.g., aborted flight),
+                #     we fall back to arming_time + 2 s as a conservative estimate.
                 takeoff_mask = df_mocap['z'] > 0.15 if not df_mocap.empty else pd.Series(dtype=bool)
                 takeoff_time = df_mocap.loc[takeoff_mask, 't'].iloc[0] if takeoff_mask.any() else arming_time + 2.0
                 
@@ -566,6 +884,14 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     pass_name = f"{base_folder} - Pass-{pass_idx:02d}"
 
                     # ── Exclusion gate: skip passes manually reviewed as invalid ──
+                    # Some passes are manually flagged in the database as invalid
+                    # (e.g., collision with safety net instead of column, GPS
+                    # glitch causing RTL mid-pass, experimenter walked into MoCap
+                    # volume). These are stored in the DB exclusion table and
+                    # are skipped entirely — no metrics, no plots, no DB row.
+                    # This gate ensures contaminated data never enters the
+                    # analysis dataset. The exclusion list is maintained by
+                    # manual review of trajectory plots + video footage.
                     if is_excluded_pass(pass_name):
                         from dev_logs.analysis.database.db_manager import get_exclusion_info
                         _, reason, _ = get_exclusion_info(pass_name)
@@ -642,7 +968,22 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     metrics['capacity_drain_rate_pct_per_min'] = cap_drain
                     metrics['voltage_drop_rate_v_per_min'] = v_drop
 
-                    # Skip if already cached in the database (idempotent runs, force-recompute if missing schema columns)
+                    # ── Idempotency guard: skip passes already in the database ──
+                    # is_already_cached() checks two conditions:
+                    #   1. A row with this pass_name exists in the database.
+                    #   2. All columns listed in check_columns are present in the
+                    #      table schema AND have non-NULL values for this row.
+                    #
+                    # Condition 2 is critical: if we add new metrics columns to
+                    # the pipeline (e.g., motor_imbalance_after added in a later
+                    # commit), rows inserted by a previous pipeline run will fail
+                    # the column check and be re-processed. This means we never
+                    # need to manually invalidate the DB after schema changes —
+                    # simply re-running the pipeline fills in the new columns.
+                    #
+                    # The check_columns list is intentionally long: every column
+                    # that has been added at any point is enumerated so that
+                    # schema evolution is handled automatically.
                     if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'e_sp_timestamp_PX4', 'e_impact_timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_sdld', 'imu_ax_spread_impact']):
                         print(f"⏭️  '{pass_name}' already in database, skipping insert.")
                     else:
@@ -934,6 +1275,16 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
 # Scans dev_logs/flights/ for *-passXX.mcap files (only approved flights),
 # runs analysis on each, and populates / updates the SQLite database.
 # Already-cached passes are skipped (idempotent).
+#
+# Flight filtering by cutoff:
+#   The APPROVED_CUTOFF timestamp (from db_manager SSoT) defines the earliest
+#   flight that has been manually reviewed and approved for inclusion. Flights
+#   recorded before this date are skipped — they may be test flights, hardware
+#   debugging sessions, or flights with known sensor failures.
+#
+#   The --today flag overrides the cutoff to today's date, which is useful
+#   during an experimental session: run the pipeline immediately after each
+#   flight to get real-time feedback without re-processing the entire history.
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import re as _re
@@ -941,7 +1292,10 @@ if __name__ == "__main__":
     import argparse
     import datetime
 
-    # Dynamically resolve today's date formatted as YYYYMMDD-0000
+    # Dynamically resolve today's date formatted as YYYYMMDD-0000.
+    # The format matches the flight folder naming convention
+    # (e.g., "20260613-0001 Rotating Cage 45deg"), so the cutoff is a
+    # lexicographic string comparison against folder names.
     _today_cutoff = datetime.date.today().strftime("%Y%m%d-0000")
 
     parser = argparse.ArgumentParser(description="Standalone DB population pipeline")
@@ -951,9 +1305,11 @@ if __name__ == "__main__":
                         help=f"Shortcut to process only today's flights (sets cutoff to {_today_cutoff})")
     parser.add_argument('--force-plot', '-f', action='store_true',
                         help="Force plot generation even for passes without detected collisions")
-    
+
     args = parser.parse_args()
 
+    # Override the SSoT cutoff when --today is passed. This is a local
+    # override for the current run only — it does not modify the SSoT file.
     APPROVED_CUTOFF = _today_cutoff if args.today else args.cutoff
 
     _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -968,13 +1324,24 @@ if __name__ == "__main__":
     cage_radius   = cage_diameter / 2.0
     column_radius = column_diameter / 2.0
 
+    # ── Condition inference from folder name ────────────────────────────────
+    # Flight folder names follow the convention:
+    #   "YYYYMMDD-NNNN Rotating Cage XXdeg"
+    #   "YYYYMMDD-NNNN Fixed Cage XXdeg"
+    # We use simple substring matching against the lowercased folder name.
+    # Anything not containing "rotating" defaults to "Fixed Cage", which is
+    # safe because the experiment has exactly two cage conditions.
     def _infer_condition(folder_name):
         name = folder_name.lower()
         if "rotating" in name:
             return "Rotating Cage"
         return "Fixed Cage"
 
-    # Collect all approved pass files (cutoff enforced via SSoT from db_manager)
+    # ── Collect all approved pass files ──────────────────────────────────────
+    # is_approved_flight() enforces the cutoff timestamp and any explicit
+    # inclusion/exclusion rules from the SSoT db_manager configuration.
+    # Only flight folders that pass this gate are considered for processing.
+    # Each flight folder may contain multiple pass MCAPs (e.g., pass01..pass08).
     all_pass_files = []
     for folder in sorted(os.listdir(_flights_dir)):
         if not is_approved_flight(folder):
@@ -1044,9 +1411,17 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"  [WARN] Failed to parse global battery metrics: {e}")
         return None, None, None
+    # ── Per-pass processing loop ────────────────────────────────────────────
+    # Each iteration processes exactly one pass MCAP file, computes all
+    # metrics (MoCap kinematics, waypoint detection, EKF kinematics, ULog
+    # motor/allocator/PID metrics, battery rates), and inserts a single row
+    # into the SQLite database.
+    #
+    # The pass name is constructed as "<flight_folder> - Pass-NN" which is
+    # the primary key in the database — no two passes share the same key.
     for folder_name, folder_path, pass_path in all_pass_files:
         pass_basename = os.path.basename(pass_path)
-        # pass_name matches the DB primary key: "<folder_name> - Pass-XX"
+        # Parse pass index from filename, e.g., "...-pass03.mcap" → 3
         m = _re.search(r'-pass(\d+)\.mcap$', pass_basename)
         if not m:
             continue

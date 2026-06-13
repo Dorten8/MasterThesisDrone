@@ -83,6 +83,13 @@ def load_timing_data():
     import sqlite3
     con = sqlite3.connect(DB_PATH)
 
+    # Query the flights_summary table for impact-detected flights that have
+    # valid PX4 timestamps. We pull:
+    #   e_impact_timestamp_PX4 — moment the drone hit the obstacle
+    #   e_ep_timestamp_PX4     — moment the experiment ended (end-point)
+    #   e_sp_timestamp_PX4     — moment the experiment started (start-point)
+    # The WHERE clause ensures we only analyze flights where both impact and
+    # end timestamps are recorded (NULLs would produce meaningless durations).
     df = pd.read_sql("""
         SELECT flight_name, condition, impact_angle,
                e_impact_timestamp_PX4, e_ep_timestamp_PX4,
@@ -95,7 +102,9 @@ def load_timing_data():
     """, con)
     con.close()
 
-    # PX4 timestamps are in microseconds → convert to seconds
+    # PX4 timestamps are in microseconds → convert to seconds by dividing by
+    # 1e6 (1,000,000 µs = 1 s). The difference gives the elapsed wall-clock
+    # duration between two flight events.
     df['time_to_end_s'] = (df['e_ep_timestamp_PX4'] - df['e_impact_timestamp_PX4']) / 1e6
     df['total_flight_s'] = (df['e_ep_timestamp_PX4'] - df['e_sp_timestamp_PX4']) / 1e6
 
@@ -151,6 +160,9 @@ def plot_histograms(df, save_path=None, show=True):
         n = len(data)
 
         # ── Histogram ─────────────────────────────────────────────────────
+        # density=True normalizes the histogram so the total area equals 1
+        # (a probability density), not raw counts. This makes the histogram
+        # directly comparable with the fitted normal PDF curve overlaying it.
         bins = 12
         counts, bin_edges, patches = ax.hist(
             data, bins=bins, density=True, alpha=0.55, color=color,
@@ -158,17 +170,30 @@ def plot_histograms(df, save_path=None, show=True):
         )
 
         # ── Fitted normal curve ───────────────────────────────────────────
+        # MLE (Maximum Likelihood Estimate) for the normal distribution:
+        #   μ̂ = sample mean,  σ̂ = sample std with Bessel's correction (ddof=1).
+        # Using ddof=1 gives an unbiased estimate of the population std, which
+        # is the standard MLE convention for normal-distribution fitting.
         mu, sigma = np.mean(data), np.std(data, ddof=1)
         x_smooth = np.linspace(data.min() - 0.5, data.max() + 0.5, 300)
+        # stats.norm.pdf returns the Gaussian probability density at each x:
+        #   f(x) = (1 / (σ√(2π))) · exp(−½ ((x−μ)/σ)²)
         pdf = stats.norm.pdf(x_smooth, mu, sigma)
         ax.plot(x_smooth, pdf, color='#333333', linewidth=2.0, linestyle='-',
                 label=f'Normal fit\n$\\mu={mu:.2f}$, $\\sigma={sigma:.2f}$')
 
         # ── Rug plot on bottom ────────────────────────────────────────────
+        # A rug plot draws a small vertical tick at each data point along the
+        # bottom axis. It shows the exact sample locations and reveals gaps,
+        # clusters, or potential outliers that the histogram bins might hide.
         ax.plot(data, np.zeros_like(data) - 0.02 * ax.get_ylim()[1],
                 '|', color=color, markersize=6, markeredgewidth=1.0, alpha=0.6)
 
         # ── Stats annotation ──────────────────────────────────────────────
+        # IQR (Interquartile Range) = Q75 − Q25, the spread of the middle 50%
+        # of the data. It is a robust measure of dispersion, unlike std which
+        # is inflated by outliers. Displaying both Q25 and Q75 gives a compact
+        # summary of the distribution's central spread.
         q25, q75 = np.percentile(data, [25, 75])
         stats_text = (
             f"N = {n}\n"
@@ -242,6 +267,13 @@ def plot_angle_vs_time(df, save_path=None, show=True):
                    linewidth=0.5, zorder=3, label=f'{cond} (N={len(sub)})')
 
         # ── Linear fit ────────────────────────────────────────────────────
+        # scipy.stats.linregress performs ordinary least-squares (OLS) linear
+        # regression: it finds slope and intercept that minimize Σ(yᵢ − (slope·xᵢ + intercept))².
+        # Returns:
+        #   slope     — change in time_to_end per 1° change in impact_angle
+        #   intercept — predicted time_to_end when impact_angle = 0°
+        #   r_val     — Pearson r (same sign as slope, measures linear association)
+        #   p_val     — two-tailed p-value for the null hypothesis that slope = 0
         if len(x) > 2:
             slope, intercept, r_val, p_val, _ = stats.linregress(x, y)
             x_smooth = np.linspace(x.min(), x.max(), 100)
@@ -331,13 +363,26 @@ def main():
     fixed_data = df[df['condition'] == 'Fixed Cage']['time_to_end_s']
     rot_data = df[df['condition'] == 'Rotating Cage']['time_to_end_s']
 
+    # Welch's t-test (equal_var=False): a variant of the independent-samples
+    # t-test that does NOT assume equal variances between groups. It uses the
+    # Welch-Satterthwaite approximation for degrees of freedom, making it
+    # robust when sample sizes and variances differ across conditions.
     t_stat, t_p = ttest_ind(fixed_data, rot_data, equal_var=False)
+    # Mann-Whitney U test: a non-parametric rank-based test for whether one
+    # distribution tends to have larger values than the other. Unlike the t-test,
+    # it makes no normality assumption — it only assumes independent observations
+    # and ordinal comparability. The null hypothesis is that a randomly drawn
+    # value from Fixed Cage is equally likely to be larger or smaller than one
+    # from Rotating Cage.
     u_stat, u_p = mannwhitneyu(fixed_data, rot_data, alternative='two-sided')
 
     print("=" * 70)
     print("🔬 Between-condition comparison:")
     print(f"  Welch's t-test:  t = {t_stat:.3f}, p = {t_p:.4f}")
     print(f"  Mann-Whitney U:  U = {u_stat:.0f}, p = {u_p:.4f}")
+    # Cohen's d effect size: (μ₁ − μ₂) / σ_pooled, where σ_pooled = sqrt((σ₁² + σ₂²) / 2).
+    # This is the standardized mean difference, independent of sample size.
+    # Interpretations: |d| ≈ 0.2 = small, 0.5 = medium, 0.8 = large effect.
     print(f"  Cohen's d:       d = {(fixed_data.mean() - rot_data.mean()) / np.sqrt((fixed_data.var() + rot_data.var()) / 2):.3f}")
     print()
 

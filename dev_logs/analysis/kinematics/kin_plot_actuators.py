@@ -73,7 +73,7 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
         if impact_t is not None and wp3_t is not None:
             ax.axvspan(impact_t, wp3_t, color='#C8E6C9', alpha=0.3, label='Recovery Phase')
         if impact_t is not None:
-            ax.axvline(x=impact_t, color='#D32F2F', linestyle='--', linewidth=2, label='Impact')
+            ax.axvline(x=impact_t, color='#D32F2F', linestyle='--', linewidth=1.2, label='Impact')
 
     # Panel 1: Actuator Motors (Commands)
     ax1 = fig.add_subplot(gs[0])
@@ -108,10 +108,10 @@ def plot_actuators_and_status(ulg_path, offset_sec, bag_start_ns, wp_events, arm
     ax2.set_xlabel('Time (s)')
     ax2.grid(True, linestyle='--', alpha=0.6)
 
-    # Flight name annotation (bottom-right)
+    # Flight name annotation (below x-axis, figure-bottom)
     if flight_name:
-        ax2.text(0.98, 0.02, f"{flight_name}",
-                 transform=ax2.transAxes,
+        fig.text(0.98, 0.01, f"{flight_name}",
+                 transform=fig.transFigure,
                  ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
                  bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
                            boxstyle='round,pad=0.2'))
@@ -230,17 +230,17 @@ def plot_control_allocator_saturation(ulg_path, offset_sec, bag_start_ns, wp_eve
 
     # Draw vertical dashed line at t_impact, uniform 1.0s ticks
     for a in axes:
-        a.axvline(x=t_impact, color='#D32F2F', linestyle='--', linewidth=2, label='Impact')
+        a.axvline(x=t_impact, color='#D32F2F', linestyle='--', linewidth=1.2, label='Impact')
         a.set_xlim(t_min, t_max)
     axes[0].xaxis.set_major_locator(ticker.MultipleLocator(1.0))
 
-    # Flight name annotation (bottom-right)
+    # Flight name annotation (below x-axis, figure-bottom)
     if flight_name:
-        axes[-1].text(0.98, 0.02, f"{flight_name}",
-                      transform=axes[-1].transAxes,
-                      ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
-                      bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
-                                boxstyle='round,pad=0.2'))
+        fig.text(0.98, 0.01, f"{flight_name}",
+                 transform=fig.transFigure,
+                 ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
+                           boxstyle='round,pad=0.2'))
 
     plt.tight_layout()
     if output_path is not None:
@@ -338,17 +338,17 @@ def plot_pid_rate_tracking(ulg_path, offset_sec, bag_start_ns, wp_events, flight
 
     # Draw vertical dashed line at t_impact, uniform 1.0s ticks
     for a in axes:
-        a.axvline(x=t_impact, color='#D32F2F', linestyle='--', linewidth=2, label='Impact')
+        a.axvline(x=t_impact, color='#D32F2F', linestyle='--', linewidth=1.2, label='Impact')
         a.set_xlim(t_min, t_max)
     axes[0].xaxis.set_major_locator(ticker.MultipleLocator(1.0))
 
-    # Flight name annotation (bottom-right)
+    # Flight name annotation (below x-axis, figure-bottom)
     if flight_name:
-        axes[-1].text(0.98, 0.02, f"{flight_name}",
-                      transform=axes[-1].transAxes,
-                      ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
-                      bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
-                                boxstyle='round,pad=0.2'))
+        fig.text(0.98, 0.01, f"{flight_name}",
+                 transform=fig.transFigure,
+                 ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
+                           boxstyle='round,pad=0.2'))
 
     plt.tight_layout()
     if output_path is not None:
@@ -359,3 +359,291 @@ def plot_pid_rate_tracking(ulg_path, offset_sec, bag_start_ns, wp_events, flight
     plt.close()
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Combined side-by-side ULog plots  (Rotating Cage | Fixed Cage)
+#  Timeline: [WP2 refined − 0.5s, Column Center Passed + 2.0s]
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _combined_timeline_limits(wp_events):
+    """Bag-relative combined timeline: [WP2 - 0.5s, Column Center Passed + 2.5s]."""
+    start = wp_events.get('WP2 refined') or wp_events.get('WP2', 0.0)
+    end = (wp_events.get('Column Center Passed')
+           or wp_events.get('Column Passed')
+           or wp_events.get('Column Impact')
+           or start + 10.0)
+    return start - 0.5, end + 2.5
+
+
+def plot_actuators_and_status_combined(rot_data, fix_data, output_path=None):
+    """Side-by-side actuator motor commands + DShot outputs.
+
+    Timeline uses _combined_timeline_limits.
+    Each column: actuator_motors (top) + actuator_outputs (bottom).
+    """
+    import pyulog
+
+    def _extract_ulog(data):
+        """Extract actuator_motors + actuator_outputs from ULog, return dict."""
+        result = {"motor_t": [], "motor_ctrl": [], "out_t": [], "out_vals": []}
+        ulg_path = data.get("ulg_path")
+        if not ulg_path:
+            return result
+        try:
+            ul = pyulog.ULog(ulg_path,
+                             message_name_filter_list=["actuator_motors", "actuator_outputs"])
+        except Exception as e:
+            print(f"[WARN] Could not load ULog for {data.get('flight_name')}: {e}")
+            return result
+
+        offset_sec = data.get("offset_sec", 0.0)
+        bag_start_ns = data.get("bag_start_ns", 0)
+
+        def _to_rel(t_us):
+            return (t_us * 1e-6) + offset_sec - (bag_start_ns * 1e-9)
+
+        # actuator_motors
+        best_m = None
+        for ds in ul.data_list:
+            if ds.name == "actuator_motors":
+                if best_m is None or len(ds.data["timestamp"]) > len(best_m.data["timestamp"]):
+                    best_m = ds
+        if best_m is not None:
+            try:
+                result["motor_t"] = np.array([_to_rel(t) for t in best_m.data["timestamp"]])
+                result["motor_ctrl"] = [best_m.data[f"control[{i}]"] for i in range(4)]
+            except Exception:
+                pass
+
+        # actuator_outputs
+        best_o = None
+        for ds in ul.data_list:
+            if ds.name == "actuator_outputs":
+                if best_o is None or len(ds.data["timestamp"]) > len(best_o.data["timestamp"]):
+                    best_o = ds
+        if best_o is not None:
+            try:
+                result["out_t"] = np.array([_to_rel(t) for t in best_o.data["timestamp"]])
+                result["out_vals"] = [best_o.data[f"output[{i}]"] for i in range(4)]
+            except Exception:
+                pass
+        return result
+
+    rot_ul = _extract_ulog(rot_data)
+    fix_ul = _extract_ulog(fix_data)
+
+    t_min_r, t_max_r = _combined_timeline_limits(rot_data["wp_events"])
+    t_min_f, t_max_f = _combined_timeline_limits(fix_data["wp_events"])
+
+    fig, axes = plt.subplots(2, 2, figsize=(16, 10), sharex='col')
+    colors = ['#FF4B4B', '#4B8BFF', '#4BFF4B', '#FFB34B']
+    labels = ['Motor 1 (FR)', 'Motor 2 (RL)', 'Motor 3 (FL)', 'Motor 4 (RR)']
+
+    def _draw_panel(ax_m, ax_o, ul_d, wp_events, label, impact_t, t_min, t_max, is_left):
+        """Draw one column (commands + outputs) for a single condition."""
+        # Phase shading
+        esp = wp_events.get('WP2')
+        wp3 = wp_events.get('WP3')
+        imp = impact_t
+
+        if esp is not None and imp is not None:
+            ax_m.axvspan(esp, imp, color='#FFE0B2', alpha=0.3, label='Sweep Phase')
+        if imp is not None and wp3 is not None:
+            ax_m.axvspan(imp, wp3, color='#C8E6C9', alpha=0.3, label='Recovery Phase')
+        if imp is not None:
+            ax_m.axvline(x=imp, color='#D32F2F', linestyle='--', linewidth=1.2, label='Impact')
+            ax_o.axvline(x=imp, color='#D32F2F', linestyle='--', linewidth=1.2, label='Impact')
+
+        # Motor commands
+        if len(ul_d["motor_t"]) > 0:
+            for i in range(4):
+                ax_m.plot(ul_d["motor_t"], ul_d["motor_ctrl"][i],
+                          color=colors[i], label=labels[i], alpha=0.8, linewidth=1.5)
+        ax_m.set_ylim(0.4, 1.0)
+        ax_m.set_title(f'Motor Commands — {label}')
+        ax_m.grid(True, linestyle='--', alpha=0.6)
+        # Y-axis label only on left column; legend only on right column; hide Y-ticks on right
+        if is_left:
+            ax_m.set_ylabel('Motor Cmd\n(normalized)')
+        else:
+            ax_m.tick_params(axis='y', labelleft=False)
+            ax_m.legend(loc='upper right', ncol=2, framealpha=1.0)
+
+        # DShot outputs
+        if len(ul_d["out_t"]) > 0:
+            for i in range(4):
+                ax_o.plot(ul_d["out_t"], ul_d["out_vals"][i],
+                          color=colors[i], label=labels[i], alpha=0.8, linewidth=1.5)
+        ax_o.set_ylim(750, 2000)
+        ax_o.set_title(f'Actuator Outputs — {label}')
+        ax_o.set_xlabel('Time (s)')
+        ax_o.grid(True, linestyle='--', alpha=0.6)
+        if is_left:
+            ax_o.set_ylabel('Motor Output\n(DShot value → RPM)')
+        else:
+            ax_o.tick_params(axis='y', labelleft=False)
+
+        ax_m.set_xlim(t_min, t_max)
+        ax_o.set_xlim(t_min, t_max)
+        ax_m.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
+
+    rot_impact = rot_data["wp_events"].get('Column Impact')
+    fix_impact = fix_data["wp_events"].get('Column Impact')
+
+    _draw_panel(axes[0, 0], axes[1, 0], rot_ul, rot_data["wp_events"],
+                "Rotating Cage", rot_impact, t_min_r, t_max_r, is_left=True)
+    _draw_panel(axes[0, 1], axes[1, 1], fix_ul, fix_data["wp_events"],
+                "Fixed Cage", fix_impact, t_min_f, t_max_f, is_left=False)
+
+    fig.suptitle("Actuator Motor Commands & Outputs — Rotating Cage vs Fixed Cage",
+                 fontsize=14, fontweight="bold", y=0.98)
+
+    # Per-column source labels: left at left-bottom, right at right-bottom
+    rn = rot_data.get("flight_name", "")
+    fn = fix_data.get("flight_name", "")
+    if rn:
+        fig.text(0.02, 0.015, rn, transform=fig.transFigure,
+                 ha='left', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
+                           boxstyle='round,pad=0.2'))
+    if fn:
+        fig.text(0.98, 0.015, fn, transform=fig.transFigure,
+                 ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
+                           boxstyle='round,pad=0.2'))
+
+    plt.tight_layout(rect=[0, 0.035, 1, 0.96])
+    if output_path is not None:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        fig.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.show()
+    print("✅ Combined actuator plot — Rotating | Fixed")
+
+
+def plot_pid_rate_tracking_combined(rot_data, fix_data, output_path=None):
+    """Side-by-side PID rate tracking: Rotating Cage | Fixed Cage.
+
+    Timeline uses _combined_timeline_limits.
+    Each column: roll/pitch/yaw rate setpoint vs actual.
+    """
+    import pyulog
+
+    def _extract_ulog(data):
+        """Extract vehicle_rates_setpoint + vehicle_angular_velocity from ULog."""
+        result = {"sp_t": [], "sp_roll": [], "sp_pitch": [], "sp_yaw": [],
+                  "vel_t": [], "vel_roll": [], "vel_pitch": [], "vel_yaw": []}
+        ulg_path = data.get("ulg_path")
+        if not ulg_path:
+            return result
+        try:
+            ul = pyulog.ULog(ulg_path,
+                             message_name_filter_list=["vehicle_rates_setpoint",
+                                                        "vehicle_angular_velocity"])
+        except Exception as e:
+            print(f"[WARN] Could not load ULog for {data.get('flight_name')}: {e}")
+            return result
+
+        offset_sec = data.get("offset_sec", 0.0)
+        bag_start_ns = data.get("bag_start_ns", 0)
+
+        def _to_rel(t_us):
+            return (t_us * 1e-6) + offset_sec - (bag_start_ns * 1e-9)
+
+        # Setpoints
+        try:
+            ds_sp = ul.get_dataset("vehicle_rates_setpoint")
+            result["sp_t"] = np.array([_to_rel(t) for t in ds_sp.data["timestamp"]])
+            result["sp_roll"] = ds_sp.data["roll"]
+            result["sp_pitch"] = ds_sp.data["pitch"]
+            result["sp_yaw"] = ds_sp.data["yaw"]
+        except Exception:
+            pass
+
+        # Actual angular velocity
+        try:
+            ds_vel = ul.get_dataset("vehicle_angular_velocity")
+            result["vel_t"] = np.array([_to_rel(t) for t in ds_vel.data["timestamp"]])
+            result["vel_roll"] = ds_vel.data["xyz[0]"]
+            result["vel_pitch"] = ds_vel.data["xyz[1]"]
+            result["vel_yaw"] = ds_vel.data["xyz[2]"]
+        except Exception:
+            pass
+        return result
+
+    rot_ul = _extract_ulog(rot_data)
+    fix_ul = _extract_ulog(fix_data)
+
+    t_min_r, t_max_r = _combined_timeline_limits(rot_data["wp_events"])
+    t_min_f, t_max_f = _combined_timeline_limits(fix_data["wp_events"])
+
+    fig, axes = plt.subplots(3, 2, figsize=(16, 12), sharex='col', sharey='row')
+
+    axis_config = [
+        ('Roll Rate Tracking (rad/s)',  'sp_roll',  'vel_roll',  'Roll'),
+        ('Pitch Rate Tracking (rad/s)', 'sp_pitch', 'vel_pitch', 'Pitch'),
+        ('Yaw Rate Tracking (rad/s)',   'sp_yaw',   'vel_yaw',   'Yaw'),
+    ]
+
+    for col_idx, (ul_d, impact_t, label, t_min, t_max) in enumerate([
+        (rot_ul, rot_data["wp_events"].get('Column Impact'), "Rotating Cage", t_min_r, t_max_r),
+        (fix_ul, fix_data["wp_events"].get('Column Impact'), "Fixed Cage", t_min_f, t_max_f),
+    ]):
+        for row_idx, (ylbl, sp_key, vel_key, name) in enumerate(axis_config):
+            ax = axes[row_idx, col_idx]
+            sp_t = ul_d["sp_t"]
+            vel_t = ul_d["vel_t"]
+
+            if len(sp_t) > 0 and len(vel_t) > 0:
+                sp = ul_d[sp_key]
+                vel = ul_d[vel_key]
+                ax.plot(sp_t, sp, color='#444444', linestyle='--',
+                        label=f'Commanded {name} Rate', linewidth=1.5)
+                ax.plot(vel_t, vel, color='#1F77B4' if label == "Rotating Cage" else '#D62728',
+                        linestyle='-', label=f'Actual {name} Rate', linewidth=1.5)
+                sp_interp = np.interp(vel_t, sp_t, sp)
+                abs_err = np.abs(vel - sp_interp)
+                ax.fill_between(vel_t, 0, abs_err, color='purple', alpha=0.15,
+                                label='Absolute Tracking Error')
+                ax.plot(vel_t, abs_err, color='purple', alpha=0.3, linewidth=0.8)
+
+            ax.set_ylabel(ylbl)
+            ax.grid(True, linestyle=':', alpha=0.6)
+            # Legend only on left column (upper left corner)
+            if col_idx == 0:
+                ax.legend(loc='upper left', ncol=3)
+            if impact_t is not None:
+                ax.axvline(x=impact_t, color='#D32F2F', linestyle='--', linewidth=1.2,
+                           label='Impact')
+
+    # Column titles
+    axes[0, 0].set_title("Rotating Cage", fontsize=13, fontweight="bold", color="#006600")
+    axes[0, 1].set_title("Fixed Cage", fontsize=13, fontweight="bold", color="#cc3300")
+    axes[-1, 0].set_xlabel("Time (s)")
+    axes[-1, 1].set_xlabel("Time (s)")
+
+    for col_idx, (t_min, t_max) in enumerate([(t_min_r, t_max_r), (t_min_f, t_max_f)]):
+        axes[0, col_idx].set_xlim(t_min, t_max)
+        axes[0, col_idx].xaxis.set_major_locator(ticker.MultipleLocator(1.0))
+
+    fig.suptitle("PID Rate Controller Tracking Performance — Rotating Cage vs Fixed Cage",
+                 fontsize=14, fontweight="bold", y=0.98)
+
+    # Per-column source labels: left at left-bottom, right at right-bottom
+    rn = rot_data.get("flight_name", "")
+    fn = fix_data.get("flight_name", "")
+    if rn:
+        fig.text(0.02, 0.015, rn, transform=fig.transFigure,
+                 ha='left', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
+                           boxstyle='round,pad=0.2'))
+    if fn:
+        fig.text(0.98, 0.015, fn, transform=fig.transFigure,
+                 ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
+                           boxstyle='round,pad=0.2'))
+
+    plt.tight_layout(rect=[0, 0.035, 1, 0.96])
+    if output_path is not None:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        fig.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.show()
+    print("✅ Combined PID tracking — Rotating | Fixed")

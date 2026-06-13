@@ -62,11 +62,15 @@ def generate_aggregated_imu_plot():
         
         ax2 = ax.twinx()
         
-        # Plot individual thin lines
+        # Plot individual thin traces — each is one flight's IMU data aligned to
+        # its true acceleration peak at t=0. With perfect time alignment the spikes
+        # stack vertically, making the median spike visible. Alpha=0.06 keeps
+        # individual traces faint enough to see the median line through them, while
+        # being visible enough to assess trace density and spread.
         for a_tr in a_arr:
-            ax.plot(t_common, a_tr, color='#D62728', alpha=0.03, linewidth=0.8)
+            ax.plot(t_common, a_tr, color='#D62728', alpha=0.06, linewidth=0.8)
         for g_tr in g_arr:
-            ax2.plot(t_common, g_tr, color='#1F77B4', alpha=0.03, linewidth=0.8)
+            ax2.plot(t_common, g_tr, color='#1F77B4', alpha=0.06, linewidth=0.8)
             
         # Plot Median (Average Trend)
         a_median = np.median(a_arr, axis=0)
@@ -106,8 +110,9 @@ def generate_aggregated_imu_plot():
         labels2 = [l.get_label() for l in lines2]
         ax2.legend(lines2, labels2, loc='upper right', bbox_to_anchor=(0.85, 0.85), frameon=True, facecolor='white', edgecolor='#EAEAEA', fontsize=8)
 
-        # Draw N count
-        ax.text(0.98, 0.02, f"n = {len(a_list)} flights", transform=ax.transAxes,
+        # Draw N count (below x-axis, figure-bottom)
+        fig = ax.get_figure()
+        fig.text(0.98, 0.01, f"n = {len(a_list)} flights", transform=fig.transFigure,
                 ha='right', va='bottom', fontsize=9, fontweight='bold', alpha=0.8,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA', boxstyle='round,pad=0.2'))
 

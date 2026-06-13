@@ -206,16 +206,19 @@ See [`walkthrough_experiments.md`](walkthrough_experiments.md#-experiment-starte
 ## 4. Universal Plotting Standards
 - **100% pure Matplotlib** (no Seaborn)
 - **Filenames:** Use `deg` not `°`
-- **Data truncation:** Dynamically crop to `[WP2−1s, WP3+1s]`
+- **Data truncation:** Dynamically crop to `[WP2−1s, WP3+1s]`. **Combined side-by-side plots** use `[WP2 refined − 0.5s, Column Center Passed + 2.5s]` (see §Combined Plots).
 - **Strict axis limits:** Hardcoded explicit ranges for repeatability
 - **Y-axis truncation for outliers:** Truncate to 6 when outlier compresses range:
   - Recovery area boxplot: `set_ylim(0, 6)`, ticks every 1 cm²
   - Deceleration vs Battery (split & global): `set_ylim(0, 6)`, ticks every 1 m/s²
 - **Enclosure styles:** `<Rotating Cage>` = dashed `--`, `<Fixed Cage>` = solid `-`
 - **Trendlines:** Linear regression (`np.polyfit`), `y = mx + c`, footnote in all plots
-- **Data origin labeling:**
-  - Summary plots: Dynamic `Comparison of Xx Rotating Cage and Yx Fixed Cage flights` in bottom-right or subtitle
-  - Individual plots: Source bag filename/flight ID in bottom-right
+- **Data origin labeling — BELOW x-axis ticks:**
+  All source/filename labels are placed at the bottom of the figure, below the x-axis ticks and axis labels (never inside the axes / data area).
+  - Implementation: `fig.text(0.98, 0.01, flight_name, transform=fig.transFigure, ha='right', va='bottom', fontsize=7.5, ...)`
+  - Summary plots: Dynamic `Comparison of Xx Rotating Cage and Yx Fixed Cage flights` in subtitle or figure-bottom
+  - Individual plots: Flight ID / bag name at figure-bottom in the lower-right corner (below all x-axis labels)
+  - For pie/sunburst plots with two panels: data tables at both bottom-left (beneath Rotating) and bottom-right (beneath Fixed) using `fig.text(0.02, 0.01, ...)` and `fig.text(0.98, 0.01, ..., ha='right')`
 - **Bold titles with `<Condition>`:** Every plot title uses `fontweight='bold'` and wraps condition in `< >` — applies to `fig.suptitle()` and `ax.set_title()`
 - **Fixed Y-axis limits (2026-06-10) — no dynamic scaling:**
 
@@ -241,6 +244,31 @@ See [`walkthrough_experiments.md`](walkthrough_experiments.md#-experiment-starte
 - **Timeline events:** Three vertical lines: `Exp. Start-point` (dotted purple/grey), `💥 Impact` (dash-dotted crimson, label on LEFT), `Exp. End-point` (dotted purple/grey)
 - **Impact window shading:** Light red `[t−0.05s, t+0.35s]` across all subplots
 - **Battery bins:** Red [0–40%], Orange (40–60%], Yellow-Green (60–80%], Green (80–100%]
+
+- **Impact Angle colormap (RdYlGn — applies to all angle-colored plots):**
+  Use `plt.cm.RdYlGn` with `norm = plt.Normalize(0, 90)`, where **0° (direct/orthogonal) = red** and **90° (glancing/tangential) = green**.
+  - Scatter plots: `c=df['impact_angle'], cmap=cmap, norm=norm` with a colorbar
+  - Categorical bins (e.g. sunburst wedges, stacked bars): map bin midpoint → cmap color
+    - `<30°` → midpoint 15° → reddish
+    - `30-40°` → midpoint 35° → orange–yellow
+    - `40-50°` → midpoint 45° → yellow–green
+    - `50-60°` → midpoint 55° → light green
+    - `60-90°` → midpoint 75° → green
+  - `No Impact` category always `#B0B0B0` (neutral grey)
+
+- **Sunburst / Nested Pie Charts (2026-06-13 standard):**
+  - One panel per cage condition (Rotating left, Fixed right)
+  - Outermost ring: Impact Detected vs No Impact in condition colour (Rotating = `#1F77B4` blue, Fixed = `#D62728` red) — this matches the standard enclosure convention
+  - Inner ring(s): Per-mission angle distribution coloured by the RdYlGn angle colormap; grey for No Impact
+  - Percent labels inside wedges (`autopct`), omitting segments <3% for legibility
+  - Centre text: condition name + total N
+  - Figure-bottom annotation: data tables printed in both bottom-left and bottom-right corners showing the exact aggregated figures
+
+- **Data frame annotation (summary plots):**
+  Two compact tables at figure-bottom showing the exact aggregated figures used:
+  - Left-bottom under Rotating Cage panel: mission breakdown table
+  - Right-bottom under Fixed Cage panel: mission breakdown table
+  - Format: plain monospace text via `fig.text()` or `ax.text()`
 
 ## 5. Specific Plot References
 
@@ -287,6 +315,20 @@ These are called on-the-fly from the notebook with representative flight data. T
 
 19. **Deceleration vs Battery (split & global):** `set_ylim(0,6)`, ticks every 1 m/s². Trendline separation visible after truncation.
 
+### Combined Side-by-Side Plots (`experiments_analysis.ipynb`)
+
+20. **Combined EKF Kinetic Profile (`plot_ekf_kinetic_combined`):** 2×2 grid, figsize=(16,10). Rotating left, Fixed right. Timeline: `[WP2 − 0.5s, Column Center Passed + 2.5s]`. Legend only left column (upper left). No Exp. End-point label. Source labels: left-bottom for Rotating, right-bottom for Fixed. Output: `Combined EKF Kinetic Profile.png`.
+
+21. **Combined IMU Dynamics (`plot_imu_dynamics_combined`):** 1×2 panels, figsize=(14,7), twin Y per panel (accel left, gyro right). Legend only left panel (upper left). No Exp. End-point label. Per-column source labels. Output: `Combined IMU Collision Dynamics.png`.
+
+22. **Combined IMU XYZ (`plot_imu_xyz_combined`):** 3×2 grid, figsize=(16,12). Twin axes per subpanel. Accel Y-axis labels only on left column; gyro Y-axis labels only on right column. Single stacked fig-level legend in right upper corner. No Exp. End-point label. Per-column source labels. Output: `Combined IMU XYZ Components.png`.
+
+23. **Combined Actuator Commands (`plot_actuators_and_status_combined`):** 2×2 grid, figsize=(16,10). Y-axis labels only on left column; legends only on right column. Per-column source labels. Output: `Combined Actuator Commands.png`.
+
+24. **Combined PID Tracking (`plot_pid_rate_tracking_combined`):** 3×2 grid, figsize=(16,12). Legend only left column (upper left). Per-column source labels. Output: `Combined PID Tracking.png`.
+
+All combined plots use `get_combined_timeline_limits()` (+2.5s after Column Center Passed). Excluded: trajectory (no time axis) and battery sag. Impact line is THIN (lw=1.2) everywhere. Exp. Start-point label vertically centred on dotted line. Bottom margin reserved (7% of figure height via `tight_layout(rect=[0, 0.07, 1, 0.96])`) — source labels sit at y=0.025, clear of X-axis descriptions.
+
 ## 6. Workspace Organization & Tool Cleanup
 - `dev_logs/analysis/`: Only core production pipelines (`db_pipeline.py`, notebooks)
 - `dev_logs/scratch/`: One-off scripts, prototyping, temp checks
@@ -314,6 +356,23 @@ To prevent repeat attempts of low-value visualizations:
 | Vehicle Status Panel (in actuator plot) | **Active** | **Retired** (2026-06-12) | Showed nothing useful — removed from actuator plot |
 
 ## 9. Execution Log — Italic Notes (Most Recent First)
+
+### Combined plots Round 2 — bottom margin, per-column labels, source below x-axis
+*[2026-06-13] **Combined plots + trajectory refinements:**
+(a) Halved bottom margins on all 5 combined plots: `tight_layout(rect=[0, 0.035, 1, 0.96])`, source labels at `y=0.015` — eliminates X-axis description overlap with source labels.
+(b) EKF kinetic: right-column Y-labels suppressed (`labelleft=False`).
+(c) IMU dynamics: per-column twin-Y — left gets accel Y-label, right gets gyro Y-label.
+(d) IMU XYZ: plots pushed down under stacked legend (right upper corner), suptitle centred in whitespace (`y=0.94`), legend at `bbox_to_anchor=(0.98, 0.965)`, `rect=[0, 0.035, 1, 0.925]` — full (16×12) height preserved.
+(e) Actuator combined: right-column Y-ticks hidden.
+(f) Trajectory plots (both): `tight_layout(rect=[0, 0.03, 1, 0.97])` — tighter bottom margin.
+(g) Flight name labels moved from axis-space (`transAxes`) to figure-bottom (`transFigure`) in trajectory, actuators, and aggregated IMU plots.
+**How to verify:** Run notebook → 6 combined/trajectory PNGs regenerate with new layouts.
+**Where:** `kin_plot_kinematics.py`, `kin_plot_actuators.py`, `kin_plot_trajectory.py`, `plot_aggregated_imu_dynamics.py`, `experiments_analysis_skill.md`.*
+
+### Comprehensive code documentation pass — full pipeline
+*[2026-06-13] Added detailed design-rationale docstrings and inline comments across every major analysis module. Covers: (1) `kin_calculator.py` — resampling strategies (100 Hz rationale, linear vs PCHIP, adaptive jitter logic for Rotating vs Fixed Cage), SG velocity pipeline, EKF coordinate NED→ENU alignment, waypoint detection tiers, column impact/collision geometry; (2) `db_pipeline.py` — two-tier clock sync (timesync_status vs EKF velocity correlation fallback), battery rate caching rationale (flight-level vs per-pass), motor metrics extraction, PID tracking error; (3) `eda_angle_prediction.py` — Huber IRLS regressor with full derivation (MAD scale, weight function, convergence); (4) `eda_impact_to_end.py` — normal MLE fitting (ddof=1), PX4 µs→s conversion; (5) `rf_angle_prediction.py` — dual Pearson+Spearman filter purpose, redundancy filter logic; (6) `kin_plot_imu_spread.py` — complete docstring with impact-vs-regular window definitions; (7) `kin_plot_statistics.py` — metric definitions, boxplot construction style.
+**Also:** §4 updated with new data-origin labeling rule (below x-axis, figure-bottom), impact angle RdYlGn colormap spec (0°=red, 90°=green), combined plot timeline note. Aggregated IMU plot alpha 0.03→0.06 for better visibility. `thesis/references.bib` +1 ref.
+**Where:** All files listed in git diff. Full documentation pass across 21 source files.*
 
 ### Kinetic y-limits truncated + All plots routed to thesis/plots/ + Actuator plot fixed + Allocator retired
 *[2026-06-12] **Velocity y-limits** truncated from 0–1.25 to 0–0.85 across all four kinetic variants (MoCap raw/splined, EKF kinetic, EKF viewer/dual). **Tangential accel** from ±12 to ±8, ticks every 2. Applied consistently to `plot_velocity_profile`, `plot_ekf_kinetic_profile`, `plot_ekf_velocity_from`, `plot_ekf_dual_comparison`, and their `draw_timeline_markers` bounds.
@@ -390,3 +449,300 @@ To prevent repeat attempts of low-value visualizations:
 **Full pipeline re-run:** `python3 -m dev_logs.analysis.database.db_pipeline --today --force-plot` — 179/179 passes, 0 errors, 1,253 PNGs regenerated (7 types × 179 passes) with corrected Column Impact alignment.
 
 **Where:** `db_pipeline.py`, `db_manager.py`, `db_cache_imu.py`, `plot_aggregated_imu_dynamics.py`, `experiments_analysis_skill.md`.*
+
+## 10. Calculation Techniques Reference
+
+This section documents every mathematical technique, algorithm, and signal-processing method used across the analysis pipeline, organized by domain.  Each entry states **what** is computed, **how** it is computed, and **where** it lives.
+
+### 10.1 Velocity & Acceleration Derivation
+
+#### 10.1.1 MoCap Position Resampling (`kin_calculator.py:6–71`)
+**What:** Raw MoCap pose data arrives at irregular 10–120 Hz.  We resample onto a uniform 100 Hz grid for compatible differentiation.
+
+**How:**
+- **Linear interpolation** (`np.interp`) — preserves raw data character (no PCHIP overshoot)
+- **Dropout detection:** `np.diff(raw_t) > 1/30` flags gaps.  If >20 gaps → "high-jitter" (Fixed Cage), only repair gaps >100 ms with tight 2-sample margin.  If ≤20 gaps → "low-jitter" (Rotating Cage), mark gaps + 9-sample SG-window margin.
+- **Ringing mask:** Boolean mask marking gap + margin regions.  Used downstream to surgically excise SG boundary artifacts (ringing at discontinuity edges).
+
+#### 10.1.2 Savitzky-Golay Velocity Differentiation (`kin_calculator.py:73–202`)
+**What:** Derive velocity and acceleration from resampled position on a uniform 100 Hz grid.
+
+**How:**
+- **SG filter** with `window_length=19` (≈190 ms), `polyorder=3` (cubic), `deriv=1`
+- **Scaling:** `savgol_filter(..., deriv=1) / median_dt` — converts from sample-derivative to physical m/s
+- **Adaptive window:** Shrunk to `n_points // 2 * 2 - 1` if data shorter than window, clamped to ≥3
+- **Fixed Cage Butterworth:** 2nd-order, 4 Hz cutoff, zero-phase (`filtfilt`).  Applied after SG diff on velocity arrays to suppress dropout kink amplification (~10 Hz kinks vs. ~4 Hz collision dynamics).
+- **Disabled approach (2026-06-08):** 12 Hz Butterworth pre-filter on position *before* SG diff.  Failed because 12 Hz cutoff too close to 10 Hz kink frequency — couldn't separate noise from signal.
+- **Surgical ringing removal:** After SG diff, linearly interpolate over ringing mask regions (replaces SG boundary spikes with clean straight-line bridges).
+
+#### 10.1.3 EKF Velocity (PX4 Onboard Odometry) (`kin_calculator.py:204–313`)
+**What:** Use PX4 Extended Kalman Filter velocity estimates instead of MoCap-derived velocity.  The EKF fuses MoCap position (10–120 Hz) + IMU acceleration (250 Hz) internally, producing a velocity signal that is inherently smooth even during MoCap dropouts.
+
+**How:**
+- **Coordinate alignment:** NED→ENU: `vx = vx_raw`, `vy = −vy_raw`, `vz = −vz_raw` (matches `build_dataframes` convention)
+- **Resample to 100 Hz** via `interp1d(kind='linear')` onto MoCap-aligned time grid
+- **Speed:** `sqrt(vx² + vy² + vz²)`
+- **Acceleration:** SG `deriv=1` on velocity (same window=19, polyorder=3 as MoCap pipeline), fallback `np.gradient`
+- **Override in metrics:** When `df_ekf_kin` is provided to `calculate_metrics()`, all velocity/accel columns in `df_mocap` are replaced with EKF values via `np.interp` onto MoCap time grid before metric extraction
+
+### 10.2 Waypoint Detection & Column Impact Timing
+
+#### 10.2.1 Three-Tier Waypoint Detection (`kin_calculator.py:373–618`)
+**What:** Locate the 4 mission waypoints (WP1–WP4) and the column impact instant for each flight pass.
+
+**How — Priority 1 (Mission SSoT):**
+- Import mission class via `detect_mission_class()` (45°/75° from label + setpoint coordinate heuristics)
+- Simulate `mission.on_start()` to extract nominal `exp_sp` (WP2) and `exp_ep` (WP3) coordinates
+- Build `wp_sequence` list from mission attributes
+
+**How — Priority 2 (Dynamic MCAP waypoints):**
+- Accept `dynamic_waypoints` from `build_dataframes()` only if exactly 4 were found (>4 = PX4 trajectory interpolation noise, not real WPs)
+
+**How — Priority 3 (Hardcoded fallback):**
+- 45°: lane x=0.248, 75°: lane x=0.186.  WPs: (x, 1.200), (x, 0.950), (x, −1.200), (0, 0.300)
+
+**Sequential command-transition search:**
+- When the flight director transitions from commanding WP1 → WP2, WP1 is "reached"
+- Detection: `sqrt((x_cmd − next_wx)² + (y_cmd − next_wy)²) < 0.05 m` on `df_setpoint`
+- Search pointer advances 0.1 s after each match to prevent self-triggering
+- Failed passes: pointer jumps 5 s forward to next WP1→WP2 transition
+
+**MoCap proximity fallback:**
+- For truncated/segmented passes with no setpoint data: find `argmin` distance to WP2 and WP3 nominal coordinates
+
+#### 10.2.2 WP2 Refinement (`kin_calculator.py:563–588`)
+**What:** The WP2 command timestamp marks when PX4 *accepts* the exp_sp waypoint — but the drone may still be stationary.  Refine to the moment forward motion actually begins.
+
+**How:**
+1. Find when drone crosses Y = 0.70 m (toward WP3 at Y = −1.2)
+2. In the pre-cross window, find the **last** timestamp where speed < 0.10 m/s
+3. Falls back to minimum-speed point in window, then to end-of-window
+
+#### 10.2.3 Column Passed & Column Impact (`kin_calculator.py:590–613`)
+**How — Column Passed:**
+- In sweep window [WP2, WP3]: `argmin |y − column_y|` — instant of closest Y to column
+
+**How — Column Impact (collision instant):**
+- **Proximity gate:** Minimum 2D distance from drone to column center must be ≤ 0.38 m (≈cage radius + column radius + margin)
+- **Speed peak search:** In window `[t_closest − 0.25 s, t_closest + 0.1 s]`, find `argmax speed` — the instant of peak deceleration onset
+- Falls back to geometric closest-approach time if no speed data
+
+### 10.3 Clearance, Collision & Path Tracking
+
+#### 10.3.1 Closest Clearance (`kin_calculator.py:761–765`)
+**What:** Minimum surface-to-surface distance between drone cage and column.
+
+**How:**
+- `dist_to_col_center = sqrt((x − column_x)² + (y − column_y)²)`
+- `closest_clearance = min(dist) − column_radius − cage_radius`
+- Negative value → physical penetration (collision detected)
+
+#### 10.3.2 Perpendicular Path Tracking Error (`kin_calculator.py:695–702`)
+**What:** Lateral deviation from the ideal straight line WP2→WP3.
+
+**How:**
+- Point-to-line distance formula: `|(y₂−y₁)x₀ − (x₂−x₁)y₀ + x₂y₁ − y₂x₁| / √((y₂−y₁)² + (x₂−x₁)²)`
+- Applied to every MoCap sample in the sweep window
+- **Metrics:** Mean error (accuracy), Max error (worst excursion), Std Dev × 1000 = `path_spread_sdld` (mm)
+
+#### 10.3.3 Recovery Area (`kin_calculator.py:846–875`)
+**What:** Integrated spatial error envelope after collision, measuring how much the drone deviates from the nominal path.
+
+**How:**
+- **Path projection:** Each post-impact point is projected onto the nominal WP2→WP3 line via dot product with unit direction vector: `s = (p − wp2) · û`
+- **Sort by s** (travel distance along path) to ensure monotonic integration
+- **Trapezoidal integration:** `np.trapz(d_sorted, s_sorted) × 1000` → mm·m (area under deviation curve)
+
+#### 10.3.4 Impact Angle (`kin_calculator.py:818–836`)
+**What:** Angle between the drone's velocity vector and the collision normal (vector from drone to column center).
+
+**How:**
+- Collision normal: `r = column_center − drone_position`
+- Velocity vector: `v = (vx, vy)` at impact instant
+- `cos(θ) = (r · v) / (|r| · |v|)`, clamped to [−1, 1]
+- `θ = arccos(cos(θ))` in degrees
+- If θ > 90°, reflect: `θ = 180 − θ`
+
+### 10.4 IMU Shock & Structural Dynamics
+
+#### 10.4.1 IMU Signal Preprocessing (`db_loader.py:244–247`)
+**How:**
+- **Acceleration magnitude:** `a_mag = sqrt(ax² + ay² + az²)`
+- **Deviation from gravity:** `a_deviation = |a_mag − 9.81|` — isolates collision forces from steady 1g
+- **Angular velocity magnitude:** `g_mag = sqrt(gx² + gy² + gz²)`
+
+#### 10.4.2 Peak Shock Extraction (`kin_calculator.py:888–921`)
+**What:** Maximum linear and rotational shock during collision.
+
+**How:**
+- **Contact window:** [t_impact − 0.05 s, t_impact + 0.35 s] — 400 ms total
+- **Peak accel:** `max(a_deviation)` over contact window, per-axis `max(|ax|)`, Z-axis `max(|az + 9.81|)` (restores absolute including gravity)
+- **Peak gyro:** `max(g_mag)`, per-axis `max(|gx|)`, etc.
+
+#### 10.4.3 Integrated Shock Energy (`kin_calculator.py:923–943`)
+**What:** Time-integrated IMU magnitude over the 400 ms contact window — measures total shock "dose."
+
+**How:**
+- **Trapezoidal integration:** `np.trapz(signal, t_vals)` — numerically integrates the area under the signal curve
+- Applied to `a_deviation`, per-axis `|ax|`, `|az+9.81|`, `g_mag`, per-axis `|gx|`, etc.
+- Units: accel energy [g·s], gyro energy [rad]
+
+#### 10.4.4 Settling Time (`kin_calculator.py:945–958`)
+**What:** Time from impact until shock amplitude returns to baseline.
+
+**How:**
+- **Accel settling:** Last timestamp where `a_deviation ≥ 1.5 m/s²`
+- **Gyro settling:** Last timestamp where `g_mag ≥ 0.5 rad/s`
+- If no samples above threshold → 0.0 (immediate recovery)
+
+#### 10.4.5 Vibration & Spread (`kin_calculator.py:912–920, 960–976`)
+**What — Vibration (post-impact):** Std dev over stabilization window [t+0.2 s, t+3.0 s] (skip first 0.2 s to exclude initial shock spike).  Measures post-collision oscillation amplitude.
+
+**What — Spread (impact vs. regular):**
+- Impact spread: `std(ax)` over [t−50 ms, t+350 ms] (400 ms), in g
+- Regular spread: `std(ax)` over [t−1050 ms, t−50 ms] (1.0 s pre-impact), in g
+- Captures high-frequency "buzz" vs. normal flight vibration
+
+#### 10.4.6 Aggregated IMU Display (`db_cache_imu.py` → `plot_aggregated_imu_dynamics.py`)
+**How — Cache:**
+- For each impact flight: load IMU from MCAP, align to Column Impact time, extract `[t_rel −1.0, +2.0]` window
+- Store `t_rel`, `a_deviation`, `g_mag` arrays in pickle
+- **Why:** Avoids re-loading 179 MCAPs (200MB+ each) for every aggregated plot regeneration
+
+**How — Plot:**
+- Group traces by condition, compute per-timestep mean ± SEM across all flights
+- Display as time-aligned overlay with shaded confidence bands
+
+### 10.5 Motor & Actuator Analysis
+
+#### 10.5.1 MCAP-ULog Clock Synchronization (`db_pipeline.py:70–145`)
+**What:** Align MCAP bag-relative timestamps with PX4 ULog microsecond timestamps.
+
+**How — Primary (timesync_status):**
+- Read `/fmu/out/timesync_status` from MCAP → `observed_offset` (ns)
+- `offset_sec = −(observed_offset × 1e−6)`
+- Converts ULog µs to MCAP-relative seconds: `(t_us × 1e−6) + offset_sec − bag_start_ns/1e9`
+
+**How — Fallback (EKF velocity correlation):**
+- Pick one `vehicle_odometry` message from MCAP (ROS timestamp + velocity)
+- Scan all `vehicle_local_position` messages in ULog for closest velocity vector (minimum squared error)
+- Compute offset from matching timestamps
+
+#### 10.5.2 Motor Command Metrics (`db_pipeline.py:148–245`)
+**What:** Extract motor response to collision from ULog `actuator_motors`.
+
+**How:**
+- **Average signal:** `(control[0] + control[1] + control[2] + control[3]) / 4.0`
+- **Before window:** [t_impact − 1.0, t_impact) → `avg_before`, `max_before`
+- **After window:** [t_impact, t_impact + 1.0] → `avg_after`, `max_after`
+- **Thrust surge:** `max_after − avg_before` — how much harder motors work after impact
+- **Imbalance (0.4 s):** Mean of per-timestamp `std(control[0:4])` over [t_impact, t_impact+0.4s] — measures asymmetric motor response
+- **Max actuator output:** Scan `actuator_outputs` for peak PWM, convert: `(PWM − 1000) / 10.0 → %`
+
+#### 10.5.3 Control Allocator Saturation (`db_pipeline.py:271–335`)
+**What:** Time spent at actuator saturation limits in 1 s post-impact.
+
+**How — 3-tier fallback:**
+1. **actuator_motors (10 Hz):** Saturation if any `control[i] ≥ 0.999` or `≤ 0.001`.  Sum `dt` of saturated samples.
+2. **actuator_outputs (50 Hz):** Saturation if any output ≥ 1999 (or 2000) or ≤ 115 (or 1000).  Auto-detects PWM range.
+3. **control_allocator_status:** Saturation if any `actuator_saturation[i] != 0`.
+- **Time-weighted:** Sum of `dt` values for saturated samples, not sample count
+- **Unallocated torque norm:** `sqrt(tx² + ty² + tz²)` from control_allocator_status
+- **Thrust achieved %:** `mean(thrust_setpoint_achieved) × 100`
+
+#### 10.5.4 PID Rate Tracking Error (`db_pipeline.py:354–375`)
+**What:** RMS error between commanded angular rate setpoint and actual angular velocity.
+
+**How:**
+- Interpolate `vehicle_rates_setpoint` timestamps onto `vehicle_angular_velocity` timestamps via `np.interp`
+- **Error:** `roll_err = actual_xyz[0] − interpolated_roll_sp`
+- **RMS:** `sqrt(mean(err²))` for roll, pitch, yaw over [t_impact, t_impact+1.0s]
+
+### 10.6 Battery Efficiency
+
+#### 10.6.1 Flight-Level Battery Analysis (`db_unsliced_flights_bat_analyser.py`)
+**What:** Battery voltage and capacity drain rates computed from full-flight (unsliced) MCAPs.
+
+**How:**
+- **Memory-safe streaming:** Only 4 topics loaded from MCAP (poses, battery_status, vehicle_status, vehicle_odometry) — avoids OOM on 200MB+ files
+- **Milestones:** Arm, Takeoff (Z > 0.15 m), Landing (last Z > 0.15 m), Disarm
+- **Voltage drop rate:** `(V_takeoff − V_landing) / flying_min` [V/min]
+- **Capacity drain rate:** `(SOC_takeoff − SOC_landing) / flying_min` [%/min]
+- **Negative prevention:** `max(0.0, x)` on all drop values
+- **Per-pass lookup:** `db_pipeline.py` reads flight-level rates from `flights_battery_efficiency` table (per-pass MCAP windows are ~10 s — too short for meaningful battery trend)
+
+#### 10.6.2 Nearest-Timestamp Battery Query (`kin_calculator.py:620–626` → `db_unsliced_flights_bat_analyser.py:115–121`)
+**How:** Binary search via `np.searchsorted(t_array, t_query)`, clamped to [0, len−1], returns nearest value.
+
+### 10.7 Statistical & ML Analysis
+
+#### 10.7.1 Trendlines & Regression
+**How — Simple linear:** `np.polyfit(x, y, 1)` → `y = mx + c` (used in summary notebook overlay plots)
+
+**How — Robust Huber regressor (`eda_angle_prediction.py:157–190`):**
+- **Huber loss:** Quadratic for |u| ≤ δ, linear for |u| > δ — down-weights outlier influence
+- **IRLS algorithm:**
+  1. Initial OLS fit via normal equations (`np.linalg.lstsq`)
+  2. Compute residuals, estimate scale: `σ̂ = MAD(residuals) / 0.6745` (robust σ under Gaussian)
+  3. Compute weights: `w_i = 1.0` if `|u_i| ≤ δ`, else `δ / |u_i|`
+  4. Weighted least squares: `β = (XᵀWX)⁻¹XᵀWy`
+  5. Iterate until `||β_new − β_old|| < tol`
+- **δ = 1.345:** Standard value for 95% asymptotic efficiency under normality
+- **Pseudo-R²:** `1 − SS_res / SS_tot` (same formula as OLS R² but with Huber fit)
+
+#### 10.7.2 Correlation Analysis
+**How — Pearson r (`scipy.stats.pearsonr`):**
+- Measures linear correlation strength and direction
+- Significance: `*** p<0.001`, `** p<0.01`, `* p<0.05`
+
+**How — Spearman ρ (`scipy.stats.spearmanr`):**
+- Rank-based correlation — captures monotonic (not just linear) relationships
+- Used alongside Pearson in RF feature selection to catch non-linear signals
+
+#### 10.7.3 Statistical Tests (Between-Condition Comparison)
+**How — Welch's t-test (`scipy.stats.ttest_ind, equal_var=False`):**
+- Tests for difference in means without assuming equal variance
+- Parametric (assumes approximate normality)
+
+**How — Mann-Whitney U (`scipy.stats.mannwhitneyu`):**
+- Non-parametric rank-sum test — no distribution assumption
+- Used alongside Welch's for robustness
+
+**How — Cohen's d effect size:**
+- `d = (μ₁ − μ₂) / √((σ₁² + σ₂²) / 2)` — pooled standard deviation
+- Interpret: |d| < 0.2 = negligible, 0.2–0.5 = small, 0.5–0.8 = medium, >0.8 = large
+
+#### 10.7.4 Normal Distribution Fit (`eda_impact_to_end.py:161–165`)
+**How:** `scipy.stats.norm.pdf(x, μ, σ)` with MLE parameters: μ = sample mean, σ = sample std (ddof=1).  Overlaid on density histogram for visual normality check.
+
+#### 10.7.5 Random Forest Angle Prediction (`models/rf_angle_prediction.py`)
+**What:** Predict impact angle from IMU features using ensemble learning.
+
+**Feature selection:**
+- Broad filter: |Pearson r| or |Spearman ρ| > 0.3
+- Redundancy removal: compute pairwise |r| matrix (upper triangle), drop weaker of each pair with |r| > 0.85
+
+**Model:**
+- `RandomForestRegressor(n_estimators=200, max_features='sqrt')` — ensemble of 200 decorrelated trees
+- **Stratified 5-fold CV:** `StratifiedKFold` with angle quartile bins — ensures each fold has representative angle distribution
+- **Nested grid search:** Outer CV for evaluation, inner CV for `max_depth ∈ [3,4,5,6]` × `min_samples_leaf ∈ [3,5,7]`
+- **MDI importance:** Mean Decrease in Impurity — how much each feature reduces variance across all tree splits
+- **Permutation importance:** `sklearn.inspection.permutation_importance` with 20 repeats — drop-column method, more reliable than MDI
+- **OOB score:** Out-of-bag R² — unbiased estimate using samples not in each tree's bootstrap
+
+**Evaluation:**
+- Actual-vs-predicted scatter with ±5° band, residuals-vs-predicted check
+- Learning curve: R² vs training size, 8 points from 30% to 100%
+- Cross-condition transfer: train on Fixed Cage → test on Rotating Cage
+- Huber baseline: top-1-feature linear model vs multi-feature RF
+
+### 10.8 Data Storage & Caching
+
+#### 10.8.1 SQLite Schema Migration (`db_manager.py:131–333`)
+**How:** `CREATE TABLE IF NOT EXISTS` for initial schema, then `ALTER TABLE ADD COLUMN` for each new column (catches `OperationalError` if already exists) — incremental, backwards-compatible schema evolution.
+
+#### 10.8.2 Trajectory Cache (`db_cache_trajectories.py`)
+**How:** Query DB for impacted flights, load each MCAP once, extract `(x, y, z, t)` arrays + column position, pickle to disk.  179 flights × ~10 s trajectories — loading from cache is instant vs. minutes from raw MCAP.
+
+#### 10.8.3 Pass Exclusion Config (`db_manager.py:42–121`)
+**How:** JSON-based `config_db.json` maps `folder_name → {excluded: true, reason, notes, passes: [...]}`.  Human review overrides the clearance-based `impact_detected` heuristic.  `apply_exclusion_config_to_db()` syncs to SQLite `excluded` column.

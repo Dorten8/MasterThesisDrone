@@ -172,17 +172,38 @@ def huber_regressor(x, y, delta=1.345, max_iter=100, tol=1e-5):
     """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
+    # Design matrix: [x, 1] for slope + intercept
     X = np.vstack([x, np.ones_like(x)]).T
-    # Initial OLS fit
+    # ── Step 1: Initial OLS fit via least-squares normal equations ───────────
+    # Ordinary Least Squares gives starting coefficients; these will be refined
+    # iteratively by down-weighting outliers in subsequent IRLS steps.
     beta = np.linalg.lstsq(X, y, rcond=None)[0]
+    # ── IRLS (Iteratively Reweighted Least Squares) loop ─────────────────────
     for _ in range(max_iter):
         predictions = X @ beta
         residuals = y - predictions
+        # ── Step 2: Robust scale estimate via MAD ────────────────────────────
+        # MAD (Median Absolute Deviation) is a robust alternative to std.
+        # mad / 0.6745 calibrates MAD to be consistent with σ under normality
+        # (i.e., for Gaussian data, MAD/0.6745 ≈ σ).
         mad = np.median(np.abs(residuals - np.median(residuals)))
         scale = mad / 0.6745 if mad > 1e-5 else 1.0
+        # ── Step 3: Standardized residuals ───────────────────────────────────
         u = residuals / scale
+        # ── Step 4: Huber weight function ────────────────────────────────────
+        # w(u) = 1.0           if |u| ≤ delta   (inlier: full weight)
+        #        delta / |u|   if |u| > delta   (outlier: down-weighted)
+        # This gives OLS-like efficiency on inliers while bounding the influence
+        # of outliers (delta=1.345 → 95% asymptotic efficiency under normality).
         w = np.where(np.abs(u) <= delta, 1.0, delta / np.abs(u))
+        # ── Step 5: Weighted Least Squares via normal equations ──────────────
+        # Solve (Xᵀ W X) β = Xᵀ W y, where W = diag(w).
+        # The element-wise multiplication w[:, None] * X applies weights to each
+        # row of the design matrix; beta_new minimizes Σ w_i (y_i − x_iᵀβ)².
         beta_new = np.linalg.solve(X.T @ (w[:, None] * X), X.T @ (w * y))
+        # ── Step 6: Convergence check on coefficient norm ────────────────────
+        # If the change in β between iterations is below tol, the IRLS has
+        # converged to a stable M-estimate. Break early to save computation.
         if np.linalg.norm(beta_new - beta) < tol:
             beta = beta_new
             break
@@ -210,18 +231,25 @@ def load_impact_data(condition='Fixed Cage'):
         No NaN values in any of these columns.
     """
     print("📡 Loading flight data from SQLite database...")
+    # Pull the full flights_summary table from the experiments_summary.db SQLite
+    # database via the shared db_manager helper (avoids raw SQL in analysis code).
     df_all = get_database_df()
 
-    # Filter: only collisions with detected impact for the given condition
+    # Filter: only collisions with detected impact for the given condition.
+    # impact_detected == 1 ensures we only analyze flights where the sensing
+    # pipeline confirmed an actual obstacle collision (not a missed approach).
     df = df_all.query(f"impact_detected == 1 and condition == '{condition}'").copy()
     print(f"   → {len(df)} {condition} impact flights found (out of {len(df_all)} total).")
 
-    # Keep only relevant columns
+    # Keep only relevant columns: the target variable (impact_angle), a covariate
+    # (battery_at_start for coloring), and all IMU feature columns.
     keep_cols = ['impact_angle', 'battery_at_start'] + IMU_COLS
+    # dropna() removes any rows where at least one IMU feature is missing,
+    # ensuring every flight in the analysis has a complete sensor footprint.
     df = df[keep_cols].dropna()
     print(f"   → {len(df)} flights with complete IMU data after dropping NaN rows.")
 
-    # Quick summary stats
+    # Quick summary stats to verify data quality and range coverage
     print(f"   → impact_angle range: [{df['impact_angle'].min():.1f}°, {df['impact_angle'].max():.1f}°]")
     print(f"   → battery_at_start range: [{df['battery_at_start'].min():.1f}%, {df['battery_at_start'].max():.1f}%]")
 
@@ -257,7 +285,11 @@ def plot_correlation_heatmap(df, condition='Fixed Cage', save_path=None, show=Tr
     cbar_fraction : float
         Colorbar width fraction (default 0.06 — override from notebook).
     """
-    # Compute Pearson r and p-value for every IMU column vs impact_angle
+    # Compute Pearson r and p-value for every IMU column vs impact_angle.
+    # Pearson r measures the linear correlation between two variables:
+    #   r = Σ(x_i − x̄)(y_i − ȳ) / sqrt(Σ(x_i − x̄)² Σ(y_i − ȳ)²)
+    # r ranges from −1 (perfect negative linear) to +1 (perfect positive linear),
+    # with 0 meaning no linear relationship.
     records = []
     for col in IMU_COLS:
         r, p = pearsonr(df[col], df['impact_angle'])
@@ -272,7 +304,10 @@ def plot_correlation_heatmap(df, condition='Fixed Cage', save_path=None, show=Tr
     fig_height = max(6, n * 0.40)
     fig, ax = plt.subplots(figsize=(figsize_width, fig_height), dpi=150)
 
-    # Color each cell by its r value
+    # Color each cell by its r value using the coolwarm diverging colormap.
+    # coolwarm maps −1 → cool blue (negative correlation), +1 → warm red
+    # (positive correlation), and 0 → white (no correlation). The Normalize
+    # object with vmin=−1, vmax=1 ensures the full colormap range is used.
     cmap = plt.cm.coolwarm
     norm = plt.Normalize(-1, 1)
     values = corr_df['r'].values.reshape(-1, 1)
@@ -287,12 +322,21 @@ def plot_correlation_heatmap(df, condition='Fixed Cage', save_path=None, show=Tr
     ax.set_xlim(-0.5, 1.5)
 
     # ── Group color sidebar on the left edge ────────────────────────────────
+    # Each feature is painted with a colored strip indicating its feature
+    # group (e.g., Peak Accel, Vibration Gyro). This makes it easy to visually
+    # scan which categories of IMU measurements correlate most strongly.
     for i, grp in enumerate(corr_df['group']):
         ax.fill_between([-0.5, -0.34], i - 0.5, i + 0.5,
                         color=GROUP_COLORS.get(grp, '#CCCCCC'), alpha=0.7,
                         edgecolor='none', transform=ax.get_transform())
 
     # ── Annotate each cell with r value and significance stars ──────────────
+    # Significance stars follow the standard convention:
+    #   ***  p < 0.001  (highly significant)
+    #   **   p < 0.01   (very significant)
+    #   *    p < 0.05   (significant)
+    # No star means the correlation is not statistically distinguishable from
+    # zero at the 95% confidence level.
     for i, (_, row) in enumerate(corr_df.iterrows()):
         sig = ''
         if row['p'] < 0.001:
@@ -368,7 +412,10 @@ def plot_top3_scatter(df, condition='Fixed Cage', save_path=None, show=True):
     show : bool
         If True (default), calls plt.show() for inline notebook display.
     """
-    # Find top 3 features by |r|
+    # Find top 3 features by |r| — absolute Pearson correlation with impact_angle.
+    # Sorting by absolute value ensures we capture both strong negative and strong
+    # positive linear relationships; these are the most promising univariate
+    # predictors of impact angle.
     r_vals = {col: pearsonr(df[col], df['impact_angle'])[0] for col in IMU_COLS}
     top3 = sorted(r_vals, key=lambda c: abs(r_vals[c]), reverse=True)[:3]
 
@@ -380,7 +427,10 @@ def plot_top3_scatter(df, condition='Fixed Cage', save_path=None, show=True):
     # ── Build 3-row figure ──────────────────────────────────────────────────
     fig, axes = plt.subplots(3, 1, figsize=(8, 12), dpi=150, sharex=True)
 
-    # Colormap for battery state
+    # Colormap for battery state: viridis is a perceptually uniform sequential
+    # colormap that maps low battery (dark purple) → high battery (bright yellow).
+    # This lets the reader see at a glance whether battery level systematically
+    # shifts the feature-vs-angle relationship.
     cmap = plt.cm.viridis
     norm = plt.Normalize(df['battery_at_start'].min(), df['battery_at_start'].max())
 
@@ -394,6 +444,9 @@ def plot_top3_scatter(df, condition='Fixed Cage', save_path=None, show=True):
                         linewidth=0.5, zorder=3)
 
         # ── Robust Huber trendline ──────────────────────────────────────────
+        # The Huber M-estimator fits a line that is not pulled off-course by
+        # outlier flights. Overlaying it on the scatter plot reveals the central
+        # trend without letting a few extreme points dominate the slope.
         if len(x) > 2:
             slope, intercept = huber_regressor(x, y)
             x_smooth = np.linspace(x.min(), x.max(), 200)
@@ -402,14 +455,20 @@ def plot_top3_scatter(df, condition='Fixed Cage', save_path=None, show=True):
                     linewidth=1.8, alpha=0.8, zorder=4,
                     label=f'Huber trend (slope = {slope:.3f})')
 
-            # Compute pseudo-R²: 1 - (sum of squared residuals / total sum of squares)
-            # Using Huber-weighted residuals for consistency
+            # Compute pseudo-R²: 1 - (sum of squared residuals / total sum of squares).
+            # This is the coefficient of determination — it measures the fraction
+            # of variance in the IMU feature explained by the linear trendline.
+            # R² = 1 means perfect fit; R² = 0 means the line explains nothing
+            # beyond the feature's own mean. Unlike the classic least-squares R²,
+            # the residuals here come from the Huber (robust) fit, so the metric
+            # is not inflated by outliers.
             residuals = y - (slope * x + intercept)
             ss_res = np.sum(residuals ** 2)
             ss_tot = np.sum((y - np.mean(y)) ** 2)
             r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
 
-            # Pearson r and p for annotation
+            # Pearson r and p for annotation: the standard linear correlation
+            # coefficient and its two-tailed p-value.
             r_val, p_val = pearsonr(x, y)
 
             # Annotation text
@@ -490,7 +549,9 @@ def plot_parallel_coordinates(df, condition='Fixed Cage', save_path=None, show=T
     """
     from matplotlib.patches import Patch
 
-    # Bin impact_angle into 4 groups
+    # Bin impact_angle into 4 groups for color-coding. Each bin represents
+    # a qualitatively different impact regime: shallow grazing (<40°),
+    # moderate oblique (40–60°), steep (60–75°), and near-perpendicular (75°+).
     bins = [0, 40, 60, 75, 100]
     labels = ['<40°', '40–60°', '60–75°', '75°+']
     df_plot = df.copy()
@@ -502,7 +563,13 @@ def plot_parallel_coordinates(df, condition='Fixed Cage', save_path=None, show=T
     top_cols = sorted(r_vals, key=r_vals.get, reverse=True)[:10]
     plot_cols = top_cols + ['angle_bin']
 
-    # Normalize features to [0, 1]
+    # Normalize features to [0, 1] via min-max scaling.
+    # Min-max normalization: x_norm = (x − x_min) / (x_max − x_min).
+    # This brings every feature onto the same 0-to-1 scale so they can be
+    # plotted on shared parallel vertical axes. Without normalization, features
+    # with large raw ranges (e.g., peak acceleration ~100 m/s²) would visually
+    # dwarf those with small ranges (e.g., settling time ~0.1 s).
+    # If a feature is constant (c_max == c_min), we map it to 0.5 (midline).
     df_norm = df_plot[plot_cols].copy()
     for col in top_cols:
         c_min, c_max = df_norm[col].min(), df_norm[col].max()
@@ -518,6 +585,10 @@ def plot_parallel_coordinates(df, condition='Fixed Cage', save_path=None, show=T
     fig, ax = plt.subplots(figsize=(12, 6), dpi=150)
 
     x_pos = np.arange(len(top_cols))
+    # Draw one polyline per flight. alpha=0.3 makes each line semi-transparent,
+    # so overlapping lines accumulate visually — dense regions appear darker,
+    # giving the reader a sense of where flights cluster in multi-feature space.
+    # This is a classic parallel-coordinates trick for density perception.
     for _, row in df_norm.iterrows():
         color = bin_colors.get(row['angle_bin'], '#999999')
         ax.plot(x_pos, row[top_cols].values, color=color, alpha=0.3, linewidth=0.8)

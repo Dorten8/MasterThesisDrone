@@ -12,7 +12,10 @@ Usage (notebook cell 0):
         plot_imu_dynamics_from, plot_imu_xyz_from,
         plot_actuators_from, plot_allocator_from, plot_pid_tracking_from,
         plot_ekf_velocity_from, plot_ekf_dual_comparison,
-    )
+    plot_ekf_kinetic_combined_from, plot_imu_dynamics_combined_from,
+    plot_imu_xyz_combined_from, plot_actuators_combined_from,
+    plot_pid_tracking_combined_from,
+)
     rot = load_flight_data("flight_...rotating_cage", "Pass-05")
     fix = load_flight_data("flight_...fixed_cage",   "Pass-03")
 
@@ -48,12 +51,18 @@ from dev_logs.analysis.kinematics.kin_plot_kinematics import (
     plot_imu_xyz_components,
     draw_timeline_markers,
     get_timeline_limits,
+    get_combined_timeline_limits,
+    plot_ekf_kinetic_combined,
+    plot_imu_dynamics_combined,
+    plot_imu_xyz_combined,
     C_MOCAP,
 )
 from dev_logs.analysis.kinematics.kin_plot_actuators import (
     plot_actuators_and_status,
     plot_control_allocator_saturation,
     plot_pid_rate_tracking,
+    plot_actuators_and_status_combined,
+    plot_pid_rate_tracking_combined,
 )
 
 
@@ -556,16 +565,6 @@ def plot_ekf_dual_comparison(rot_data, fix_data, output_path=None):
         rot_data["df_mocap"]["t"], is_absolute=False,
     )
 
-    def _flight_label(data, ax):
-        """Add flight name annotation in bottom-right corner."""
-        name = data.get("flight_name", "")
-        if name:
-            ax.text(0.98, 0.02, name,
-                    transform=ax.transAxes,
-                    ha="right", va="bottom", fontsize=8, alpha=0.7, zorder=10,
-                    bbox=dict(facecolor="white", alpha=0.8, edgecolor="#EAEAEA",
-                              boxstyle="round,pad=0.2"))
-
     # ── Speed: Fixed Cage (top-left) ──
     ax = axes[0, 0]
     ax.plot(ekf_fix["t"], fix_data["df_mocap"]["speed"].values,
@@ -581,7 +580,6 @@ def plot_ekf_dual_comparison(rot_data, fix_data, output_path=None):
     ax.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
     ax.legend(loc="upper right", fontsize=9)
     ax.grid(True, alpha=0.3)
-    _flight_label(fix_data, ax)
 
     # ── Speed: Rotating Cage (top-right) ──
     ax = axes[0, 1]
@@ -598,7 +596,6 @@ def plot_ekf_dual_comparison(rot_data, fix_data, output_path=None):
     ax.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
     ax.legend(loc="upper right", fontsize=9)
     ax.grid(True, alpha=0.3)
-    _flight_label(rot_data, ax)
 
     # ── Per-axis: Fixed Cage (bottom-left, fixed Y: -0.4 to 0.6) ──
     ax = axes[1, 0]
@@ -621,7 +618,6 @@ def plot_ekf_dual_comparison(rot_data, fix_data, output_path=None):
     ax.set_ylabel("Velocity [m/s]")
     ax.legend(loc="upper right", fontsize=7, ncol=2)
     ax.grid(True, alpha=0.3)
-    _flight_label(fix_data, ax)
 
     # ── Per-axis: Rotating Cage (bottom-right, fixed Y: -0.4 to 0.6) ──
     ax = axes[1, 1]
@@ -644,7 +640,16 @@ def plot_ekf_dual_comparison(rot_data, fix_data, output_path=None):
     ax.set_ylabel("Velocity [m/s]")
     ax.legend(loc="upper right", fontsize=7, ncol=2)
     ax.grid(True, alpha=0.3)
-    _flight_label(rot_data, ax)
+
+    # Flight name labels (below x-axis, figure-bottom)
+    fix_name = fix_data.get("flight_name", "")
+    rot_name = rot_data.get("flight_name", "")
+    if fix_name or rot_name:
+        combined = f"{fix_name}  |  {rot_name}"
+        fig.text(0.98, 0.01, combined, transform=fig.transFigure,
+                 ha='right', va='bottom', fontsize=8, alpha=0.7, zorder=10,
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='#EAEAEA',
+                           boxstyle='round,pad=0.2'))
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     if output_path:
@@ -653,6 +658,35 @@ def plot_ekf_dual_comparison(rot_data, fix_data, output_path=None):
     plt.show()
     print(f"✅ Dual EKF comparison: "
           f"Fixed ({ekf_fix['rate']} Hz) | Rotating ({ekf_rot['rate']} Hz)")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Combined side-by-side plot wrappers  (Rotating Cage | Fixed Cage)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def plot_ekf_kinetic_combined_from(rot_data, fix_data, output_path=None):
+    """Side-by-side EKF kinetic profile: Rotating | Fixed."""
+    plot_ekf_kinetic_combined(rot_data, fix_data, output_path=output_path)
+
+
+def plot_imu_dynamics_combined_from(rot_data, fix_data, output_path=None):
+    """Side-by-side IMU collision dynamics: Rotating | Fixed."""
+    plot_imu_dynamics_combined(rot_data, fix_data, output_path=output_path)
+
+
+def plot_imu_xyz_combined_from(rot_data, fix_data, output_path=None):
+    """Side-by-side IMU X/Y/Z components: Rotating | Fixed."""
+    plot_imu_xyz_combined(rot_data, fix_data, output_path=output_path)
+
+
+def plot_actuators_combined_from(rot_data, fix_data, output_path=None):
+    """Side-by-side actuator motor commands + outputs: Rotating | Fixed."""
+    plot_actuators_and_status_combined(rot_data, fix_data, output_path=output_path)
+
+
+def plot_pid_tracking_combined_from(rot_data, fix_data, output_path=None):
+    """Side-by-side PID rate tracking: Rotating | Fixed."""
+    plot_pid_rate_tracking_combined(rot_data, fix_data, output_path=output_path)
 
 
 def plot_full_loop_geometry_from(angle_deg=45, output_path=None, show_plot=True):
