@@ -67,6 +67,40 @@ Zotero's auto-generated keys may use snake_case — if so, note the mismatch and
 - The Italian/EU thrust test site entry is T-Motor, not EMAX — used for "comparable motor" claim
 - Oscar Liang URLs are two separate entries in Zotero (motors guide + LiPo guide)
 
+## ⚠️ Plot Filenames: Use the User's Labels Exactly
+
+When the user provides a plot label like `***HERE ATTACH THIS PLOT: Plot Name***`, the plot name IS the intended filename. Use it literally in `\includegraphics{plots/Plot Name.png}`.
+
+Rules:
+1. **Replace `&` with `and`** — `&` is a special LaTeX character
+2. **Create a valid 1×1 placeholder PNG** if the real file doesn't exist yet, so LaTeX can compile while awaiting the real plot
+
+## 🎨 Draw.io Standard Parts Library
+
+Reusable components live in `thesis/diagrams/drawio_standard/*.drawio`. Each file is a standalone drawio page acting as a scratchpad/parts library for a specific element family.
+
+Current libraries:
+
+- **`OptiTrack.drawio`** — OptiTrack MOCAP system components:
+  - 6× video camera icons (`mxgraph.signs.tech.video_camera`, dark grey `#333333`, 32×24 px)
+  - 1× Azure computer icon
+  - 1× anchor / connector element
+  - 2× embedded images
+
+### How to use
+
+When creating or editing drawio diagrams (`.drawio` files are plain XML):
+1. Read the relevant library file to find component shapes and their style strings
+2. Copy the `<mxCell>` XML with its style and shape definition
+3. Place new instances by adjusting `x`, `y` in `<mxGeometry>`, assigning a new unique `id`
+4. All diagram `<mxCell>` elements should share `parent="1"` unless they belong to a specific named layer
+
+### Diagram files
+
+- `thesis/diagrams/Master_thesis_diagrams.drawio` — multi-page master diagram (single page "Page-1" with ~344 cells, 4.9 MB)
+- `thesis/diagrams/experiment_overview.drawio` — standalone experiment geometry diagram (top-down collision sweep layout, state machine panel)
+- `thesis/diagrams/drawio_standard/*.drawio` — component libraries (add new ones here as they grow)
+
 ## Placeholder Markers
 
 For sections/content that are incomplete but should remain visible in the PDF (not LaTeX comments):

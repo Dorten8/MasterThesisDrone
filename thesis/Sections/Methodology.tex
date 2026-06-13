@@ -204,7 +204,8 @@ Estimated TWR & 3.82:1 & Responsive yet efficient for research autonomous missio
 If you switched to 4S battery, for example, you would need lower-KV motors (e.g., 1100KV) to maintain similar RPM. But lower-KV motors produce less torque, potentially requiring larger propellers or higher current draw---both of which degrade efficiency. Every selection interconnects. Your component choices represent a validated system point.
 
 \section{Physical design and considerations}
-The 
+***LLM NOTE: THIS SECTION NEEDS SUBSTANTIAL WORK — Add physical drone pictures, CAD/physical drawings, and high-level reasoning for key design decisions (frame layout, component placement, weight distribution, cage mounting mechanism). The architecture diagrams can stay but keep the explanation light.***
+The
 
 \section{Autonomous Drone Companion Computer Setup Workflow}
 
@@ -503,6 +504,16 @@ ROS2 topics empty & uXRCE-DDS client not running on Pixhawk & Verify PX4 paramet
 % - The following were resolved from old thebibliography: RCDroneTop2024, MyFPVStore2025, EMAXDatasheet, AviationDrones
 
 
+
+\subsection{Data Processing for Collision Analysis}
+\label{sec:mocap_ekf2}
+***LLM NOTE: KEEP THIS SECTION AS-IS — the recent writing here is solid. No changes needed.***
+
+During the exact millisecond of physical impact, the protective cage structures transiently occlude the drone's reflective markers. This occlusion frequently caused the MoCap tracking publish rate to drop below the critical 30\,Hz failsafe threshold, occasionally plummeting to $\sim$10\,Hz. When relying purely on raw spatial differentiation, these temporal gaps produced massive, artificial high-frequency spikes in the calculated kinematic profiles, even when applying Savitzky-Golay filtering.
+
+To resolve this without sacrificing data fidelity, the analysis pipeline bypasses raw spatial differentiation for velocity and acceleration entirely. Instead, velocity states are extracted directly from the internal PX4 Extended Kalman Filter (\texttt{vehicle\_odometry.velocity}). Because the EKF2 continuously fuses the onboard 250\,Hz IMU data, it bridges external vision dropouts using inertial propagation, providing a smooth and physically truthful velocity profile throughout the collision event.
+
+***LLM NOTE: ADD DIAGRAMS explaining the data collection process for experiments here — show the flow from flight logs to MCAP files to Python pipeline to database to analysis plots.***
 
 \subsubsection{Frame design}
 Hypothesis as opposed to previous works, confirmed by mahmoud

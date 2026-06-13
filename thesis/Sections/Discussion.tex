@@ -1,0 +1,66 @@
+\section{Discussion}
+\label{sec:discussion}
+
+The quantitative mechanical results in \autoref{sec:impact_kinematics} through \autoref{sec:post_collision_recovery}, together with the Random Forest angle-prediction analysis in \autoref{sec:angle_prediction}, establish a clear functional distinction between the fixed and rotating cage configurations. This section interprets those findings in the context of the design objectives and examines the trade-offs they introduce for confined-space drone operations.\medskip
+
+***LLM NOTE: TABLE THIS SUBSECTION FOR LATER — the text below is placeholder. Do NOT spend time expanding it yet; come back when you have more time to develop the force deflection analysis properly.***
+
+\subsection{Impact Force Deflection}
+
+The primary design rationale for the rotating cage is to deflect, rather than absorb, collision energy. The 59\% reduction in maximum deceleration (Fixed: $\mu = -1.64 \pm 0.64\:\text{m/s}^2$, Rotating: $\mu = -1.03 \pm 0.50\:\text{m/s}^2$, $p < 0.001$, $d = 1.05$) corroborates this design intent.
+
+The fixed cage absorbs collision shock structurally, transmitting the full deceleration force directly into the central fuselage and flight controller. In contrast, the rotating cage's bearing mechanism allows the outer shell to spin upon contact, converting linear momentum into rotational energy and shunting a substantial portion of the shockwave away from the sensitive onboard electronics. This mechanical decoupling is the primary mechanism behind the large effect size ($d = 1.05$) observed in the deceleration data.
+
+***LLM NOTE: POSTPONE/FOR LATER — needs reading up on Structural Resonance and Stick-Slip Dynamics. The text below is provisional. Do NOT cite or lean on it until you've done the background reading.***
+
+\subsection{Structural Resonance and Stick-Slip Dynamics}
+
+latThe IMU vibration data reveals qualitatively distinct post-impact mechanical behaviors between the two designs. The fixed cage drags against the column surface, producing sustained high-frequency pitch and roll oscillations consistent with stick-slip resonance. In this regime, dynamic friction between the cage and the obstacle continuously catches and releases during the scraping contact, injecting broadband vibration into the airframe and keeping the IMU in an elevated noise state well beyond the initial impact event.
+
+The rotating cage decouples this frictional feedback by separating the contact surface from the airframe. By rolling across the obstacle rather than scraping, the cage prevents the stick-slip mechanism from forming, allowing the internal IMU to return to a nominal flight state substantially faster. The practical implication is that a rotating-cage platform can maintain sensor fidelity --- and therefore state estimation quality --- during sustained or multi-impact collision sequences in a way that a fixed cage cannot.
+
+\subsection{Trajectory Recovery as a Design Trade-off}
+
+The force and vibration benefits of the rotating cage introduce a measurable spatial cost. The bearing assembly induces a secondary rotational momentum transfer at the moment of impact: as the cage spins against the obstacle, angular momentum pushes the drone slightly further off its intended track, yielding a modest but statistically significant increase in maximum trajectory deviation (Fixed: $\mu = 118.4 \pm 30.4\:\text{mm}$, Rotating: $\mu = 131.0 \pm 32.1\:\text{mm}$, $p = 0.022$, $d = 0.41$). The fixed cage, by absorbing lateral momentum on contact, keeps the vehicle more tightly constrained to the commanded reference line.
+
+However, the total recovery area --- the spatial integral of absolute error (SIAE) --- remains nearly identical between configurations ($p = 0.998$). That the recovery envelope does not expand despite the wider initial deviation suggests that the flight controller's PID correction capacity comfortably absorbs this offset. In the confined-space environments that motivate this work, where wall collisions are frequent and shock accumulation is the dominant risk, the small widening of the spatial footprint is a minor operational cost relative to the vibration and deceleration reductions. The rotating cage achieves superior force mitigation without sacrificing the overall bounds of the recovery envelope.
+
+\subsection{Limitations}
+
+These findings are subject to several constraints that bound their generalizability. The experiments were conducted at two approach angles ($45^\circ$ and $75^\circ$) against a single vertically oriented cylindrical obstacle with a cardboard surface. Cage performance at more acute angles, against flat or compliant surfaces, or on different materials may diverge from the patterns observed here.
+
+The battery state effect identified in \autoref{sec:efficiency_baseline} introduces a potential confound: below 40\% state of charge, peak motor torque authority degrades, softening post-impact recovery profiles. While the Huber regressions controlled for this across both configurations, the interaction between battery depletion and cage type was not separately isolated in the experimental design.
+
+Finally, all trajectory and deviation analysis in this work relies on post-processed MOCAP ground truth. The extent to which these dynamics are observable through onboard sensors alone is addressed by the Random Forest analysis presented in \autoref{sec:angle_prediction} and interpreted below.
+
+\subsection{Onboard Tactical Awareness: Interpreting the Random Forest Results}
+
+The Random Forest analysis in \autoref{sec:angle_prediction} quantifies how much impact-angle information survives in purely onboard IMU signals. Across both cage configurations, the model recovers an $R^2$ of approximately 0.72 with a mean absolute error of $4.5^\circ$--$4.9^\circ$. In an operational context, a $\sim$5$^\circ$ angular estimate could support rudimentary tactical awareness --- the drone would know whether it struck an obstacle at a shallow glancing angle ($\sim$30$^\circ$) versus a deeper collision ($\sim$60$^\circ$) --- with sufficient resolution to adapt its subsequent navigation strategy.
+
+\subsubsection{Non-Linearity in the IMU-to-Angle Mapping}
+
+The curved pattern observed in the residual plots (\autoref{fig:rf_cv_fixed}, \autoref{fig:rf_cv_rotating}) is mechanistically informative. A residual is the difference between the actual angle and the model's prediction; a random scatter around zero implies that the model has captured the full functional form of the underlying relationship. The systematic curve seen here --- particularly in the Rotating Cage --- indicates that the physical dynamics of the impact possess non-linear characteristics beyond what the current tree depth and feature set capture. In the rotating case, the bearing mechanism's rotational energy conversion likely introduces a non-linear saturation effect: beyond a certain collision energy, the cage rotation speed reaches a mechanical limit, and additional impact momentum couples into the airframe through a different vibrational pathway. This regime change would appear as a curvature in the residuals that a model with limited depth cannot fully describe.
+
+\subsubsection{When Training and Deployment Diverge: Cross-Condition Transfer Failure}
+
+The cross-condition transfer results (\autoref{fig:rf_transfer_fixed}, \autoref{fig:rf_transfer_rotating}) carry a strong operational warning. Neither model transfers successfully across cage types. The Fixed Cage model degrades to $R^2 = -0.095$ on Rotating Cage data --- worse than predicting the mean angle. The Rotating Cage model on Fixed Cage data achieves $R^2 = 0.257$, a marginal result that is still far below viable deployment thresholds.
+
+This asymmetry is not statistical noise; it reflects a genuine mechanical divergence. The bearing mechanism does not simply add a uniform offset or scale factor to the vibration signature --- it fundamentally redistributes which IMU channels carry the angle signal and how those channels combine. Training on a fixed-cage fleet and deploying on a rotating-cage drone (or vice versa) would produce systematically incorrect angle estimates. For a practical fleet operation, this means models must either be trained per-platform, or a mechanical-normalisation transfer function must be developed that maps feature distributions between cage types. The systematic off-diagonal band visible in both transfer plots suggests that a linear correction could recover partial performance, but the residual non-linearity indicates that a simple bias-and-scale correction would be insufficient.
+
+\subsubsection{Overfitting and the Path to Deployment}
+
+The $\sim$0.10 gap between training and validation $R^2$ in the learning curves (\autoref{fig:rf_learning_fixed}, \autoref{fig:rf_learning_rotating}) is the clearest signal that the current model, in its present configuration, overfits. The validation score ($R^2 \approx 0.70$) confirms genuine predictive power, but the model is also memorising noise patterns unique to specific training flights. Three routes to closing this gap are available: (1) expanding the dataset, allowing the model to average out spurious flight-specific correlations; (2) introducing stricter regularisation, such as smaller maximum tree depth or larger minimum samples per leaf; or (3) reducing the feature set to remove channels that are weakly informative and contribute more noise than signal. Which route is most impactful depends on whether the limiting factor is data volume (the 67 Fixed Cage and 60 Rotating Cage flights may be insufficient to fully characterise the 14-dimensional feature space) or model complexity mismatch. Given that both the Fixed and Rotating models converged to the same hyperparameters (max\_depth=6, min\_samples\_leaf=3), the data-volume hypothesis appears more likely.
+
+\subsubsection{Why the Rotating Cage Defeats Linear Baselines}
+
+The model comparison results (\autoref{fig:rf_huber_fixed}, \autoref{fig:rf_huber_rotating}) reveal the most pronounced cage-type asymmetry in the entire study. For the Fixed Cage, a single linear IMU channel recovers an $R^2$ of 0.348 --- weak but structurally present correlation. For the Rotating Cage, the same approach collapses to $R^2 = 0.004$ (functionally zero). Yet the Random Forest recovers an $R^2$ of 0.719 from the Rotating Cage, a gain of $\Delta R^2 = +0.714$ that is nearly double the Fixed Cage improvement.
+
+This disparity is consistent with the mechanical hypothesis developed in the preceding sections. The fixed cage transmits collision energy through a rigid structural path, producing a relatively concentrated vibration signature in which a single dominant channel (gyroscope Y-axis vibration) carries linear angle information. The rotating cage's bearing mechanism disperses the same energy across multiple rotational degrees of freedom, spreading the angle signal across a distributed multivariate fingerprint. No single channel carries a linear trace of the angle; the information exists only in the joint pattern. This makes the rotating cage's angle signature invisible to any linear approach but recoverable by a non-linear model with sufficient feature breadth. The practical implication is that any onboard angle-estimation system intended for rotating-cage platforms must be inherently multivariate and non-linear --- a conclusion with direct consequences for sensor selection and onboard processing requirements.
+***LLM NOTE: MATH — Keep key equations in the main text body. Move any tedious or overly long derivations to an appendix.***
+
+***LLM NOTE: CONCLUSION — The Conclusion section is currently MISSING entirely. Add a new \section{Conclusion} after the Discussion chapter. It should summarise findings, restate the research contribution, and suggest future work.***
+
+***LLM NOTE: LISTS — Review the List of Figures and List of Tables in the frontmatter. They currently contain junk data (draft/placeholder entries) and need to be regenerated or cleaned up.***
+
+***LLM NOTE: PAGE NUMBERING — Fix the broken Roman numeral formatting (e.g. "page 34 of IV"). The frontmatter uses Roman numerals but the footer is not resetting correctly — likely a stray \pagenumbering or \cfoot timing issue in main.tex.***
+\endinput
