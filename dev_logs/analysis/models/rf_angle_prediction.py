@@ -429,7 +429,7 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
     all_y_pred_arr = np.array(all_y_pred)
     fold_ids_arr = np.array(fold_ids)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6), dpi=150)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6), dpi=150, sharex=True, sharey=True)
 
     # Left: scatter colored by fold
     for fi in range(final_cv.get_n_splits()):
@@ -447,13 +447,18 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
     ax1.fill_between(lims, [l - 5 for l in lims], [l + 5 for l in lims],
                      alpha=0.08, color='gray', label='±5° band')
 
+    ax1.set_xlim(0, 90)
+    ax1.set_ylim(0, 90)
+    ax1.set_xticks([0, 15, 30, 45, 60, 75, 90])
+    ax1.set_yticks([0, 15, 30, 45, 60, 75, 90])
+    ax1.set_aspect('equal', adjustable='box')
     ax1.set_xlabel('Actual Impact Angle (°)', fontweight='bold')
     ax1.set_ylabel('Predicted Impact Angle (°)', fontweight='bold')
     ax1.set_title(f'<{train_condition}> 5-Fold CV: Predicted vs Actual\n'
                   f'R² = {overall_r2:.3f}  MAE = {overall_mae:.1f}°  '
                   f'RMSE = {overall_rmse:.1f}°',
                   fontweight='bold', fontsize=11)
-    ax1.legend(loc='lower right', fontsize=8, framealpha=0.85)
+    ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, framealpha=0.85)
     ax1.grid(True, linestyle=':', alpha=0.4)
 
     # Right: residuals vs predicted.
@@ -472,6 +477,10 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
     ax2.axhline(0, color='k', linestyle='--', linewidth=1.2, alpha=0.6, zorder=2)
     ax2.fill_between([all_y_pred_arr.min() - 2, all_y_pred_arr.max() + 2],
                      -5, 5, alpha=0.08, color='gray')
+    ax2.set_xlim(0, 90)
+    ax2.set_ylim(-45, 45)
+    ax2.set_xticks([0, 15, 30, 45, 60, 75, 90])
+    ax2.set_yticks([-45, -30, -15, 0, 15, 30, 45])
     ax2.set_xlabel('Predicted Impact Angle (°)', fontweight='bold')
     ax2.set_ylabel('Residual (Actual − Predicted) (°)', fontweight='bold')
     ax2.set_title(f'Residual Plot\nMean residual = {np.mean(residuals):.2f}°  '
@@ -707,6 +716,8 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
                      fontweight='bold', fontsize=12)
         ax.legend(loc='lower right', fontsize=10)
         ax.grid(True, linestyle=':', alpha=0.4)
+        ax.set_ylim(0.4, 1.0)
+        ax.set_yticks([0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
 
         fig.tight_layout()
         if save_to_disk:
@@ -718,7 +729,7 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
         plt.close(fig)
     except Exception as e:
         print(f"   ⚠️  Learning curve failed: {e}")
-        train_mean, test_mean, gap = None, None, None
+        train_sizes_abs, train_mean, train_std, test_mean, test_std, gap = None, None, None, None, None, None
 
     # ── 7c. Huber Baseline Comparison ──────────────────────────────────────
     # Establish a simple linear baseline: fit a robust Huber regression using
@@ -775,8 +786,10 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
         ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
                  f'{val:.3f}', ha='center', fontweight='bold', fontsize=13)
     ax1.set_ylabel('R² Score', fontweight='bold')
+    ax1.set_xticklabels(models, rotation=45, ha='right')
     ax1.set_title(f'<{train_condition}> Model Comparison: R²', fontweight='bold', fontsize=12)
-    ax1.set_ylim(0, max(r2_vals) * 1.25)
+    ax1.set_ylim(0, 1.0)
+    ax1.set_yticks([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
     ax1.grid(True, linestyle=':', alpha=0.4, axis='y')
 
     # Scatter: Huber predictions vs actual (all folds)
@@ -830,6 +843,12 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
         'huber_r2': huber_r2,
         'huber_r2_std': huber_r2_std,
         'selection_df': sel_df,
+        'learning_curve': dict(train_sizes=train_sizes_abs, train_mean=train_mean, train_std=train_std, test_mean=test_mean, test_std=test_std, gap=gap) if train_mean is not None else None,
+        'huber_fold_preds': huber_fold_preds,
+        'huber_top_feature': top_f,
+        'huber_mae': huber_mae,
+        'huber_rmse': huber_rmse,
+        'n_features': len(selected_features),
     }
 
     print(f"\n{'=' * 72}")
@@ -851,6 +870,729 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+#  7d.  Consolidated Feature Importance (Fixed + Rotating, 1×2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def plot_consolidated_feature_importance(results_fix, results_rot,
+                                          save_to_disk=True, show_plots=True):
+    """
+    Consolidated Random Forest Feature Importance + Permutation Importance —
+    2 rows × 2 columns.
+
+    Top row:     MDI Feature Importance (Rotating | Fixed)
+    Bottom row:  Permutation Feature Importance (Rotating | Fixed)
+
+    Top-row panels share:
+      - X-axis limits [0, 0.25] with ticks every 0.1
+      - Same feature ordering (combined ranking across both cages)
+    A single shared feature-group legend sits below the figure.
+
+    Subtitle format: 'Rotating Cage (14 features) OOB R² = 0.752'
+                     'Fixed Cage (14 features) OOB R² = 0.752'
+
+    Parameters
+    ----------
+    results_fix, results_rot : dict
+        Return values of run_rf_pipeline() for each cage condition.
+    save_to_disk : bool
+        Save PNGs to GRAPHICS_DIR.
+    show_plots : bool
+        Display figures inline (for notebooks).
+    """
+    from matplotlib.patches import Patch
+
+    conditions = [
+        ('Rotating Cage', results_rot),
+        ('Fixed Cage', results_fix),
+    ]
+
+    # ── Build combined feature list from both cages ────────────────────────
+    # Take union of features, sorted by their average MDI across both cages.
+    all_features = set()
+    feat_data = {}
+    for cond_name, res in conditions:
+        if res is None:
+            continue
+        imp_df = res.get('importance_df')
+        if imp_df is None:
+            continue
+        for _, row in imp_df.iterrows():
+            f = row['feature']
+            all_features.add(f)
+            if f not in feat_data:
+                feat_data[f] = {
+                    'label': row['label'], 'group': row['group'],
+                    'imp_fix': 0, 'imp_rot': 0,
+                }
+            if cond_name == 'Fixed Cage':
+                feat_data[f]['imp_fix'] = row['importance']
+            else:
+                feat_data[f]['imp_rot'] = row['importance']
+
+    # Sort by mean importance across both cages
+    feat_list = sorted(all_features,
+                       key=lambda f: (feat_data[f]['imp_fix'] + feat_data[f]['imp_rot']) / 2,
+                       reverse=True)
+    if len(feat_list) < 5:
+        feat_list = list(feat_list)
+
+    # Collect unique groups across both for the legend
+    all_groups = set()
+    for _, res in conditions:
+        if res and res.get('importance_df') is not None:
+            for g in res['importance_df']['group'].unique():
+                all_groups.add(g)
+    all_groups = sorted(all_groups)
+
+    # ── Build 2×2 figure ───────────────────────────────────────────────────
+    # Left column = Rotating Cage, Right column = Fixed Cage
+    fig = plt.figure(figsize=(12, max(9, len(feat_list) * 0.85)), dpi=150)
+
+    gs = fig.add_gridspec(2, 2, hspace=0.30, wspace=0.25,
+                          height_ratios=[1, 1],
+                          left=0.18, right=0.95, top=0.92, bottom=0.12)
+
+    for row_idx, imp_type in enumerate(['mdi', 'perm']):
+        for col_idx, (cond_name, res) in enumerate(conditions):
+            ax = fig.add_subplot(gs[row_idx, col_idx])
+
+            if res is None:
+                ax.text(0.5, 0.5, f'{cond_name}\nNo data',
+                        transform=ax.transAxes, ha='center', va='center',
+                        fontsize=14, fontweight='bold', color='gray')
+                continue
+
+            if imp_type == 'mdi':
+                imp_df = res.get('importance_df')
+                oob = res.get('model', None).oob_score_ if res.get('model') else 0
+                n_feats = res.get('n_features', len(imp_df) if imp_df is not None else 0)
+            else:
+                imp_df = res.get('permutation_df')
+                oob = None
+                n_feats = len(imp_df) if imp_df is not None else 0
+
+            if imp_df is None or len(imp_df) == 0:
+                ax.text(0.5, 0.5, f'{imp_type.upper()}\nNo data',
+                        transform=ax.transAxes, ha='center', va='center',
+                        fontsize=11, fontstyle='italic', color='gray')
+                continue
+
+            # Build importance series for this cage in the common feature order
+            cage_imp = []
+            for f in feat_list:
+                row = imp_df[imp_df['feature'] == f]
+                if len(row) > 0:
+                    cage_imp.append({
+                        'label': row.iloc[0]['label'],
+                        'importance': row.iloc[0]['importance'],
+                        'group': row.iloc[0]['group'],
+                    })
+                else:
+                    cage_imp.append({
+                        'label': feat_data.get(f, {}).get('label', f),
+                        'importance': 0,
+                        'group': feat_data.get(f, {}).get('group', 'Other'),
+                    })
+
+            cage_imp_df = pd.DataFrame(cage_imp).sort_values('importance', ascending=True)
+
+            bar_colors = [GROUP_COLORS.get(g, '#CCCCCC') for g in cage_imp_df['group']]
+            bars = ax.barh(cage_imp_df['label'], cage_imp_df['importance'],
+                           color=bar_colors, edgecolor='black', linewidth=0.5,
+                           alpha=0.75)
+
+            # Annotate non-zero values
+            for bar, val in zip(bars, cage_imp_df['importance']):
+                if val > 0.001:
+                    ax.text(bar.get_width() + 0.002,
+                            bar.get_y() + bar.get_height() / 2,
+                            f'{val:.3f}', va='center', fontsize=6.5,
+                            fontweight='bold')
+
+            # Simplified subtitle: just the cage name
+            ax.set_title(cond_name, fontweight='bold', fontsize=10, pad=6,
+                         color='black')
+
+            if imp_type == 'mdi':
+                # X-axis: hardcoded limits [0, 0.25], ticks every 0.1
+                ax.set_xlim(0, 0.25)
+                ax.set_xticks([0, 0.1, 0.2])
+                ax.set_xlabel('MDI Importance', fontweight='bold', fontsize=9)
+            else:
+                ax.set_xlabel('Permutation Importance (ΔMSE)', fontweight='bold',
+                              fontsize=9)
+
+            ax.grid(True, linestyle=':', alpha=0.4, axis='x')
+            ax.tick_params(labelsize=8)
+
+    # ── Single shared legend below the figure ─────────────────────────────
+    legend_elements = [
+        Patch(facecolor=GROUP_COLORS.get(g, '#CCCCCC'), alpha=0.75, label=g)
+        for g in all_groups if g in GROUP_COLORS
+    ]
+    fig.legend(handles=legend_elements, fontsize=8, loc='lower center',
+               title='Feature Group', title_fontsize=9,
+               ncol=min(5, len(legend_elements)),
+               bbox_to_anchor=(0.5, -0.01), framealpha=0.85)
+
+    # ── Global title ───────────────────────────────────────────────────────
+    fig.suptitle('Random Forest Feature Importance',
+                 fontweight='bold', fontsize=14, y=0.97)
+
+    # ── Source text ────────────────────────────────────────────────────────
+    fig.text(0.02, 0.015, r'$p < 0.05$',
+             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    fig.text(0.98, 0.015, r'$p < 0.05$',
+             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    if save_to_disk:
+        path = os.path.join(GRAPHICS_DIR, "consolidated_feature_importance.png")
+        plt.savefig(path, dpi=300, bbox_inches='tight')
+        print(f"   💾 Saved consolidated feature importance → "
+              f"{os.path.relpath(path, os.path.dirname(__file__))}")
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+#  8.  Consolidated Plotting Functions (Fixed + Rotating Cage side-by-side)
+# ══════════════════════════════════════════════════════════════════════════════
+# These take two results dicts (one per cage condition) and produce single
+# figures with Fixed Cage on the left and Rotating Cage on the right.
+
+CONDITION_COLORS = {'Rotating Cage': '#1F77B4', 'Fixed Cage': '#D62728'}
+
+
+def plot_consolidated_actual_vs_predicted(results_fix, results_rot,
+                                           save_to_disk=True, show_plots=True):
+    """
+    Consolidated Predicted vs Actual Impact Angle — 1×2 figure.
+
+    Left panel:  Fixed Cage 5-fold CV scatter (colored by fold)
+    Right panel: Rotating Cage 5-fold CV scatter (colored by fold)
+
+    Both panels share x/y limits (0–90°), equal aspect ratio, ticks every 15°,
+    and a y = x diagonal reference line with ±5° shaded band.
+    """
+    from matplotlib.lines import Line2D
+
+    conditions = [
+        ('Rotating Cage', results_rot),
+        ('Fixed Cage', results_fix),
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=150,
+                              sharex=True, sharey=True)
+
+    for col_idx, (cond_name, res) in enumerate(conditions):
+        ax = axes[col_idx]
+        if res is None:
+            ax.text(0.5, 0.5, f'<{cond_name}>\nNo data',
+                    transform=ax.transAxes, ha='center', va='center',
+                    fontsize=14, fontweight='bold', color='gray')
+            continue
+
+        y_true = res['y_true']
+        y_pred = res['y_pred']
+        fold_ids = res['fold_ids']
+
+        # Scatter colored by fold
+        n_folds = int(fold_ids.max()) + 1 if len(fold_ids) > 0 else 1
+        for fi in range(n_folds):
+            mask = fold_ids == fi
+            ax.scatter(y_true[mask], y_pred[mask],
+                       c=FOLD_COLORS[fi % len(FOLD_COLORS)], s=55,
+                       alpha=0.75, edgecolor='white', linewidth=0.5,
+                       label=f'Fold {fi + 1}', zorder=3)
+
+        # y = x diagonal
+        ax.plot([0, 90], [0, 90], 'k--', linewidth=1.2, alpha=0.6,
+                label='y = x', zorder=2)
+
+        # ±5° band
+        ax.fill_between([0, 90], [-5, 85], [5, 95],
+                        alpha=0.08, color='gray', label='±5° band')
+
+        # Strict formatting
+        ax.set_xlim(0, 90)
+        ax.set_ylim(0, 90)
+        ax.set_xticks([0, 15, 30, 45, 60, 75, 90])
+        ax.set_yticks([0, 15, 30, 45, 60, 75, 90])
+        ax.set_aspect('equal', adjustable='box')
+
+        ax.set_xlabel('Actual Impact Angle (°)', fontweight='bold')
+
+        if col_idx == 0:
+            ax.set_ylabel('Predicted Impact Angle (°)', fontweight='bold')
+
+        r2 = res.get('overall_r2', 0)
+        mae = res.get('overall_mae', 0)
+        rmse = res.get('overall_rmse', 0)
+
+        # Metrics overlay box (larger font for legibility)
+        ax.text(0.95, 0.95,
+                f'R² = {r2:.3f}\nMAE = {mae:.1f}°\nRMSE = {rmse:.1f}°',
+                transform=ax.transAxes, ha='right', va='top',
+                fontsize=11, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          alpha=0.85, edgecolor='#CCCCCC'))
+
+        ax.set_title(cond_name, fontweight='bold', fontsize=12, color='black')
+        ax.grid(True, linestyle=':', alpha=0.4)
+
+    # ── Green/red comparison legend (compact, high contrast) ──────────────
+    r2_fix, r2_rot = results_fix.get('overall_r2', 0), results_rot.get('overall_r2', 0)
+    mae_fix, mae_rot = results_fix.get('overall_mae', 0), results_rot.get('overall_mae', 0)
+    rmse_fix, rmse_rot = results_fix.get('overall_rmse', 0), results_rot.get('overall_rmse', 0)
+
+    r2_better = 'Rotating Cage' if r2_rot > r2_fix else 'Fixed Cage'
+    mae_better = 'Rotating Cage' if mae_rot < mae_fix else 'Fixed Cage'
+    rmse_better = 'Rotating Cage' if rmse_rot < rmse_fix else 'Fixed Cage'
+
+    legend_handles = []
+    legend_handles.append(
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#228B22',
+                   markersize=10, label=f'Better (higher R²: {r2_better})'))
+    legend_handles.append(
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#DC143C',
+                   markersize=10, label=f'Worse (lower R²: {"Fixed Cage" if r2_better == "Rotating Cage" else "Rotating Cage"})'))
+
+    # Compact legend in the upper-left of the left (Rotating) plot
+    axes[0].legend(handles=legend_handles, loc='upper left', fontsize=7,
+                   framealpha=0.85, title='CV Performance Comparison',
+                   title_fontsize=8)
+
+    fig.suptitle('5-Fold Cross-Validation: Predicted vs Actual Impact Angle',
+                 fontweight='bold', fontsize=14, y=0.98)
+
+    fig.subplots_adjust(top=0.90, bottom=0.10, wspace=0.25)
+    # ── Source text ────────────────────────────────────────────────────────
+    fig.text(0.02, 0.015, r'$p < 0.05$',
+             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    fig.text(0.98, 0.015, r'$p < 0.05$',
+             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    if save_to_disk:
+        path = os.path.join(GRAPHICS_DIR, "consolidated_actual_vs_predicted.png")
+        plt.savefig(path, dpi=300, bbox_inches='tight')
+        print(f"   💾 Saved → {os.path.relpath(path, os.path.dirname(__file__))}")
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+
+
+def plot_consolidated_residuals(results_fix, results_rot,
+                                 save_to_disk=True, show_plots=True):
+    """
+    Consolidated Residual Plots — 1×2 figure.
+
+    Left panel:  Fixed Cage residuals (actual − predicted)
+    Right panel: Rotating Cage residuals
+
+    Both panels: x = Predicted Angle (0–90°), y = Residual (−45–45°),
+    ticks every 15° on both axes, horizontal dashed line at y = 0.
+    """
+    conditions = [
+        ('Rotating Cage', results_rot),
+        ('Fixed Cage', results_fix),
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=150,
+                              sharex=True, sharey=True)
+
+    for col_idx, (cond_name, res) in enumerate(conditions):
+        ax = axes[col_idx]
+        if res is None:
+            ax.text(0.5, 0.5, f'<{cond_name}>\nNo data',
+                    transform=ax.transAxes, ha='center', va='center',
+                    fontsize=14, fontweight='bold', color='gray')
+            continue
+
+        y_true = res['y_true']
+        y_pred = res['y_pred']
+        fold_ids = res['fold_ids']
+        residuals = y_true - y_pred
+
+        # Scatter colored by fold
+        n_folds = int(fold_ids.max()) + 1 if len(fold_ids) > 0 else 1
+        for fi in range(n_folds):
+            mask = fold_ids == fi
+            ax.scatter(y_pred[mask], residuals[mask],
+                       c=FOLD_COLORS[fi % len(FOLD_COLORS)], s=55,
+                       alpha=0.75, edgecolor='white', linewidth=0.5, zorder=3)
+
+        # Horizontal zero line (prominent black dashed)
+        ax.axhline(0, color='black', linestyle='--', linewidth=1.5, alpha=0.7,
+                   zorder=2)
+
+        # Strict formatting
+        ax.set_xlim(0, 90)
+        ax.set_ylim(-45, 45)
+        ax.set_xticks([0, 15, 30, 45, 60, 75, 90])
+        ax.set_yticks([-45, -30, -15, 0, 15, 30, 45])
+
+        ax.set_xlabel('Predicted Impact Angle (°)', fontweight='bold')
+
+        if col_idx == 0:
+            ax.set_ylabel('Residual (Actual − Predicted) (°)', fontweight='bold')
+
+        std_res = np.std(residuals)
+        mean_res = np.mean(residuals)
+        ax.set_title(f'{cond_name}\n'
+                     f'Mean = {mean_res:.1f}°  Std = {std_res:.1f}°',
+                     fontweight='bold', fontsize=11, color='black')
+        ax.grid(True, linestyle=':', alpha=0.4)
+
+    fig.suptitle('Residual Plots — Prediction Error Distribution',
+                 fontweight='bold', fontsize=14, y=0.97)
+    fig.subplots_adjust(top=0.90, bottom=0.10, wspace=0.25)
+    # ── Source text ────────────────────────────────────────────────────────
+    fig.text(0.02, 0.015, r'$p < 0.05$',
+             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    fig.text(0.98, 0.015, r'$p < 0.05$',
+             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    if save_to_disk:
+        path = os.path.join(GRAPHICS_DIR, "consolidated_residuals.png")
+        plt.savefig(path, dpi=300, bbox_inches='tight')
+        print(f"   💾 Saved → {os.path.relpath(path, os.path.dirname(__file__))}")
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+
+
+def plot_consolidated_model_comparison(results_fix, results_rot,
+                                        save_to_disk=True, show_plots=True):
+    """
+    Consolidated Model Comparison (R² bar charts) — 1×2 figure.
+
+    Left panel:  Fixed Cage — Huber (1-feature) vs RF (multi-feature)
+    Right panel: Rotating Cage — same comparison
+
+    Both panels: y-limits (0, 1.0), ticks every 0.1, x-labels rotated 45°.
+    """
+    conditions = [
+        ('Rotating Cage', results_rot),
+        ('Fixed Cage', results_fix),
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=150)
+
+    for col_idx, (cond_name, res) in enumerate(conditions):
+        ax = axes[col_idx]
+        if res is None:
+            ax.text(0.5, 0.5, f'<{cond_name}>\nNo data',
+                    transform=ax.transAxes, ha='center', va='center',
+                    fontsize=14, fontweight='bold', color='gray')
+            continue
+
+        huber_r2 = res.get('huber_r2', 0)
+        huber_r2_std = res.get('huber_r2_std', 0)
+        overall_r2 = res.get('overall_r2', 0)
+        n_features = res.get('n_features', res.get('features', []))
+
+        if isinstance(n_features, list):
+            n_features = len(n_features)
+
+        models = ['Huber\n(1 feature)', f'Random Forest\n({n_features} features)']
+        r2_vals = [huber_r2, overall_r2]
+        r2_errs = [huber_r2_std, np.std(res.get('fold_scores', pd.DataFrame({'r2': [overall_r2]}))['r2'])]
+
+        bars = ax.bar(models, r2_vals, yerr=r2_errs,
+                      color=['#AAAAAA', '#2CA02C'],
+                      edgecolor='black', linewidth=1.2, capsize=8, width=0.5)
+
+        # Annotations centered above each bar, offset vertically to clear
+        # the error-bar whisker caps.
+        for bar, val, err in zip(bars, r2_vals, r2_errs):
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + err + 0.03,
+                    f'{val:.3f}', ha='center', fontweight='bold', fontsize=13)
+
+        ax.set_ylabel('R² Score', fontweight='bold')
+        ax.set_xticks(range(len(models)))
+        ax.set_xticklabels(models, rotation=0, ha='center')
+        ax.set_title(cond_name, fontweight='bold', fontsize=12, color='black')
+        ax.set_ylim(0, 1.0)
+        ax.set_yticks([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+        ax.grid(True, linestyle=':', alpha=0.4, axis='y')
+
+    fig.suptitle('Model Comparison: Huber vs Random Forest',
+                 fontweight='bold', fontsize=14)
+    fig.subplots_adjust(top=0.88, bottom=0.12, wspace=0.25)
+    # ── Source text ────────────────────────────────────────────────────────
+    fig.text(0.02, 0.015, r'$p < 0.05$',
+             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    fig.text(0.98, 0.015, r'$p < 0.05$',
+             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    if save_to_disk:
+        path = os.path.join(GRAPHICS_DIR, "consolidated_model_comparison.png")
+        plt.savefig(path, dpi=300, bbox_inches='tight')
+        print(f"   💾 Saved → {os.path.relpath(path, os.path.dirname(__file__))}")
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+
+
+def plot_consolidated_cross_condition_transfer(results_fix, results_rot,
+                                                save_to_disk=True,
+                                                show_plots=True):
+    """
+    Consolidated Cross-Condition Transfer — 1 row × 2 columns.
+
+    Left:   "Rotating Cage    to    Fixed Cage"
+            Model trained on Rotating Cage, tested on Fixed Cage.
+            Rotating within-CV points = Blue Squares (marker='s', color='blue')
+            Fixed transfer points    = Red Dots    (marker='o', color='red')
+
+    Right:  "Fixed Cage    to    Rotating Cage"
+            Model trained on Fixed Cage, tested on Rotating Cage.
+            Fixed within-CV points   = Red Dots    (marker='o', color='red')
+            Rotating transfer points = Blue Squares (marker='s', color='blue')
+
+    Axes: 0–90°, ticks every 10°. Single unified legend.
+
+    Parameters
+    ----------
+    results_fix, results_rot : dict
+        Return values of run_rf_pipeline() for each cage condition.
+    save_to_disk : bool
+        Save PNGs to GRAPHICS_DIR.
+    show_plots : bool
+        Display figures inline (for notebooks).
+    """
+    from matplotlib.lines import Line2D
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=150,
+                              sharex=True, sharey=True)
+
+    # ── Left panel: model trained on Rotating Cage → tested on Fixed Cage ──
+    ax_l = axes[0]
+    rot_res = results_rot
+    fix_res = results_fix
+    rot_transfer = rot_res.get('transfer_results') if rot_res else None
+
+    if rot_res is not None and rot_transfer is not None:
+        # Rotating within-CV points (Blue Squares)
+        ax_l.scatter(rot_res['y_true'], rot_res['y_pred'],
+                     marker='s', color='blue', s=50, alpha=0.5,
+                     edgecolor='white', linewidth=0.5, zorder=3,
+                     label='Rotating Cage (within CV)')
+        # Fixed transfer points (Red Dots)
+        ax_l.scatter(rot_transfer['y_true'], rot_transfer['y_pred'],
+                     marker='o', color='red', s=65, alpha=0.8,
+                     edgecolor='white', linewidth=0.5, zorder=4,
+                     label=f"Fixed Cage (transfer)\nR² = {rot_transfer['r2']:.3f}")
+    else:
+        ax_l.text(0.5, 0.5, 'No transfer data', transform=ax_l.transAxes,
+                  ha='center', va='center', fontsize=13, color='gray')
+
+    # y = x line
+    ax_l.plot([0, 90], [0, 90], 'k--', linewidth=1.2, alpha=0.6, zorder=2)
+    ax_l.set_xlim(0, 90)
+    ax_l.set_ylim(0, 90)
+    ax_l.set_xticks(range(0, 91, 10))
+    ax_l.set_yticks(range(0, 91, 10))
+    ax_l.set_xlabel('Actual Impact Angle (°)', fontweight='bold')
+    ax_l.set_ylabel('Predicted Impact Angle (°)', fontweight='bold')
+    ax_l.set_title('Rotating Cage   →   Fixed Cage',
+                   fontweight='bold', fontsize=12)
+    ax_l.grid(True, linestyle=':', alpha=0.4)
+
+    # ── Right panel: model trained on Fixed Cage → tested on Rotating Cage ─
+    ax_r = axes[1]
+    fix_transfer = fix_res.get('transfer_results') if fix_res else None
+
+    if fix_res is not None and fix_transfer is not None:
+        # Fixed within-CV points (Red Dots)
+        ax_r.scatter(fix_res['y_true'], fix_res['y_pred'],
+                     marker='o', color='red', s=50, alpha=0.5,
+                     edgecolor='white', linewidth=0.5, zorder=3,
+                     label='Fixed Cage (within CV)')
+        # Rotating transfer points (Blue Squares)
+        ax_r.scatter(fix_transfer['y_true'], fix_transfer['y_pred'],
+                     marker='s', color='blue', s=65, alpha=0.8,
+                     edgecolor='white', linewidth=0.5, zorder=4,
+                     label=f"Rotating Cage (transfer)\nR² = {fix_transfer['r2']:.3f}")
+    else:
+        ax_r.text(0.5, 0.5, 'No transfer data', transform=ax_r.transAxes,
+                  ha='center', va='center', fontsize=13, color='gray')
+
+    # y = x line
+    ax_r.plot([0, 90], [0, 90], 'k--', linewidth=1.2, alpha=0.6, zorder=2)
+    ax_r.set_xlim(0, 90)
+    ax_r.set_ylim(0, 90)
+    ax_r.set_xticks(range(0, 91, 10))
+    ax_r.set_yticks(range(0, 91, 10))
+    ax_r.set_xlabel('Actual Impact Angle (°)', fontweight='bold')
+    ax_r.set_ylabel('Predicted Impact Angle (°)', fontweight='bold')
+    ax_r.set_title('Fixed Cage   →   Rotating Cage',
+                   fontweight='bold', fontsize=12)
+    ax_r.grid(True, linestyle=':', alpha=0.4)
+
+    # ── Single unified legend (compact, large legible markers) ────────────
+    legend_elements = [
+        Line2D([0], [0], marker='s', color='w', markerfacecolor='blue',
+               markersize=12, label='Rotating'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='red',
+               markersize=12, label='Fixed'),
+    ]
+    axes[0].legend(handles=legend_elements, loc='upper left', fontsize=9,
+                   framealpha=0.85)
+
+    fig.suptitle('Cross Condition Transfer',
+                 fontweight='bold', fontsize=14, y=0.98)
+    fig.subplots_adjust(top=0.90, bottom=0.10, wspace=0.25)
+    # ── Source text ────────────────────────────────────────────────────────
+    fig.text(0.02, 0.015, r'$p < 0.05$',
+             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    fig.text(0.98, 0.015, r'$p < 0.05$',
+             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    if save_to_disk:
+        path = os.path.join(GRAPHICS_DIR,
+                            "consolidated_cross_condition_transfer.png")
+        plt.savefig(path, dpi=300, bbox_inches='tight')
+        print(f"   💾 Saved consolidated cross-condition transfer → "
+              f"{os.path.relpath(path, os.path.dirname(__file__))}")
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+
+
+def plot_consolidated_learning_curves(results_fix, results_rot,
+                                       save_to_disk=True, show_plots=True):
+    """
+    Consolidated Learning Curves — 1×2 figure.
+
+    Left panel:  Fixed Cage learning curve
+    Right panel: Rotating Cage learning curve
+
+    Both panels: y-limits (0.4, 1.0), ticks every 0.1,
+    shows training R² (blue) vs validation R² (orange).
+    """
+    conditions = [
+        ('Rotating Cage', results_rot),
+        ('Fixed Cage', results_fix),
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5), dpi=150,
+                              sharex=True, sharey=True)
+
+    for col_idx, (cond_name, res) in enumerate(conditions):
+        ax = axes[col_idx]
+        if res is None or res.get('learning_curve') is None:
+            ax.text(0.5, 0.5, f'<{cond_name}>\nNo data',
+                    transform=ax.transAxes, ha='center', va='center',
+                    fontsize=14, fontweight='bold', color='gray')
+            continue
+
+        lc = res['learning_curve']
+        train_sizes = lc['train_sizes']
+        train_mean = lc['train_mean']
+        train_std = lc['train_std']
+        test_mean = lc['test_mean']
+        test_std = lc['test_std']
+        gap = lc['gap']
+
+        if train_mean is None:
+            continue
+
+        ax.fill_between(train_sizes, train_mean - train_std,
+                        train_mean + train_std, alpha=0.15, color='#1F77B4')
+        ax.fill_between(train_sizes, test_mean - test_std,
+                        test_mean + test_std, alpha=0.15, color='#FF7F0E')
+        ax.plot(train_sizes, train_mean, 'o-', color='#1F77B4',
+                linewidth=2, markersize=6, label='Training R²')
+        ax.plot(train_sizes, test_mean, 's-', color='#FF7F0E',
+                linewidth=2, markersize=6, label='Validation R²')
+
+        ax.axhline(y=0, color='gray', linestyle=':', alpha=0.4)
+        ax.set_xlabel('Training Set Size (flights)', fontweight='bold')
+        if col_idx == 0:
+            ax.set_ylabel('R² Score', fontweight='bold')
+
+        ax.set_title(f'{cond_name}\n'
+                     f'Final: Train R² = {train_mean[-1]:.3f}  '
+                     f'Val R² = {test_mean[-1]:.3f}  Gap = {gap:.3f}',
+                     fontweight='bold', fontsize=10, color='black')
+        ax.legend(loc='lower right', fontsize=8)
+        ax.grid(True, linestyle=':', alpha=0.4)
+        ax.set_ylim(-0.2, 1.0)
+        ax.set_yticks([-0.2, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+
+    fig.suptitle('Learning Curves: Training Size vs R² Score',
+                 fontweight='bold', fontsize=14, y=0.97)
+    fig.subplots_adjust(top=0.88, bottom=0.12, wspace=0.25)
+    # ── Source text ────────────────────────────────────────────────────────
+    fig.text(0.02, 0.015, r'$p < 0.05$',
+             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    fig.text(0.98, 0.015, r'$p < 0.05$',
+             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    if save_to_disk:
+        path = os.path.join(GRAPHICS_DIR, "consolidated_learning_curves.png")
+        plt.savefig(path, dpi=300, bbox_inches='tight')
+        print(f"   💾 Saved → {os.path.relpath(path, os.path.dirname(__file__))}")
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+
+
+def generate_consolidated_plots(results_fix, results_rot,
+                                 save_to_disk=True, show_plots=True):
+    """
+    Generate all 6 consolidated comparison figures from the Fixed Cage
+    and Rotating Cage results dicts.
+
+    Produces:
+      1. consolidated_actual_vs_predicted.png       — 5-fold CV scatter (1×2)
+      2. consolidated_residuals.png                  — residual distribution (1×2)
+      3. consolidated_model_comparison.png           — Huber vs RF R² bars (1×2)
+      4. consolidated_learning_curves.png            — training size vs R² (1×2)
+      5. consolidated_feature_importance.png         — MDI + Permutation (2×2)
+      6. consolidated_cross_condition_transfer.png   — transfer both dirs (1×2)
+
+    Parameters
+    ----------
+    results_fix : dict
+        Return value of run_rf_pipeline(train_condition='Fixed Cage').
+    results_rot : dict
+        Return value of run_rf_pipeline(train_condition='Rotating Cage').
+    save_to_disk : bool
+        Save PNGs to GRAPHICS_DIR.
+    show_plots : bool
+        Display figures inline (for notebooks).
+    """
+    print("\n" + "=" * 72)
+    print("📊 Generating Consolidated Comparison Figures")
+    print("=" * 72)
+
+    print("\n1/6  Actual vs Predicted (Rotating × Fixed)")
+    plot_consolidated_actual_vs_predicted(results_fix, results_rot,
+                                           save_to_disk, show_plots)
+
+    print("\n2/6  Residuals (Rotating × Fixed)")
+    plot_consolidated_residuals(results_fix, results_rot,
+                                 save_to_disk, show_plots)
+
+    print("\n3/6  Model Comparison — Huber vs RF (Rotating × Fixed)")
+    plot_consolidated_model_comparison(results_fix, results_rot,
+                                        save_to_disk, show_plots)
+
+    print("\n4/6  Learning Curves (Rotating × Fixed)")
+    plot_consolidated_learning_curves(results_fix, results_rot,
+                                       save_to_disk, show_plots)
+
+    print("\n5/6  Feature Importance (Rotating × Fixed)")
+    plot_consolidated_feature_importance(results_fix, results_rot,
+                                          save_to_disk, show_plots)
+
+    print("\n6/6  Cross Condition Transfer (both directions)")
+    plot_consolidated_cross_condition_transfer(results_fix, results_rot,
+                                                save_to_disk, show_plots)
+
+    print(f"\n✅ All 6 consolidated figures → "
+          f"{os.path.relpath(GRAPHICS_DIR, os.path.dirname(__file__))}/")
+
 #  Main — run all analysis when called as a script
 # ══════════════════════════════════════════════════════════════════════════════
 

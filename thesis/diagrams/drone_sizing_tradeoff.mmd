@@ -1,0 +1,34 @@
+graph TB
+    %% ── Drone Sizing Tradeoff Constraints ─────────────────────────────────
+    %% Thesis figure: visualising the strict tradeoffs in 4-inch drone sizing.
+    %% Left: payload minimum (Pi 5 + cage + sensors).
+    %% Right: indoor safety ceiling (4-inch propellers, confined-space agility).
+    subgraph Left["TOO SMALL (< 3-inch wheelbase)"]
+        direction TB
+        LS1["Cannot carry Pi 5 companion\ncomputer (~60 g + peripherals)"]
+        LS2["Cannot carry protective cage\n(PETG, 35.8 cm Ø, bearing assembly)"]
+        LS3["Insufficient TWR margin for\npayload overhead (< 2:1)"]
+    end
+
+    subgraph Center["SWEET SPOT: 4-INCH"]
+        direction TB
+        CS1["✓ Carries Pi 5 + cage + sensors"]
+        CS2["✓ TWR ~3.8:1 (hover at ~45-50%)"]
+        CS3["✓ 2004 motors → ~860g thrust/motor"]
+        CS4["✓ 6S battery → efficient mid-throttle"]
+        CS5["✓ Upper indoor safety limit"]
+    end
+
+    subgraph Right["TOO BIG (>5-inch / LIDAR-class)"]
+        direction TB
+        RS1["Exceeds indoor safety envelope"]
+        RS2["Too heavy for confined-space deployment"]
+        RS3["Propeller wash destabilises\nin tight enclosures"]
+        RS4["LIDAR payload (e.g. Ouster OS0)\nadds ~450 g — exceeds TWR budget"]
+    end
+
+    Left --> Center --> Right
+
+    style Left fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#000
+    style Center fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#000
+    style Right fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#000

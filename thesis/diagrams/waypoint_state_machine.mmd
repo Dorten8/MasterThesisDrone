@@ -10,38 +10,31 @@ stateDiagram-v2
     DISARMED : Props stopped, battery plugged in
     DISARMED : Awaiting arming command
 
-    TAKEOFF : WP0 — TAKEOFF
-    TAKEOFF : Ascend to 0.50 m altitude
+    TAKEOFF : WP0 — TAKEOFF (one-time)
+    TAKEOFF : Ascend to target altitude
     TAKEOFF : EKF2 10-sample alignment
     TAKEOFF : Geofence active
 
-    WP_STAGE : WP_STAGE — U-Turn
-    WP_STAGE : Transit to X≈0.186, Y≈1.200
-    WP_STAGE : Reverses approach heading
-    WP_STAGE : Drone now facing south
+    WP_stage : WP_stage (U-turn)
+    WP_stage : Pass-through, no pause
+    WP_stage : Reverses approach heading
+    WP_stage : Drone now facing south
 
-    WP1_GATE : WP1 — GATE (Pause)
-    WP1_GATE : Arrive at gate entry
-    WP1_GATE : Hold position, verify heading
-    WP1_GATE : User prompt: "Resume?"
+    WP1 : Exp. Start-point (WP1)
+    WP1 : Hold position, verify heading
+    WP1 : User prompt: "Resume?"
+    WP1 : Sweep leg begins here
 
-    WP2_SWEEP : WP2 — SWEEP
-    WP2_SWEEP : Acceleration to sweep_speed
-    WP2_SWEEP : Exp. Start-Point marker
-    WP2_SWEEP : Constant-velocity transit
-    WP2_SWEEP : Flight Director active
+    WP2 : Exp. End-point (WP2)
+    WP2 : Post-column exit
+    WP2 : Constant-velocity transit complete
+    WP2 : Recovery leg begins here
 
-    WP3_RECOVER : WP3 — RECOVERY
-    WP3_RECOVER : Post-collision deceleration
-    WP3_RECOVER : Stabilisation hold
-    WP3_RECOVER : Exp. End-Point marker
-    WP3_RECOVER : Motor surge measurement
-
-    WP4_PAUSE : WP4 — PAUSE & LOOP
-    WP4_PAUSE : Hold at far position
-    WP4_PAUSE : Battery check
-    WP4_PAUSE : User prompt: "Resume?"
-    WP4_PAUSE : Loop counter incremented
+    WP3 : Recovery (WP3)
+    WP3 : Post-collision deceleration
+    WP3 : Stabilisation hold
+    WP3 : Auto-loops to WP_stage
+    WP3 : Loop counter incremented
 
     LANDING : LANDING
     LANDING : Auto-triggered on low battery
@@ -58,35 +51,33 @@ stateDiagram-v2
 
     DISARMED --> TAKEOFF : ARM + Offboard mode\n(publishes: TAKEOFF)
 
-    TAKEOFF --> WP_STAGE : Altitude ≥ 0.50 m\n(publishes: LOOP_0_WP_STAGE)
+    TAKEOFF --> WP_stage : Altitude target reached\n(publishes: LOOP_0_WP_stage)
 
-    WP_STAGE --> WP1_GATE : Position reached\n(publishes: LOOP_0_WP1_GATE)
+    WP_stage --> WP1 : Position reached\n(publishes: LOOP_0_WP1)
 
-    WP1_GATE --> WP2_SWEEP : User confirms resume\n(publishes: LOOP_0_WP2_SWEEP\nor EXP_START_POINT)
+    WP1 --> WP2 : User confirms resume\n(publishes: EXP_START_POINT)
 
-    WP2_SWEEP --> WP3_RECOVER : Y < −1.000 m\nOR collision detected\n(publishes: LOOP_0_WP3_RECOVER\nor EXP_END_POINT)
+    WP2 --> WP3 : Collision + recovery start\n(publishes: EXP_END_POINT)
 
-    WP3_RECOVER --> WP4_PAUSE : Stabilisation hold complete\n(publishes: LOOP_0_WP4_PAUSE)
+    WP3 --> WP_stage : AUTO-LOOP (skip WP0)\n(index reset to WP_stage)
 
-    WP4_PAUSE --> WP1_GATE : User resumes → NEXT LOOP\n(index reset to WP1, bypass WP0)\n(publishes: LOOP_N_WP1_GATE)
-
-    WP4_PAUSE --> LANDING : User exits OR\nbattery < 20.4 V\n(publishes: LANDING)
+    WP3 --> LANDING : User exits OR\nbattery low\n(publishes: LANDING)
 
     LANDING --> DISARMED : Touchdown + disarm
 
     %% ── Safety Transitions (any active state) ──────────────────────────────
     TAKEOFF --> EMERGENCY : Failsafe trigger
-    WP_STAGE --> EMERGENCY : Failsafe trigger
-    WP1_GATE --> EMERGENCY : Failsafe trigger
-    WP2_SWEEP --> EMERGENCY : Failsafe trigger
-    WP3_RECOVER --> EMERGENCY : Failsafe trigger
+    WP_stage --> EMERGENCY : Failsafe trigger
+    WP1 --> EMERGENCY : Failsafe trigger
+    WP2 --> EMERGENCY : Failsafe trigger
+    WP3 --> EMERGENCY : Failsafe trigger
 
     EMERGENCY --> DISARMED : Land + disarm
 
     %% ── Notes ──────────────────────────────────────────────────────────────
-    note right of WP2_SWEEP
+    note right of WP1
         ⚡ COLLISION OCCURS HERE
-        (between WP2→WP3)
+        (between WP1→WP2)
         Cage contacts column surface.
         IMU captures peak accel/gyro.
         db_mcap_event_segmenter
@@ -95,10 +86,10 @@ stateDiagram-v2
         pass-level .mcap files.
     end note
 
-    note left of WP4_PAUSE
-        🔁 LOOP BACK (not WP0)
-        WP4 → WP1 only.
-        Takeoff never repeated.
+    note left of WP3
+        🔁 AUTO-LOOP BACK
+        WP3 → WP_stage only.
+        WP0 (Takeoff) never repeated.
         Each loop = 1 data pass.
         Max loops limited by
         battery (≈ 8–12 passes

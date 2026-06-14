@@ -381,3 +381,249 @@ import sys, os; sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(
 1. `os.path.dirname(__file__)` finds the script's own folder (e.g. `dev_logs/analysis/database/`).
 2. `os.path.join(..., "../../../")` traverses 3 directory levels up to dynamically resolve the absolute path of the repository root (`pi_drone_sshfs`).
 3. `sys.path.insert(0, ...)` prepends the root folder to Python's search path, making `dev_logs` instantly importable.
+
+---
+
+# Full Rebuild from Scratch
+
+Use this when setting up a new Pi 5 (or replacing the SD card), or after a `git clean -xdf` or full Docker rebuild. It covers the entire chain: host OS → container → workspace → firmware → experiment pipeline.
+
+## 0. Prerequisites
+
+- **Pi 5 (8 GB)** with freshly flashed **Ubuntu 24.04 Desktop** (use Raspberry Pi Imager)
+- Set hostname: `pi5drone`
+- Enable SSH **and** Wi-Fi during Imager setup
+- This repo cloned onto the Pi:
+  ```bash
+  cd ~
+  git clone git@github.com:Dorten8/MasterThesisDrone.git ws
+  ```
+
+> **Imager caveat:** despite ticking "Enable SSH", the SSH daemon is NOT started on first boot. Fix below.
+
+## 1. Pi 5 Host OS
+
+Run these once after the initial flash, **before** opening the container:
+
+```bash
+# ── SSH fix (Imager lies) ──
+sudo apt install openssh-server
+sudo systemctl enable --now ssh
+
+# ── mDNS so you can reach pi5drone.local ──
+sudo apt install avahi-daemon
+sudo systemctl enable --now avahi-daemon
+# Also install on your workstation: avahi-daemon libnss-mdns
+
+# ── Docker (full suite) ──
+sudo apt install docker.io docker-ce docker-ce-cli containerd.io \
+  docker-buildx-plugin docker-compose-plugin
+sudo apt remove containerd          # ⚠️ kills the conflicting stub
+sudo groupadd docker
+sudo usermod -aG docker $USER
+newgrp docker                       # or log out & back in
+
+# ── UART for Pixhawk serial ──
+sudo nano /boot/firmware/config.txt
+# Append:  enable_uart=1
+# Reboot, then verify:
+ls -l /dev/ttyAMA0
+cat /boot/firmware/cmdline.txt      # should show console=tty1 (not serial)
+
+# ── Python venv (host tooling only) ──
+sudo apt install python3.12-venv
+python3 -m venv ~/ros2_env
+
+# ── SSH key for Git ──
+ssh-keygen -t ed25519 -C "pi5drone"
+cat ~/.ssh/id_ed25519.pub          # add to GitHub
+```
+
+**Verify:**
+```bash
+ping pi5drone.local    # from workstation → responds
+ssh dorten@pi5drone.local
+docker ps              # daemon running
+ls -l /dev/ttyAMA0     # UART exists
+```
+
+## 2. VS Code Remote-SSH + Dev Container
+
+On your **workstation** (not Pi):
+
+1. Install **Remote-SSH** and **Dev Containers** VS Code extensions
+2. `Ctrl+Shift+P` → Remote-SSH: Connect to Host → `dorten@pi5drone.local`
+3. Open `/home/dorten/ws`
+4. `Ctrl+Shift+P` → Dev Containers: Reopen in Container
+
+**First build:** ~30–50 min on Pi 5. Docker caches layers afterward.
+
+The container build (`Dockerfile`) does all of this automatically:
+- Installs ROS 2 Humble base layers
+- Builds **Micro XRCE-DDS Agent** from source (`src/Micro-XRCE-DDS-Agent/`)
+- Builds **MAVLink Router** from source (`mavlink-router/`)
+- Installs Python deps (meson, pymavlink, mcap-ros2-support, pandas, scipy, matplotlib, etc.)
+
+## 3. ROS 2 Workspace Build (colcon)
+
+Triggered automatically by `postCreateCommand`, but you can re-run manually:
+
+```bash
+cd /home/ws
+source /opt/ros/humble/setup.bash
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+```
+
+**What gets built:**
+| Package | Source | Type |
+|---|---|---|
+| `mocap_px4_bridge` | `src/mocap_px4_bridge/` | C++ (ENU→NED bridge) |
+| `motion_capture_tracking` | `src/mocap/` | C++ (OptiTrack NatNet client) |
+| `px4_msgs` | `src/px4_msgs/` | ROS 2 msg definitions |
+| `drone_control` | `drone_control/` | Python nodes (flight_director, ghost_flight, flight_recorder) |
+
+**Troubleshooting:**
+```bash
+# Missing dependencies
+rosdep install --from-paths src --ignore-src -r -y
+
+# Clean rebuild
+rm -rf build/ install/ log/
+colcon build --symlink-install --cmake-clean-first
+
+# Source the new build
+source install/setup.bash
+```
+
+## 4. PX4 Firmware Build (SITL only — optional)
+
+Only needed if you modify PX4 internals or want Gazebo simulation:
+
+```bash
+cd /home/ws/src/PX4-Autopilot/
+bash Tools/setup/ubuntu.sh
+make px4_sitl                            # headless simulation
+# or
+HEADLESS=1 make px4_sitl gz_x500         # Gazebo headless
+```
+
+The real flight controller runs the official **PX4 v1.16.1rc** binary (flashed via QGroundControl). The SITL build is for testing only.
+
+## 5. Validate the Container
+
+```bash
+# Inside the dev container:
+lsb_release -a          # → Ubuntu 22.04 LTS
+ros2 --version          # → ROS 2 Humble
+echo $ROS_DISTRO        # → humble
+which MicroXRCEAgent    # → /usr/local/bin/MicroXRCEAgent
+which mavlink-routerd   # → /usr/bin/mavlink-routerd
+colcon --version        # → colcon ...
+```
+
+## 6. Startup Sequence (on the real drone)
+
+Used every flight session. Handles the full pipeline: time sync → uXRCE-DDS Agent → MoCap → Bridge → Foxglove.
+
+```bash
+cd /home/ws
+./startup-sequence.sh
+```
+
+Shut down gracefully (no zombie processes):
+```bash
+./shutdown-sequence.sh
+```
+
+**Manual step-by-step** (for debugging — three terminals):
+
+```bash
+# Terminal A: uXRCE-DDS Agent
+MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600
+
+# Terminal B: MoCap → Bridge
+ros2 run motion_capture_tracking motion_capture_tracking_node \
+  --ros-args -p type:=optitrack -p hostname:=192.168.74.3
+ros2 run mocap_px4_bridge mocap_px4_bridge \
+  --ros-args -p mocap_topic:=/poses -p drone_name:=rigid_body_7 \
+  -p px4_topic:=/fmu/in/vehicle_visual_odometry
+
+# Terminal C: Verify
+ros2 topic list | grep /fmu
+ros2 topic echo /fmu/out/vehicle_odometry --qos-reliability best_effort
+```
+
+## 7. Run a Collision Experiment
+
+```bash
+# 1. Startup (handles Agent + MoCap + Bridge)
+./startup-sequence.sh
+
+# 2. Launch the flight director and recorder
+ros2 run drone_control flight_director.py &
+ros2 run drone_control flight_recorder.py &
+
+# 3. The column_sweep_loop.py mission runs autonomously:
+#    WP1 (0.000, 1.200) → WP2 (0.100, 1.200) → WP3 (0.100, -1.200) → WP4 (0.000, -1.200) → loop
+```
+
+## 8. Slice Flights + Rebuild Database (after flying)
+
+```bash
+# Step 1 — slice raw MCAP bags into individual passes:
+python3 -m dev_logs.analysis.database.db_mcap_event_segmenter
+
+# Step 2 — ingest passes into the SQLite DB:
+# Full rebuild (scans all directories):
+rm -f dev_logs/analysis/experiments_summary.db
+python3 -m dev_logs.analysis.database.db_pipeline
+
+# Incremental (today's folders only, much faster):
+python3 -m dev_logs.analysis.database.db_pipeline --today
+
+# Custom cutoff (skip dirs before a specific timestamp):
+python3 -m dev_logs.analysis.database.db_pipeline --cutoff 20260601-0000
+```
+
+## 9. Rebuild the Thesis PDF
+
+```bash
+cd /home/dorten/MasterThesisDrone/thesis
+rm -f main.out main.log main.aux main.bbl main.blg main.toc \
+      main.lof main.lot main.bcf main.run.xml main.fdb_latexmk main.fls
+latexmk -pdf main.tex
+```
+
+Requires a full LaTeX distribution (`texlive-full`) on the host (not in the container). On Ubuntu 24.04:
+```bash
+sudo apt install texlive-full latexmk biber
+```
+
+## 10. Quick-Reference Scripts
+
+| Script | When to run |
+|---|---|
+| `startup-sequence.sh` | Every flight session |
+| `shutdown-sequence.sh` | After flying (cleanup) |
+| `.devcontainer/post-create.sh` | First container build (auto) |
+| `.devcontainer/post-start.sh` | Every container start (auto) |
+| `dev_logs/stage_flight_backups.sh` | Before `git push` to include MCAPs |
+
+## 11. Environment Variables (must be set)
+
+These are baked into the container by `devcontainer.json` + `post-start.sh`:
+
+```bash
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export SSOT_CONFIG_PATH=/home/ws/config
+```
+
+If running raw ROS 2 commands outside the container, set them manually or source the env:
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/ws/install/setup.bash
+```

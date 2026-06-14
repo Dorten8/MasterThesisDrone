@@ -1,5 +1,6 @@
 \section{Methodology}
-The methodology for RATFLY project stands on development of drone to use for the various tests and implementations together with controlled environment to test the drone in. 
+\label{sec:methodology}
+The methodology for RATFLY project stands on development of drone to use for the various tests and implementations together with controlled environment to test the drone in.
 As to the development, it consists of hardware choices, software choices and the constraints sprouting from these two which dictate much of the development. 
 \subsection{Design and Development}
 \subsubsection{Flight Type}
@@ -14,48 +15,35 @@ This makes the control of quadcopter somewhat simple as it can be summarized in 
     \caption{typical quadrocopter setup 'props-in', yaw $\psi$ (turning around), pitch $\theta$ (nose up or down) and roll $\phi$ (tilting to sides) From \cite{gomezParetoOptimalPID2020}}
     \label{fig:drone_movement}
 \end{figure}
-\subsubsection{Functional constraints and considerations}
-As this work is in certain sense a continuation of Lars \cite{lercheSpinFlyUAVSystem} Spinfly paper, lessons learned from his project were well considered. One of the largest limitations mentioned in the work and also by the author himself in person was insufficient weight headroom of the drone which had trouble taking off and maintaining the flight when fitted with the cage. Another one was insufficient battery life which did not allow for prolonged flight and made subsequent tests difficult to run. 
-Both of these problems are solved in tandem as battery capacity and its weight are directly proportional and can have diminishing returns if the battery has high capacity but get drain faster as the motors have to output more power. 
-Lerche also reflected on lack of robust autonomous controller on board and troubles with telemetry realying the communication. 
-[I want to make this more structured, maybe better extract the infomarion, maybe summup that was I needed to do was 
+\subsubsection{Predecessor Constraints and Design Objectives}
+This work is a continuation of the Spinfly platform by A.~Lerche \cite{lercheSpinFlyUAVSystem}, which identified two primary limitations that directly shaped this project: \textbf{insufficient weight headroom}---the original platform struggled with takeoff when equipped with the protective cage, leaving no margin for component upgrades---and \textbf{insufficient battery capacity}, which created operational friction by limiting test throughput.
+
+These problems are coupled: battery mass scales with capacity, yet a heavier battery forces higher motor output, accelerating discharge and potentially negating the added capacity. Solving both simultaneously required systematic trade-off analysis. Lerche also noted a lack of robust autonomous control and unreliable telemetry, which informed the autopilot selection.
+
+From these constraints, three design targets were formulated:
 \begin{enumerate}
-    \item Carry bigger load
-    \item Fly longer/more efficiently
-    \item Simpler and more robust flight control [FC]
-\end{enumerate}
-Size of 6C FC is substential enough to warrant a 4inch drone design, while typically drones of this size, 4inches is also the upper maximum size to be flown indoors \cite{FindYourPerfect}. 
-The ratio of trust-to-weight for common drones is between 4:1 to 3:1, meaning maximum thrust of the the motors combined should be 3-4times greater than the weight of the drone. Due to needed weight headroom, which by estimation and after discussion with Spinfly author, I set to be 800-1000g. I chose Emax ECOII 2004 1600KV motors. These are typically recommended for 4.5inch to 5inch ultalight drone builds, but similiar motor by a different company has been tested with 4inch propellers GF4023 propellers and proven to ~860g of thrust per motor, combined ~3440g per drone giving me 1:3.44-1:4.30 ratio depending on the total weight. This also means the whole drone can stay hovering with approximately 50\% of thrust which is recommended due to the motors being twice as efficient than at 100\% trust. Designation 2004 means it has 20mm diameter and 4mm in height, this is significant diameter in the class which makes it slower to respond and adjust RPMs, on the other hand it allows for higher trust at 50\% throttle. 1600KV metric is how many RPMs are produced when applying 1V. 1600KV is at the low end of KV spectrum and was selected in accordance with using a 6 cell battery which provides ~24V providing ca 38400RPM (1600 * 24) which falls well within recommended speeds for 4inch propellers. 6S battery is also an important choice from the efficiency perspective as running higher voltages draws less current and the whole settup keep a lower temperature as opposed to 4S setups. Additionally there is voltage sag phenomenmon (LLM here-> explain it for me pls) that is less of a factor with higher voltages settups
-To address this holistically with a focus on the my research question I choose PX4 standard for my autonomous flying solution. PX4 is a an open source standard with modular architecture uORB (Micro Object Request Broker) which is suited for plug-and-play development as it's high modularity allows for faster research, as the physical Flight Controller (FC) manufactured under this standard Pixhawk 6C, as opposed to most FCs, so the accompanying electronics can be quickly swapped, tried and iterated on. This Pixhawk 6C FC has been chosen as a solid FC solution with IMU and compass sensors already integrated, simplifying the drone development and allowing me to concentrate on the research question itself. 
-[I feel like this should be ]
-
-
-
-Iterative Learning from Predecessor Work
-
-The design began with critical constraints identified in the Spinfly platform \cite{lercheSpinFlyUAVSystem}. Two primary limitations directly shaped this work:
-
-\begin{enumerate}
-    \item \textbf{Insufficient weight headroom} -- The original platform struggled with takeoff and stable flight when equipped with the protection  cage, leaving no margin for component upgrades or mission adaptations.
-    
-    \item \textbf{Insufficient battery capacity} -- Limited flight time created operational friction; test iterations became difficult to schedule, reducing research throughput.
+    \item \textbf{Carry larger payloads} --- sufficient headroom for the cage and future instrumentation.
+    \item \textbf{Achieve longer flight duration} --- extend mission time while maintaining efficient power draw.
+    \item \textbf{Simplify autonomous control} --- adopt a proven, modular flight controller to reduce software complexity.
 \end{enumerate}
 
-These problems are \textbf{not independent}---they form a coupled system. Battery capacity and its mass are directly proportional, yet simply increasing capacity can create diminishing returns. A heavier battery forces motors to output more power, which accelerates discharge rate, potentially wasting the added capacity. The design needed to solve both simultaneously through systematic trade-off analysis.
+\subsubsection{Platform Sizing: The 4-Inch Tradeoff}
+\label{sec:sizing_tradeoff}
 
-Lerche also highlighted secondary constraints: lack of robust autonomous flight control on the flight controller itself, and telemetry transmission reliability. These informed the autopilot platform selection.
+The drone's physical dimensions are governed by a narrow three-way tradeoff, illustrated in \autoref{fig:drone_sizing_tradeoff}:
 
-\paragraph{Design Objectives:}
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{Figures/drone_sizing_tradeoff.pdf}
+    \caption{The three-way sizing constraint that defines the 4-inch platform: going smaller loses payload capacity; going larger violates indoor safety limits. The 4-inch wheelbase is the upper limit for confined indoor flight while providing sufficient thrust to carry the companion computer and protective cage.}
+    \label{fig:drone_sizing_tradeoff}
+\end{figure}
 
-Based on these constraints, the design targets were clarified into three interconnected goals:
+\textbf{Lower bound: payload minimum.} The Raspberry~Pi~5 companion computer ($\sim$60\,g plus peripherals) and the PETG protective cage (35.8\,cm diameter, bearing assembly) together require a minimum thrust budget that class-3-inch and below platforms cannot provide. A typical 3-inch build lacks both the stator diameter and the propeller disc area to lift these components while maintaining a safe TWR margin.
 
-\begin{enumerate}
-    \item \textbf{Carry larger payloads} -- The base payload must be much larger, to allow for cage development and to leave weight headroom for any additional development
-    
-    \item \textbf{Achieve longer flight duration} -- Extend mission time while maintaining efficient power consumption.
-    
-    \item \textbf{Simplify autonomous control} -- Use a proven, modular flight controller stack to reduce software complexity and improve reliability.
-\end{enumerate}
+\textbf{Upper bound: indoor safety ceiling.} The 4-inch propeller class is the practical upper limit for indoor flight in confined spaces.\cite{FindYourPerfect} Larger platforms (5-inch and above) produce propeller wash that destabilises the vehicle in tight enclosures and increase the kinetic energy carried into any collision, raising the barrier to physical survivability. Platforms large enough to carry heavy sensors such as a full-size LIDAR (e.g., Ouster OS0 at $\sim$450\,g) exceed the thrust budget while also exceeding safe indoor operating dimensions.
+
+\textbf{The 4-inch sweet spot.} At this scale, 2004-stator motors paired with 4-inch GF4023 propellers on a 6S battery produce sufficient lift for the companion computer and cage while hovering at 45--50\% throttle---near the efficiency peak. The Pixhawk~6C form factor (84.8\,$\times$\,44\,$\times$\,12.4\,mm) fits within the 4-inch frame envelope, making the platform fully self-contained.\cite{TechnicalSpecificationHolybro2025} The resulting TWR of $\sim$3.8:1 places the drone in the responsive research-autonomy band, with enough thrust to arrest post-collision drift and recover to the commanded setpoint.
 
 \paragraph{Platform Selection: PX4 and Pixhawk 6C}
 
@@ -73,135 +61,19 @@ The \textbf{Pixhawk 6C flight controller} was chosen as the hardware instantiati
 
 The 6C's form factor (84.8 \(\times\) 44 \(\times\) 12.4 mm) justifies the 4-inch drone design choice.\cite{TechnicalSpecificationHolybro2025} Four-inch platforms represent the upper practical limit for indoor flight while remaining large enough to carry meaningful payloads.
 
-\paragraph{Thrust-to-Weight Ratio: Balancing Performance and Efficiency}
+\paragraph{Thrust-to-Weight and Efficiency Rationale}
 
-\textbf{Definition and Target Range}
+The design targets a \textbf{thrust-to-weight ratio (TWR) of approximately 3.8:1}, positioning the platform in the research/autonomous zone where hover occurs at roughly 45--50\% throttle. This mid-throttle hover is deliberate: motor efficiency peaks at 40--70\% throttle, and hovering at 50\% reserves substantial headroom for autonomous obstacle avoidance, gust rejection, and post-collision recovery. Hovering at or near 100\% throttle leaves zero control margin.\cite{oscarHowChooseFPV2024}
 
-Thrust-to-weight (TWR) ratio expresses the total available thrust divided by drone mass. It directly determines hover efficiency and responsiveness. Industry guidelines establish a spectrum across applications.\cite{oscarHowChooseFPV2024}
+\paragraph{Motor and Battery Selection}
 
-\begin{table}[h]
-\centering
-\begin{tabular}{|c|c|c|c|}
-\hline
-\textbf{Application} & \textbf{TWR} & \textbf{Hover Throttle} & \textbf{Notes} \\
-\hline
-Aerial photography & 2:1 to 3:1 & 40--50\% & Stable, efficient \\
-\hline
-Research/cargo & 3:1 to 4:1 & 30--50\% & Responsive, good efficiency \\
-\hline
-Racing/freestyle & 5:1+ & 15--25\% & Aggressive maneuvers \\
-\hline
-\end{tabular}
-\end{table}
+\textbf{EMAX ECOII 2004 1600KV} motors were selected. The 2004 stator (20\,mm diameter, 4\,mm height) provides high torque at mid-throttle while the low 1600\,KV rating (1600\,RPM per volt) is matched to a \textbf{6S LiPo battery} (22.2\,V nominal). On this voltage, the motors deliver approximately 860\,g static thrust each under 4-inch GF4023 propellers---a combined 3,440\,g.\cite{drone24hoursTMotorF20041700KV, oscarHowChooseFPV2024} The 6S voltage also places the practical RPM ($\sim$24,000--28,000 under load) within the 4-inch propeller's efficient range, avoiding excessive tip speeds.
 
-\textbf{Why TWR Matters: Efficiency and Control Authority}
+\paragraph{Efficiency Advantage of 6S over 4S}
 
-Motor efficiency does not follow a simple linear relationship with throttle percentage. Instead, efficiency curves show a \textbf{peak efficiency at mid-range throttle} (typically 40--70\%), with degradation at both very low and very high throttle levels.\cite{UltimateFPVDrone} This is critical for autonomous drones.
+The choice of a 6-cell battery over a 4-cell alternative is driven by efficiency. At a given thrust level, higher voltage draws proportionally lower current, reducing resistive ($I^2R$) losses in the battery, ESCs, and motor windings. Empirically, 6S systems exhibit superior efficiency up to approximately 45\% throttle.\cite{recursionlabsRecursionLabs6s2021}
 
-If a drone hovers at 100\% throttle, it has zero authority to climb, stabilize, or reject wind gusts---any disturbance forces maximum output, leaving no control margin and risking loss of stability during maneuvers.\cite{Innov8tive} Conversely, hovering at 40--50\% throttle reserves substantial available thrust for autonomous obstacle avoidance, gust rejection, and rapid maneuvers required during precision autonomous flight.\cite{roboticsDroneDesignCalculations}
-
-\paragraph{Motor Selection: EMAX ECOII 2004 1600KV}
-
-\textbf{Why This Motor?}
-
-The EMAX ECOII 2004 series is specified for 4--5 inch ultralight builds.\cite{EmaxECOII} The 2004 designation specifies stator dimensions: 20mm diameter and 4mm height.\cite{EmaxECOII} This dimensional choice has performance implications explained below.
-
-Pilot testing of a similar 2004-series motor (T-Motor F2004 1700KV, comparable in stator dimensions) paired with 4-inch GF4023 propellers and a 6S battery demonstrated approximately 860 grams of static thrust per motor.\cite{drone24hoursTMotorF20041700KV, oscarHowChooseFPV2024} With four motors, this yields combined thrust capacity of approximately 3,440 grams---establishing the system's TWR.
-
-\textbf{TWR Calculation} (estimated final weight 800--1,000g):
-\begin{itemize}
-    \item Total available thrust: 3,440g
-    \item Target weight: 900g (midpoint)
-    \item TWR = 3,440 / 900 = \textbf{3.82:1}
-\end{itemize}
-
-This places your design in the research/autonomous platform zone. A TWR of 3.8:1 means the drone can sustain controlled hovering well within the efficient mid-throttle operating range.
-
-\textbf{Understanding Motor Nomenclature}
-
-The \textbf{2004 designation} specifies 20mm stator diameter and 4mm height. Larger stator diameters generate more torque but have slower transient response (RPM changes take longer to complete) compared to smaller-diameter motors.\cite{mechtexUnderstandingRelationshipKV} This trade-off is deliberate: at mid-throttle operation, the 2004's larger stator sustains higher efficiency than smaller, higher-KV alternatives that must spin faster to produce equivalent thrust. For autonomous flight requiring smooth, predictable thrust response, this characteristic is desirable.
-
-The \textbf{1600 KV rating} indicates 1600 RPM per applied volt. This low-KV designation was selected specifically for your 6S battery voltage.
-
-\paragraph{Battery Selection: 6S LiPo}
-
-\textbf{Why 6S and Not 4S?}
-
-Battery voltage selection cascades through the entire drivetrain. The \textbf{6S (six-cell) LiPo pack} produces nominal voltage of 22.2V (6 cells \(\times\) 3.7V per cell).\cite{UnderstandingLiPoBattery2025} This voltage selection determines optimal motor KV and operating efficiency.
-
-\textbf{1600 KV with 6S Battery:}
-\begin{itemize}
-    \item Theoretical no-load RPM: 1600 KV \(\times\) 22.2V = \textbf{35,520 RPM}\cite{UltimateFPVDrone}
-    \item Practical RPM under propeller load: \textasciitilde24,000--28,000 RPM (typically 70--80\% of theoretical no-load speed due to air resistance and propeller drag)\cite{oscarHowChooseFPV2024}
-    \item This range is optimal for 4-inch propellers, avoiding excessive tip speeds that reduce aerodynamic efficiency
-\end{itemize}
-
-\textbf{Higher voltage = less current for equivalent thrust.} When motors operate on 4S (\textasciitilde14.8V nominal), they require significantly higher current draw to achieve the same thrust.\cite{oscarUsingLiPoBatteries2025} Higher current increases internal losses in battery, ESCs, and motor windings---manifesting as excess heat and reduced flight time. 6S draws proportionally less current for equivalent thrust, keeping system temperature lower. This is measurable: one study comparing 4S vs 6S motor systems on the same mechanical load found that 6S exhibits ``greater low-end control'' with lower current heat generation under identical thrust demands.\cite{recursionlabsRecursionLabs6s2021}
-
-\paragraph{Voltage Sag: The Critical Factor for Autonomous Control}
-
-\textbf{What is Voltage Sag and Why It Matters}
-
-Voltage sag refers to the \textbf{temporary voltage drop that occurs during high-current discharge events}. This drop is caused by battery internal resistance (IR). Ohm's Law describes this relationship: \textbf{Voltage Drop = Current \(\times\) Internal Resistance}.\cite{UnderstandingLiPoBattery}
-
-Every LiPo battery contains internal resistance---even high-quality cells. When you demand high current from the battery (e.g., during rapid acceleration), that current flowing through internal resistance creates a voltage drop.\cite{oscarUsingLiPoBatteries2025} For example:
-
-\begin{itemize}
-    \item A 4S battery (14.8V nominal) with typical internal resistance might sag from 14.8V down to \textbf{10.2V} during peak acceleration
-    \item A 6S battery (22.2V nominal) with equivalent quality, under the same peak current draw, experiences proportionally less sag (from 22.2V down to \textasciitilde16.5V)\cite{LiPoBatteriesFPV}
-\end{itemize}
-
-The absolute sag magnitude (difference in volts) may be similar between 4S and 6S. \textbf{But the percentage impact is vastly different:}
-
-\begin{itemize}
-    \item 4S sag example: 14.8V \(\to\) 10.2V is a \textbf{31\% voltage loss}
-    \item 6S sag example: 22.2V \(\to\) 16.5V is only a \textbf{26\% voltage loss}
-\end{itemize}
-
-\textbf{Why This Matters for Autonomous Flight Controllers}
-
-Your Pixhawk 6C relies on stable voltage to maintain consistent motor response during rapid maneuvering. The flight controller sends throttle commands expecting motors to accelerate at a predictable rate. \textbf{Excessive voltage sag introduces latency between commanded acceleration and actual motor output.} Here's the causal chain:
-
-\begin{enumerate}
-    \item Flight controller commands 70\% throttle for obstacle avoidance maneuver
-    \item Motor voltage sags unexpectedly from 22V to 16V due to high current draw
-    \item Motor RPM drops below what the controller expected
-    \item Actual thrust output is lower than the controller's state estimator predicted
-    \item The control loop detects the mismatch and must recalculate---introducing lag
-\end{enumerate}
-
-During high-speed autonomous maneuvers, this lag degrades control stability and can risk uncommanded behavior. Higher baseline voltage (6S) provides a larger voltage margin, reducing the percentage impact of sag on motor performance.\cite{oscarUsingLiPoBatteries2025}
-
-\textbf{6S Enables Efficient Hover at Higher Throttle Margin}
-
-Since 6S provides higher baseline voltage, your motor's hover throttle point is positioned differently on the efficiency curve compared to 4S. Hover throttle percentage depends on specific motor and load characteristics---\textbf{there is no direct proportionality between voltage and hover throttle}. However, empirical testing shows: \textbf{``6S is a clear winner in efficiency up to around 45 throttle [percentage].''}\cite{recursionlabsRecursionLabs6s2021}
-
-Your 1600KV motor on 6S should hover in the \textbf{45--50\% throttle range} based on your estimated drone weight and motor thrust.\cite{mechtexUnderstandingRelationshipKV} This operating point---hovering near the motor efficiency peak---means you extract maximum flight time from your battery while maintaining responsive control authority (50\% throttle reserves 50\% available thrust for maneuvers and environmental disturbances).
-
-\paragraph{System Integration: How Components Work Together}
-
-This configuration is tightly coupled---changing any single parameter cascades inefficiencies throughout the system:
-
-\begin{table}[h]
-\centering
-\begin{tabular}{|c|c|p{5cm}|}
-\hline
-\textbf{Parameter} & \textbf{Your Design} & \textbf{Rationale} \\
-\hline
-Frame size & 4-inch wheelbase & Pixhawk 6C form factor (84.8 \(\times\) 44 \(\times\) 12.4 mm) + indoor flight compliance \\
-\hline
-Motor KV & 1600 KV & Produces 24,000--28,000 RPM under load on 6S; optimal for 4-inch propellers\cite{oscarHowChooseFPV2024} \\
-\hline
-Battery voltage & 6S (22.2V nominal) & Reduces voltage sag percentage impact; improves efficiency at cruise throttle\cite{recursionlabsRecursionLabs6s2021} \\
-\hline
-Hover throttle & \textasciitilde45--50\% & Operates at motor efficiency peak; reserves 50\% available thrust\cite{mechtexUnderstandingRelationshipKV, recursionlabsRecursionLabs6s2021} \\
-\hline
-Estimated TWR & 3.82:1 & Responsive yet efficient for research autonomous missions \\
-\hline
-\end{tabular}
-\end{table}
-
-If you switched to 4S battery, for example, you would need lower-KV motors (e.g., 1100KV) to maintain similar RPM. But lower-KV motors produce less torque, potentially requiring larger propellers or higher current draw---both of which degrade efficiency. Every selection interconnects. Your component choices represent a validated system point.
+\textbf{Voltage sag}---the temporary voltage drop under high-current discharge, caused by battery internal resistance ($V_{\text{drop}} = I \times R_{\text{internal}}$)---is proportionally less severe at higher baseline voltages. Under an equivalent current spike, a 4S pack may sag by over 30\% of its nominal voltage, whereas an equivalent-quality 6S pack sees a smaller relative drop.\cite{oscarUsingLiPoBatteries2025} For autonomous flight, where the controller expects a predictable motor response, excessive sag introduces a latency between commanded and actual thrust that degrades control stability during rapid maneuvers. Higher baseline voltage provides a larger operating margin against this effect. The detailed derivation is given in the \hyperref[sec:annex_hardware]{Annex}.
 
 \section{System Architecture}
 
@@ -209,12 +81,14 @@ The autonomous flight stack is organised into five distinct layers, illustrated 
 
 \todo{UPDATE THE SYSTEM ARCHITECTURE DIAGRAM to reflect this 5-layer layout}
 
+\begin{landscape}
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=\textwidth]{Figures/architecture.pdf}
+    \includegraphics[width=1.45\textwidth]{Figures/architecture.pdf}
     \caption{Drone software stack architecture: PX4 flight controller, ROS 2 middleware, MoCap integration, and data analysis pipeline.}
     \label{fig:architecture}
 \end{figure}
+\end{landscape}
 
 \subsection{Hardware Platform}
 
@@ -232,36 +106,51 @@ External state estimation is provided by an \textbf{OptiTrack Prime\textsuperscr
 
 The flight controller and companion computer communicate over a UART serial link (TELEM2, 921\,600 baud). During experimental flights, the link uses \textbf{uXRCE-DDS} exclusively: the PX4 uXRCE-DDS client publishes internal uORB topics (\texttt{vehicle\_odometry}, \texttt{vehicle\_status}, \texttt{actuator\_motors}) to the ROS 2 node graph via \texttt{MicroXRCEAgent} running on the Pi 5. A secondary \textbf{MAVLink} stream can be enabled on the same port for ground-station debugging (QGroundControl), but the two protocols are not used simultaneously during active data collection.
 
-\todo{REPLACE THE SOFTWARE FRAMEWORK PARAGRAPH BELOW WITH A DEDICATED DIAGRAM SHOWING THE ROS 2 NODE GRAPH AND DATA FLOWS}
-
 \subsection{Software Framework}
 
-All autonomous control logic runs inside a \textbf{ROS 2 Humble} environment inside a Docker container (Ubuntu 22.04 base image) on the Pi 5. The complete experimental pipeline, from hardware through the ROS 2 node graph to telemetry storage, is illustrated in \autoref{fig:experiments_pipeline}. The key ROS 2 nodes are:
+\subsubsection{Source Submodules}
+
+The ROS~2 workspace integrates several external repositories as Git submodules, providing the interface layer between the high-level autonomy code and the low-level PX4 flight stack:
+
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none,caption={Source submodules under \texttt{src/} providing the ROS~2--PX4 interface layer.},label={lst:submodules}]
+src/
+  px4_msgs/                    # PX4 message definitions (uORB <-> ROS 2)
+  px4_ros_com/                 # Frame transforms & utility libraries
+  Micro-XRCE-DDS-Agent/        # uXRCE-DDS middleware bridge agent
+  motion_capture_tracking/     # OptiTrack NatNet receiver node
+  mocap_px4_bridge/            # ENU -> NED coordinate transformer
+  PX4-Autopilot/               # PX4 firmware source (SITL builds only)
+\end{lstlisting}
+
+Three of these are critical for the MoCap-to-PX4 chain: \texttt{px4\_msgs} provides the interface message definitions (ROS~2 \texttt{.msg} files mirroring PX4 uORB topics), \texttt{px4\_ros\_com} handles frame transformations (ENU to NED/FRD), and \texttt{mocap\_px4\_bridge} publishes the transformed poses to \texttt{/fmu/in/vehicle\_visual\_odometry}.
+
+\subsubsection{The Flight Director}
+
+The \texttt{flight\_director.py} node was developed directly from the PX4 ROS~Com offboard control examples, inheriting their structure for heartbeat publishing, offboard mode switching, and trajectory setpoint generation. It serves as the primary mission executor:
 
 \begin{itemize}
-    \item \texttt{flight\_director.py} --- The primary mission executor. It subscribes to PX4 telemetry, runs the waypoint state machine (\autoref{fig:waypoint_state_machine}), and publishes trajectory setpoints in offboard mode. It also enforces the geofence boundary and manages the collision sweep loop.
-    \item \texttt{ghost\_flight.py} --- A secondary flight mode providing alternative trajectory generation for comparative testing.
-    \item \texttt{flight\_recorder.py} --- A dedicated telemetry logger that writes synchronised ROS 2 topics into segmented \texttt{.mcap} files, one per flight loop iteration.
-    \item \texttt{px4\_ros\_com} / \texttt{px4\_msgs} --- Interface packages providing the message definitions and frame transformation utilities required for ROS 2-to-PX4 communication.
+    \item \textbf{State machine}: Implements the waypoint state machine shown in \autoref{fig:waypoint_state_machine}, transitioning through DISARMED $\to$ TAKEOFF (WP0) $\to$ WP\_stage (U-turn) $\to$ Exp.\ Start-point (WP1) $\to$ Exp.\ End-point (WP2) $\to$ Recovery (WP3) $\to$ (auto-loop to WP\_stage, or LANDING). Each state transition publishes a waypoint-identifier message that drives the event segmenter.
+    \item \textbf{Offboard control}: Publishes \texttt{TrajectorySetpoint} messages to \texttt{/fmu/in/trajectory\_setpoint} with explicit velocity feedforward (\texttt{hb.velocity = True}). Subscribes to \texttt{/fmu/out/vehicle\_status} for telemetry feedback.
+    \item \textbf{Safety enforcement}: Monitors the geofence boundary with the cage-radius offset (17.9\,cm) subtracted, and triggers an emergency landing on breach, MoCap loss, or spacebar kill-switch.
 \end{itemize}
 
+The complete experimental pipeline, from hardware through the ROS~2 node graph to telemetry storage, is illustrated in \autoref{fig:experiments_pipeline}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/experiments_pipeline.pdf}
+    \caption{Experiment pipeline showing hardware components, ROS~2 software stack, data flow from MOCAP through the agent to PX4, and telemetry logging to MCAP storage.}
+    \label{fig:experiments_pipeline}
+\end{figure}
+
+The \texttt{flight\_missions.py} module provides discrete flight routines (column sweep, hover verification), while \texttt{flight\_recorder.py} logs synchronised topic data to segmented \texttt{.mcap} files, one per loop iteration.
 
 
-\subsection{Data Processing for Collision Analysis}
-\label{sec:mocap_ekf2}
-***LLM NOTE: KEEP THIS SECTION AS-IS — the recent writing here is solid. No changes needed.***
 
-During the exact millisecond of physical impact, the protective cage structures transiently occlude the drone's reflective markers. This occlusion frequently caused the MoCap tracking publish rate to drop below the critical 30\,Hz failsafe threshold, occasionally plummeting to $\sim$10\,Hz. When relying purely on raw spatial differentiation, these temporal gaps produced massive, artificial high-frequency spikes in the calculated kinematic profiles, even when applying Savitzky-Golay filtering.
+\subsection{Frame and Cage Design}
 
-To resolve this without sacrificing data fidelity, the analysis pipeline bypasses raw spatial differentiation for velocity and acceleration entirely. Instead, velocity states are extracted directly from the internal PX4 Extended Kalman Filter (\texttt{vehicle\_odometry.velocity}). Because the EKF2 continuously fuses the onboard 250\,Hz IMU data, it bridges external vision dropouts using inertial propagation, providing a smooth and physically truthful velocity profile throughout the collision event.
+The protective cage design draws on two established geometries from the collision-resilience literature. Mahmud et al.\cite{mahmudDevelopmentCollisionResilient2021} compared a freely rotating gimbal sphere against a G\"omb\"oc-shaped shell (a mono-monostatic body with a single stable equilibrium), concluding the turtle-like G\"omb\"oc form was superior for self-righting after impacts. The cage adopted for this work shares the rotating-shell principle: a PETG-printed spherical cage of 35.8\,cm diameter, mounted on a bearing assembly that allows the outer shell to spin freely upon contact with an obstacle. This mechanical decoupling converts linear collision momentum into rotational energy, shunting impact shock away from the central fuselage and flight controller.
 
-***LLM NOTE: ADD DIAGRAMS explaining the data collection process for experiments here — show the flow from flight logs to MCAP files to Python pipeline to database to analysis plots.***
+The fixed-cage control configuration uses identical geometry but rigidly mounts the outer shell to the frame, eliminating the bearing's rotational degree of freedom. All other parameters (mass, diameter, material, propeller clearance) are held constant between the two configurations, isolating the effect of the bearing mechanism as the single experimental independent variable.
 
-\subsubsection{Frame design}
-Hypothesis as opposed to previous works, confirmed by mahmoud
-\subsubsection{Cage design}
-mahmoud veci
-\subsection{Hardware}
-
-\subsection{Software}
 \

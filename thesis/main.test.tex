@@ -1,0 +1,35 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{lastpage}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{cleveref}
+\usepackage{subcaption}
+\usepackage{fancyhdr}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{graphicx}
+\graphicspath{ {./Figures/} {./diagrams/} {./plots/} }
+
+\title{Test}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Test}
+\cfoot{\thepage}
+
+\begin{document}
+\pagenumbering{Roman}
+\tableofcontents
+\newpage
+\pagenumbering{arabic}
+\fancyfoot[C]{Page \thepage\ of \pageref{LastPage}}
+\input{Sections/Introduction}
+\input{Sections/Related_work}
+\input{Sections/Methodology}
+\input{Sections/Experiments}
+\input{Sections/Discussion}
+\input{Sections/Figures}
+\input{Sections/Tables}
+\input{Sections/Math}
+\end{document}

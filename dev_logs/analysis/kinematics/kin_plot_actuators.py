@@ -365,20 +365,20 @@ def plot_pid_rate_tracking(ulg_path, offset_sec, bag_start_ns, wp_events, flight
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _combined_timeline_limits(wp_events):
-    """Bag-relative combined timeline: [WP2 - 0.5s, Column Center Passed + 2.5s]."""
-    start = wp_events.get('WP2 refined') or wp_events.get('WP2', 0.0)
-    end = (wp_events.get('Column Center Passed')
-           or wp_events.get('Column Passed')
-           or wp_events.get('Column Impact')
-           or start + 10.0)
-    return start - 0.5, end + 2.5
+    """Bag-relative combined timeline: [Column Center Passed − 1.0s, Column Center Passed + 1.5s]."""
+    center = (wp_events.get('Column Center Passed')
+              or wp_events.get('Column Passed')
+              or wp_events.get('Column Impact')
+              or wp_events.get('WP2', 0.0))
+    return center - 1.0, center + 1.5
 
 
 def plot_actuators_and_status_combined(rot_data, fix_data, output_path=None):
     """Side-by-side actuator motor commands + DShot outputs.
 
-    Timeline uses _combined_timeline_limits.
+    Timeline uses _combined_timeline_limits ([Column Center Passed − 1s, +1.5s]).
     Each column: actuator_motors (top) + actuator_outputs (bottom).
+    Exp. Start-point line/label suppressed — timeline is centered on the column.
     """
     import pyulog
 
@@ -522,8 +522,9 @@ def plot_actuators_and_status_combined(rot_data, fix_data, output_path=None):
 def plot_pid_rate_tracking_combined(rot_data, fix_data, output_path=None):
     """Side-by-side PID rate tracking: Rotating Cage | Fixed Cage.
 
-    Timeline uses _combined_timeline_limits.
+    Timeline uses _combined_timeline_limits ([Column Center Passed − 1s, +1.5s]).
     Each column: roll/pitch/yaw rate setpoint vs actual.
+    Exp. Start-point line/label suppressed.
     """
     import pyulog
 

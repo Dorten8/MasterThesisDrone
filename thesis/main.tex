@@ -18,6 +18,7 @@
 \usepackage[colorinlistoftodos]{todonotes}
 \usepackage[numbers,sort&compress]{natbib}
 \usepackage{graphicx}
+\usepackage{pdflscape}
 \graphicspath{ {./Figures/} {./diagrams/} {./plots/} } % Sets asset lookup paths
 
 
@@ -140,17 +141,18 @@
 \tableofcontents
 
 \newpage
-\input{Sections/Introduction}
 \pagenumbering{arabic}
 \fancyfoot[C]{Page \thepage\ of \pageref{LastPage}}
+\input{Sections/Introduction}
 \input{Sections/Related_work}
 \input{Sections/Methodology}
 \input{Sections/Experiments}
 \input{Sections/Discussion}
-
+\input{Sections/Conclusion}
 % The placeholder text is heavily influenced by the ACM proceedings template.
 %%%%%%%%%%%%%%%%%%%%
 
+\input{Sections/Annex}
 \input{Sections/Figures}
 \input{Sections/Tables}
 \input{Sections/Math}

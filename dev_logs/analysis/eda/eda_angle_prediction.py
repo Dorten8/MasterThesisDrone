@@ -149,6 +149,9 @@ GROUP_COLORS = {
     'Spread Regular': '#BCBD22',
 }
 
+# Consistent condition colors (shared with rf_angle_prediction module)
+CONDITION_COLORS = {'Rotating Cage': '#1F77B4', 'Fixed Cage': '#D62728'}
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Huber Robust Regressor (reused from experiments_analysis_summary.ipynb)
@@ -618,6 +621,641 @@ def plot_parallel_coordinates(df, condition='Fixed Cage', save_path=None, show=T
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"   💾 Saved parallel coordinates → {os.path.relpath(save_path, THIS_DIR)}")
 
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  5.  Consolidated Parallel Coordinates (Fixed + Rotating, 2×1)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def plot_consolidated_parallel_coordinates(df_fix, df_rot, save_path=None, show=True,
+                                           n_features=10):
+    """
+    Consolidated parallel coordinates — 2 rows × 1 column.
+
+    Top panel:    Rotating Cage
+    Bottom panel: Fixed Cage
+
+    Features are ordered left-to-right by descending |Pearson r| as computed
+    on the **Rotating Cage** data only — Rotating Cage defines the importance
+    ordering.  Each feature's x-tick is a dual-rank label:
+
+      • Bottom ticks (Fixed Cage panel):  Rotating Cage rank in blue
+      • Top ticks (Rotating Cage panel):  Fixed Cage rank in red
+
+    This lets the reader cross-reference: "Feature X is Rotating's #1 but only
+    Fixed's #7 — the gap tells the story."
+
+    Parameters
+    ----------
+    df_fix : pd.DataFrame
+        Fixed Cage flights with IMU columns and impact_angle.
+    df_rot : pd.DataFrame
+        Rotating Cage flights with IMU columns and impact_angle.
+    save_path : str or None
+        If given, saves the figure to disk at this path.
+    show : bool
+        If True (default), calls plt.show() for inline notebook display.
+    n_features : int
+        Number of top features to display (default 10).
+    """
+    from matplotlib.patches import Patch
+
+    # ── Compute per-cage ranks based on their OWN |Pearson r| ───────────────
+    def _cage_ranked_cols(df):
+        records = []
+        for col in IMU_COLS:
+            r, _ = pearsonr(df[col].values, df['impact_angle'].values)
+            records.append({'feature': col, 'abs_r': abs(r)})
+        r_df = pd.DataFrame(records).sort_values('abs_r', ascending=False)
+        r_df['rank'] = range(1, len(r_df) + 1)
+        return r_df.set_index('feature')['rank'].to_dict()
+
+    rot_ranks = _cage_ranked_cols(df_rot)
+    fix_ranks = _cage_ranked_cols(df_fix)
+
+    # ── Feature ordering by Rotating Cage's |r| (descending) ───────────────
+    rot_r_vals = {}
+    for col in IMU_COLS:
+        rot_r_vals[col] = abs(pearsonr(df_rot[col].values,
+                                        df_rot['impact_angle'].values)[0])
+    top_cols = sorted(rot_r_vals, key=rot_r_vals.get, reverse=True)[:n_features]
+
+    # ── Rank-annotated tick labels ──────────────────────────────────────────
+    # Bottom ticks (Fixed panel): "R#1 Accel Spread (Impact) X" in blue
+    rot_tick_labels = [
+        f"R#{rot_ranks[c]} {DISPLAY_NAMES[c]}" for c in top_cols
+    ]
+    # Top ticks (Rotating panel):  "F#7 Accel Spread (Impact) X" in red
+    fix_tick_labels = [
+        f"F#{fix_ranks[c]} {DISPLAY_NAMES[c]}" for c in top_cols
+    ]
+
+    # ── Helper to prepare normalized dataframe ──────────────────────────────
+    def _prepare_parallel_df(df_source, feature_cols):
+        """Bin angle, normalize features to [0,1]."""
+        bins = [0, 40, 60, 75, 100]
+        labels = ['<40°', '40–60°', '60–75°', '75°+']
+        df_p = df_source.copy()
+        df_p['angle_bin'] = pd.cut(df_p['impact_angle'], bins=bins,
+                                    labels=labels, right=False)
+        plot_data = df_p[feature_cols + ['angle_bin']].copy()
+        for col in feature_cols:
+            c_min, c_max = plot_data[col].min(), plot_data[col].max()
+            if c_max > c_min:
+                plot_data[col] = (plot_data[col] - c_min) / (c_max - c_min)
+            else:
+                plot_data[col] = 0.5
+        return plot_data
+
+    # ── Prepare both datasets ───────────────────────────────────────────────
+    fix_plot = _prepare_parallel_df(df_fix, top_cols)
+    rot_plot = _prepare_parallel_df(df_rot, top_cols)
+
+    # Plot colors for angle bins
+    bin_colors = {'<40°': '#1F77B4', '40–60°': '#FF7F0E',
+                  '60–75°': '#2CA02C', '75°+': '#D62728'}
+
+    # ── Build 2×1 figure (NO sharex — each panel needs its own tick labels) ──
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10), dpi=150)
+
+    conditions = [
+        ('Rotating Cage', rot_plot, len(df_rot)),
+        ('Fixed Cage', fix_plot, len(df_fix)),
+    ]
+
+    for idx, (cond_name, plot_df, n) in enumerate(conditions):
+        ax = axes[idx]
+        x_pos = np.arange(len(top_cols))
+
+        # ── Draw lines ──────────────────────────────────────────────────────
+        for _, row in plot_df.iterrows():
+            color = bin_colors.get(row['angle_bin'], '#999999')
+            ax.plot(x_pos, row[top_cols].values, color=color,
+                    alpha=0.3, linewidth=0.8)
+
+        ax.set_xticks(x_pos)
+
+        if idx == 0:  # ── Rotating Cage (top panel) — Fixed ranks on TOP ──
+            ax.tick_params(top=True, labeltop=True, bottom=False, labelbottom=False)
+            ax.set_xticklabels(fix_tick_labels, rotation=55, ha='left', fontsize=9)
+            for lbl in ax.get_xticklabels():
+                lbl.set_color(CONDITION_COLORS['Fixed Cage'])  # red
+        else:          # ── Fixed Cage (bottom panel) — Rotating ranks on BOTTOM ──
+            ax.tick_params(top=False, labeltop=False, bottom=True, labelbottom=True)
+            ax.set_xticklabels(rot_tick_labels, rotation=55, ha='right', fontsize=9)
+            for lbl in ax.get_xticklabels():
+                lbl.set_color(CONDITION_COLORS['Rotating Cage'])  # blue
+
+        # Remove X-axis margins so lines extend edge-to-edge
+        ax.margins(x=0)
+        ax.set_xlim(-0.05, len(top_cols) - 0.95)
+
+        ax.set_ylabel('Normalized value', fontweight='bold')
+        ax.set_ylim(-0.05, 1.05)
+        ax.set_title(f'{cond_name} — Parallel Coordinates (N={n})',
+                     fontweight='bold', fontsize=13, pad=15, color='black')
+        ax.grid(True, linestyle=':', alpha=0.3, axis='y')
+
+    # ── Manually sync x-limits across panels ───────────────────────────────
+    xlim = axes[0].get_xlim()
+    axes[1].set_xlim(xlim)
+
+    # ── Single legend for the figure ────────────────────────────────────────
+    legend_elements = [Patch(facecolor=color, alpha=0.6, label=label)
+                       for label, color in bin_colors.items()]
+    axes[0].legend(handles=legend_elements, title='Impact Angle',
+                   fontsize=9, title_fontsize=10, loc='upper right')
+
+    # ── Global title ────────────────────────────────────────────────────────
+    fig.suptitle('Parallel Coordinates — IMU Features by Impact-Angle Group\n'
+                 '(Features ordered by Rotating Cage |r|; '
+                 'top ticks = Fixed rank, bottom ticks = Rotating rank)',
+                 fontweight='bold', fontsize=14, y=1.02)
+
+    # ── Data source ─────────────────────────────────────────────────────────
+    fig.text(0.02, -0.02, f"Source: flights_summary (N={len(df_rot)})",
+             ha='left', va='bottom',
+             fontsize=7, fontstyle='italic', color='#555555')
+    fig.text(0.98, -0.02, f"Source: flights_summary (N={len(df_fix)})",
+             ha='right', va='bottom',
+             fontsize=7, fontstyle='italic', color='#555555')
+
+    fig.subplots_adjust(top=0.92, hspace=0.25, bottom=0.10, left=0.06, right=0.98)
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"   💾 Saved consolidated parallel coordinates → "
+              f"{os.path.relpath(save_path, THIS_DIR)}")
+
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  6.  Consolidated IMU Feature Correlation with ConnectionPatch
+# ══════════════════════════════════════════════════════════════════════════════
+
+def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=True):
+    """
+    Mirrored slopegraph + heatmap layout showing IMU feature correlation ranks.
+
+    Layout (5-column GridSpec):
+        Rotating Keys  |  Rotating Heatmap  |  Splines  |  Fixed Heatmap  |  Fixed Keys
+
+    Each heatmap is a 1-column array sorted by its own |Pearson r| descending.
+    ConnectionPatch splines in the center axis trace how each feature's rank
+    changes between the two cage configurations.
+
+    Parameters
+    ----------
+    df_fix, df_rot : pd.DataFrame
+        Fixed and Rotating Cage data with IMU columns and impact_angle.
+    save_path : str or None
+        If given, saves the figure to disk.
+    show : bool
+        If True, calls plt.show().
+    """
+    from matplotlib.patches import ConnectionPatch
+    from matplotlib.gridspec import GridSpec
+
+    # ── Compute Pearson r for each feature per cage ────────────────────────
+    def _compute_corr(df):
+        records = []
+        for col in IMU_COLS:
+            r, p = pearsonr(df[col], df['impact_angle'])
+            records.append({
+                'feature': col, 'r': r, 'p': p, 'abs_r': abs(r),
+                'group': FEATURE_GROUPS[col], 'label': DISPLAY_NAMES[col],
+            })
+        return pd.DataFrame(records)
+
+    fix_corr = _compute_corr(df_fix)
+    rot_corr = _compute_corr(df_rot)
+
+    # Sort each independently by |r| descending — each heatmap has its own
+    # vertical ordering so Row 1 = highest |r| for that cage.
+    fix_corr = fix_corr.sort_values('abs_r', ascending=False).reset_index(drop=True)
+    rot_corr = rot_corr.sort_values('abs_r', ascending=False).reset_index(drop=True)
+
+    n_features = len(IMU_COLS)
+
+    # ── Build y-position + |r| lookups for splines ─────────────────────────
+    # y = n_features - 1 - i  → rank 1 at top (y = n_features-1), rank N at bottom (y = 0)
+    rot_y = {}    # feature → y-coordinate in left heatmap
+    fix_y = {}    # feature → y-coordinate in right heatmap
+    rot_abs_r = {}  # feature → |r|
+    fix_abs_r = {}  # feature → |r|
+    for i, (_, row) in enumerate(rot_corr.iterrows()):
+        rot_y[row['feature']] = n_features - 1 - i
+        rot_abs_r[row['feature']] = row['abs_r']
+    for i, (_, row) in enumerate(fix_corr.iterrows()):
+        fix_y[row['feature']] = n_features - 1 - i
+        fix_abs_r[row['feature']] = row['abs_r']
+
+    # ── Build figure: 5-column GridSpec ────────────────────────────────────
+    # Col 0: Rotating Cage keys    (rank + feature name, right-aligned flush to heatmap)
+    # Col 1: Rotating Cage heatmap (1-column, r values)
+    # Col 2: Center spline axis    (empty, ConnectionPatch arcs)
+    # Col 3: Fixed Cage heatmap    (1-column, r values)
+    # Col 4: Fixed Cage keys       (feature name, left-aligned pushing outward)
+    fig = plt.figure(figsize=(10.0, max(8, n_features * 0.34)), dpi=150)
+    gs = GridSpec(1, 5, figure=fig,
+                  width_ratios=[0.9, 0.7, 0.4, 0.7, 0.9],
+                  wspace=0.015)
+    ax_rot_keys = fig.add_subplot(gs[0, 0])
+    ax_rot_heat = fig.add_subplot(gs[0, 1])
+    ax_splines  = fig.add_subplot(gs[0, 2])
+    ax_fix_heat = fig.add_subplot(gs[0, 3])
+    ax_fix_keys = fig.add_subplot(gs[0, 4])
+
+    # ── Shared y-limits across all 5 axes ──────────────────────────────────
+    y_bottom, y_top = -0.5, n_features - 0.5
+    for ax in [ax_rot_keys, ax_rot_heat, ax_splines, ax_fix_heat, ax_fix_keys]:
+        ax.set_ylim(y_bottom, y_top)
+
+    # Diverging colormap: coolwarm — -1.0 → deep blue, +1.0 → deep red,
+    # white at zero.  The array is reversed (see above) so strongest |r|
+    # cells appear at the top, colored by their signed r value.
+    cmap = plt.cm.coolwarm
+    norm = plt.Normalize(vmin=-1.0, vmax=1.0)
+
+    # ── Figure title ───────────────────────────────────────────────────────
+    fig.suptitle('IMU Feature Correlation with Impact Angle',
+                 fontweight='bold', fontsize=13, y=1.04)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Col 0: Rotating Cage Keys  (rank + feature name, right-aligned
+    #          so text is flush against the heatmap's left edge)
+    # ═══════════════════════════════════════════════════════════════════════
+    ax_rot_keys.axis('off')
+
+    for i, (_, row) in enumerate(rot_corr.iterrows()):
+        rank = i + 1
+        y_pos = n_features - 1 - i
+        # Right-aligned at x=0.98 so the rank+name is tight against the heatmap
+        ax_rot_keys.text(0.98, y_pos, f"{rank}. {row['label']}",
+                         fontsize=7.0, va='center', ha='right', color='#333333')
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Col 1: Rotating Cage 1-column Heatmap
+    # ═══════════════════════════════════════════════════════════════════════
+    # Reverse so row 0 = weakest |r| (bottom) → row N-1 = strongest (top).
+    # imshow origin='upper' maps row 0 → data y=-0.5 (bottom of shared ylim),
+    # matching the text which places i=0 (best) at y=n_features-1 (top).
+    rot_vals = rot_corr['r'].values[::-1].reshape(-1, 1)
+    im_rot = ax_rot_heat.imshow(rot_vals, cmap=cmap, norm=norm, aspect='auto',
+                                origin='upper')
+    ax_rot_heat.set_xticks([])
+    ax_rot_heat.set_yticks([])
+    for spine in ['top', 'right', 'left', 'bottom']:
+        ax_rot_heat.spines[spine].set_visible(False)
+
+    # Sub-title centred directly above the heatmap column
+    ax_rot_heat.text(0.5, y_top + 1.2, 'Rotating Cage',
+                     fontweight='bold', fontsize=11, va='bottom', ha='center',
+                     color='black', transform=ax_rot_heat.get_yaxis_transform())
+
+    for i, (_, row) in enumerate(rot_corr.iterrows()):
+        y_pos = n_features - 1 - i
+        val = row['r']
+        sig = ''
+        if row['p'] < 0.001:
+            sig = '***'
+        elif row['p'] < 0.01:
+            sig = '**'
+        elif row['p'] < 0.05:
+            sig = '*'
+        ax_rot_heat.text(0, y_pos, f"{val:+.3f}{sig}",
+                         ha='center', va='center', fontsize=7.0,
+                         fontweight='bold',
+                         color='white' if abs(val) > 0.55 else 'black')
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Col 2: Center Spline Axis  (invisible canvas for ConnectionPatches)
+    # ═══════════════════════════════════════════════════════════════════════
+    ax_splines.axis('off')
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Col 3: Fixed Cage 1-column Heatmap
+    # ═══════════════════════════════════════════════════════════════════════
+    fix_vals = fix_corr['r'].values[::-1].reshape(-1, 1)
+    im_fix = ax_fix_heat.imshow(fix_vals, cmap=cmap, norm=norm, aspect='auto',
+                                origin='upper')
+    ax_fix_heat.set_xticks([])
+    ax_fix_heat.set_yticks([])
+    for spine in ['top', 'right', 'left', 'bottom']:
+        ax_fix_heat.spines[spine].set_visible(False)
+
+    # Sub-title centred directly above the heatmap column
+    ax_fix_heat.text(0.5, y_top + 1.2, 'Fixed Cage',
+                     fontweight='bold', fontsize=11, va='bottom', ha='center',
+                     color='black', transform=ax_fix_heat.get_yaxis_transform())
+
+    for i, (_, row) in enumerate(fix_corr.iterrows()):
+        y_pos = n_features - 1 - i
+        val = row['r']
+        sig = ''
+        if row['p'] < 0.001:
+            sig = '***'
+        elif row['p'] < 0.01:
+            sig = '**'
+        elif row['p'] < 0.05:
+            sig = '*'
+        ax_fix_heat.text(0, y_pos, f"{val:+.3f}{sig}",
+                         ha='center', va='center', fontsize=7.0,
+                         fontweight='bold',
+                         color='white' if abs(val) > 0.55 else 'black')
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Col 4: Fixed Cage Keys  (feature name, left-aligned so text pushes
+    #          outward cleanly from the right edge of the heatmap)
+    # ═══════════════════════════════════════════════════════════════════════
+    ax_fix_keys.axis('off')
+
+    for i, (_, row) in enumerate(fix_corr.iterrows()):
+        rank = i + 1
+        y_pos = n_features - 1 - i
+        # Left-aligned at the inner edge (x=0.02) so text starts near the
+        # heatmap and extends rightward — clean uniform left edge.
+        ax_fix_keys.text(0.02, y_pos, f"{rank}. {row['label']}",
+                         fontsize=7.0, va='center', ha='left', color='#333333')
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  ConnectionPatch Splines
+    #  Thickness & opacity scale with mean |r| of the feature across BOTH
+    #  cages — strong correlations draw thick, opaque splines; weak ones are
+    #  thin and faint.
+    # ═══════════════════════════════════════════════════════════════════════
+    transform_a = ax_rot_heat.get_yaxis_transform()
+    transform_b = ax_fix_heat.get_yaxis_transform()
+
+    for feat in rot_y:
+        if feat not in fix_y:
+            continue
+        y_r = rot_y[feat]
+        y_f = fix_y[feat]
+
+        # FIX 2: spline visual weight driven by |r|, NOT by rank difference
+        mean_abs_r = (rot_abs_r[feat] + fix_abs_r[feat]) / 2.0
+
+        # linewidth: scales linearly with |r|
+        lw = mean_abs_r * 4.0
+        # alpha: ~0.20 (|r|≈0) → ~1.0 (|r|≈1.0)
+        alpha = 0.2 + mean_abs_r * 0.8
+
+        # Colour by correlation sign using the same coolwarm colormap as the
+        # heatmap cells, so splines are visually consistent with the cell
+        # colours they connect: deep blue (-1.0) → white (0) → deep red (+1.0).
+        mean_r = (rot_corr.loc[rot_corr['feature'] == feat, 'r'].values[0] +
+                   fix_corr.loc[fix_corr['feature'] == feat, 'r'].values[0]) / 2.0
+        line_color = cmap(norm(mean_r))
+
+        con = ConnectionPatch(
+            xyA=(1.0, y_r), xyB=(0.0, y_f),
+            coordsA=transform_a, coordsB=transform_b,
+            connectionstyle="arc3,rad=0.25",
+            linewidth=lw,
+            color=line_color, alpha=alpha, zorder=1,
+        )
+        fig.add_artist(con)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Shared Colorbar — dedicated axes at the far-right canvas edge
+    # ═══════════════════════════════════════════════════════════════════════
+    cax = fig.add_axes([0.96, 0.12, 0.012, 0.76])
+    cbar = fig.colorbar(im_rot, cax=cax)
+    cbar.set_label("Pearson R with Impact Angle\n← Negative  |  Positive →",
+                   fontweight='bold', fontsize=8.5)
+    cbar.ax.tick_params(labelsize=7)
+
+    # ── Footnotes (per skill §4.1, §4.1B) ──────────────────────────────────
+    # Stat significance key (left) — explains the * markers in cell annotations
+    fig.text(0.02, 0.005,
+             '$*\\,p<0.05$    $**\\,p<0.01$    $***\\,p<0.001$',
+             ha='left', va='bottom', fontsize=6.5, fontstyle='italic', color='#888888')
+    # Data origin (right)
+    fig.text(0.98, 0.005,
+             f"flights_summary (N={len(df_rot)} Rotating, N={len(df_fix)} Fixed)",
+             ha='right', va='bottom', fontsize=7.5, color='#555555')
+
+    # ── Final layout adjustments ───────────────────────────────────────────
+    fig.subplots_adjust(left=0.02, right=0.94, top=0.88, bottom=0.05)
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.08)
+        print(f"   💾 Saved consolidated feature correlation → "
+              f"{os.path.relpath(save_path, THIS_DIR)}")
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  7.  Consolidated Top IMU Features vs. Impact Angle (both cages)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def plot_consolidated_top_features(df_fix, df_rot, save_path=None, show=True):
+    """
+    Top-3 IMU features vs Impact Angle — Rotating (left) + Fixed (right).
+
+    Each cage gets its OWN top-3 by |Pearson r|, independently ranked.
+    ``imu_ax_spread_impact`` is forced to Row 1 in BOTH columns for direct
+    visual comparison.
+
+    Layout: 3×2 scatter grid.  No heatmap/table.  BOTH columns carry Y-axis
+    labels with ordinal rank + feature name.
+
+    Parameters
+    ----------
+    df_fix, df_rot : pd.DataFrame
+        Fixed and Rotating Cage data.
+    save_path : str or None
+        If given, saves the figure to disk.
+    show : bool
+        If True, calls plt.show().
+    """
+    from matplotlib.gridspec import GridSpec
+
+
+    # ── Compute full |r| rankings per condition for Y-label numbering ─────
+    def _full_rankings(df):
+        records = []
+        for col in IMU_COLS:
+            r, p = pearsonr(df[col], df['impact_angle'])
+            records.append({'feature': col, 'r': r, 'abs_r': abs(r)})
+        r_df = pd.DataFrame(records).sort_values('abs_r', ascending=False)
+        r_df['rank'] = range(1, len(r_df) + 1)  # 1-based rank (1 = strongest)
+        return r_df.set_index('feature')['rank'].to_dict()
+
+    rot_ranks = _full_rankings(df_rot)
+    fix_ranks = _full_rankings(df_fix)
+
+    # ── Compute top-3 per cage INDEPENDENTLY ───────────────────────────────
+    def _top_features(df, n=3):
+        records = []
+        for col in IMU_COLS:
+            r, p = pearsonr(df[col], df['impact_angle'])
+            records.append({'feature': col, 'r': r, 'p': p, 'abs_r': abs(r),
+                            'label': DISPLAY_NAMES[col]})
+        return pd.DataFrame(records).sort_values('abs_r', ascending=False).head(n)
+
+    rot_top = _top_features(df_rot, n=3).reset_index(drop=True)
+    fix_top = _top_features(df_fix, n=3).reset_index(drop=True)
+
+    # ── Force imu_ax_spread_impact to position 0 in each independent list ──
+    def _enforce_top3(top_df, df_full, n=3):
+        """Return n-feature list with imu_ax_spread_impact guaranteed at row 0.
+        If not naturally top-n, compute its actual |r| and replace the weakest."""
+        padj = list(top_df.to_dict('records'))  # already sorted |r| descending
+        has_spread = any(r['feature'] == 'imu_ax_spread_impact' for r in padj)
+        if not has_spread:
+            r, p = pearsonr(df_full['imu_ax_spread_impact'],
+                            df_full['impact_angle'])
+            padj[-1] = {'feature': 'imu_ax_spread_impact', 'r': r, 'p': p,
+                        'abs_r': abs(r), 'label': DISPLAY_NAMES['imu_ax_spread_impact']}
+            padj.sort(key=lambda r: r['abs_r'], reverse=True)
+        spread_idx = next(i for i, r in enumerate(padj)
+                          if r['feature'] == 'imu_ax_spread_impact')
+        if spread_idx > 0:
+            padj.insert(0, padj.pop(spread_idx))
+        return padj[:n]
+
+    rot_rows = _enforce_top3(rot_top, df_rot, n=3)
+    fix_rows = _enforce_top3(fix_top, df_fix, n=3)
+    n_rows = 3
+
+    # ── Per-feature y-limits ───────────────────────────────────────────────
+    FEATURE_LIMITS = {
+        'imu_ax_spread_impact': ((0, 0.6), 0.1),
+        'imu_ay_spread_impact': ((0, 0.6), 0.1),
+        'imu_az_spread_impact': ((0, 0.6), 0.1),
+        'imu_accel_energy_x':   ((0, 1.0), 0.2),
+        'imu_accel_energy_y':   ((0, 1.0), 0.2),
+        'imu_accel_energy_z':   ((0, 1.0), 0.2),
+        'imu_peak_accel_x':     ((0, 20),  4.0),
+        'imu_peak_accel_y':     ((0, 20),  4.0),
+        'imu_peak_accel_z':     ((0, 20),  4.0),
+        'imu_vib_gy':           ((0, 0.30), 0.06),
+        'imu_vib_gx':           ((0, 0.30), 0.06),
+        'imu_vib_gz':           ((0, 0.30), 0.06),
+        'imu_ax_spread_regular': ((0, 0.6), 0.1),
+    }
+
+    # ── Build figure: 3 rows × 2 cols scatter grid ────────────────────────
+    fig = plt.figure(figsize=(12, 8.5), dpi=150)
+    gs = GridSpec(3, 2, figure=fig,
+                  hspace=0.20, wspace=0.18,
+                  left=0.055, right=0.95, top=0.935, bottom=0.065)
+
+    # ── Column sub-titles (overlaid above each column in figure space) ─────
+    fig.text(0.25, 0.958, 'Rotating Cage', fontweight='bold', fontsize=11,
+             ha='center', va='bottom', color='black')
+    fig.text(0.75, 0.958, 'Fixed Cage', fontweight='bold', fontsize=11,
+             ha='center', va='bottom', color='black')
+
+    # ── Scatter plots ──────────────────────────────────────────────────────
+    cmap_scatter = plt.cm.viridis
+    norm_batt = plt.Normalize(
+        min(df_fix['battery_at_start'].min(), df_rot['battery_at_start'].min()),
+        max(df_fix['battery_at_start'].max(), df_rot['battery_at_start'].max()),
+    )
+    sc = None  # capture last scatter for colorbar
+
+    for row_idx in range(n_rows):
+        rot_r = rot_rows[row_idx]
+        fix_r = fix_rows[row_idx]
+
+        for col_idx, (df_cond, cond_name, feat_r) in enumerate([
+            (df_rot, 'Rotating Cage', rot_r),
+            (df_fix, 'Fixed Cage',   fix_r),
+        ]):
+            ax = fig.add_subplot(gs[row_idx, col_idx])
+            feat = feat_r['feature']
+            x = df_cond['impact_angle'].values
+            y = df_cond[feat].values
+
+            sc = ax.scatter(x, y, c=df_cond['battery_at_start'].values,
+                            cmap=cmap_scatter, norm=norm_batt,
+                            s=50, alpha=0.7, edgecolor='white', linewidth=0.4,
+                            zorder=3)
+
+            # Huber trendline
+            if len(x) > 2:
+                slope, intercept = huber_regressor(x, y)
+                x_smooth = np.linspace(x.min(), x.max(), 200)
+                y_smooth = slope * x_smooth + intercept
+                ax.plot(x_smooth, y_smooth, color='#444444', linestyle='--',
+                        linewidth=1.5, alpha=0.7, zorder=4)
+
+                # r, p annotation
+                r_val, p_val = pearsonr(x, y)
+                anno = f'r = {r_val:.3f}'
+                if p_val < 0.001:
+                    anno += '\np < 0.001 ***'
+                elif p_val < 0.01:
+                    anno += '\np < 0.01 **'
+                elif p_val < 0.05:
+                    anno += '\np < 0.05 *'
+                ax.text(0.97, 0.95, anno, transform=ax.transAxes,
+                        ha='right', va='top', fontsize=7.5,
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                                  alpha=0.8, edgecolor='#CCCCCC'))
+
+            # ── Y-limits ────────────────────────────────────────────────────
+            if feat in FEATURE_LIMITS:
+                (ylow, yhigh), tick_step = FEATURE_LIMITS[feat]
+                ax.set_ylim(ylow, yhigh)
+                ax.set_yticks(np.arange(ylow, yhigh + 0.0001, tick_step))
+            else:
+                ax.yaxis.set_major_locator(ticker.MaxNLocator(5))
+
+            # X-axis
+            ax.set_xlim(0, 90)
+            ax.set_xticks([0, 15, 30, 45, 60, 75, 90])
+
+            # ── Y-axis label: actual #rank from full IMU correlation table ──
+            ranks = rot_ranks if cond_name == 'Rotating Cage' else fix_ranks
+            actual_rank = ranks.get(feat, row_idx + 1)
+            display_name = DISPLAY_NAMES.get(feat, feat)
+            # Prepend "Rank #X" so it's immediately clear the number refers to
+            # the feature's position in the full 26-feature IMU correlation table.
+            ax.set_ylabel(f"Rank #{actual_rank} — {display_name}",
+                          fontweight='bold', fontsize=9)
+
+            # X-axis label on bottom row only
+            if row_idx == n_rows - 1:
+                ax.set_xlabel('Impact Angle (°)', fontweight='bold', fontsize=10)
+
+            ax.grid(True, linestyle=':', alpha=0.3)
+
+    # ── Shared colorbar (bottom, centered) ──────────────────────────────────
+    cbar_ax = fig.add_axes([0.42, 0.015, 0.16, 0.012])
+    cbar = fig.colorbar(sc, cax=cbar_ax, orientation='horizontal')
+    cbar.set_label('Battery at Start (%)', fontweight='bold', fontsize=8)
+    cbar.ax.tick_params(labelsize=7)
+
+    # ── Global title ───────────────────────────────────────────────────────
+    fig.suptitle('Top IMU Features vs. Impact Angle\n'
+                 '(Huber trendline, points colored by battery state)',
+                 fontweight='bold', fontsize=13, y=1.03)
+
+    # ── Source & stat footnotes (per skill §4.1, §4.1B, §4.1C) ────────────
+    fig.text(0.00, -0.05,
+             "Note: Trendlines computed via robust Huber regression\n"
+             "to mitigate the influence of outliers\n"
+             "(y = mx + c).",
+             ha='left', va='bottom', fontsize=6.5, fontstyle='italic', color='#555555')
+    fig.text(1, -0.05,
+             f"flights_summary (N={len(df_rot)} Rotating, N={len(df_fix)} Fixed)",
+             ha='right', va='bottom', fontsize=7.0, color='#555555')
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"   💾 Saved consolidated top features → "
+              f"{os.path.relpath(save_path, THIS_DIR)}")
     if show:
         plt.show()
     plt.close(fig)

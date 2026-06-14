@@ -1,0 +1,134 @@
+\section{Annex: Hardware Selection Details}
+\label{sec:annex_hardware}
+
+This annex preserves the detailed derivation of motor, battery, and voltage-sag trade-offs that informed the platform design. The main \autoref{sec:methodology} retains only the high-level reasoning.
+
+\subsection{Thrust-to-Weight Ratio: Detailed Derivation}
+
+\textbf{Definition and Target Range}
+
+Thrust-to-weight (TWR) ratio expresses the total available thrust divided by drone mass. It directly determines hover efficiency and responsiveness. Industry guidelines establish a spectrum across applications.\cite{oscarHowChooseFPV2024}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{Application} & \textbf{TWR} & \textbf{Hover Throttle} & \textbf{Notes} \\
+\hline
+Aerial photography & 2:1 to 3:1 & 40--50\% & Stable, efficient \\
+\hline
+Research/cargo & 3:1 to 4:1 & 30--50\% & Responsive, good efficiency \\
+\hline
+Racing/freestyle & 5:1+ & 15--25\% & Aggressive maneuvers \\
+\hline
+\end{tabular}
+\end{table}
+
+\textbf{Why TWR Matters: Efficiency and Control Authority}
+
+Motor efficiency does not follow a simple linear relationship with throttle percentage. Instead, efficiency curves show a \textbf{peak efficiency at mid-range throttle} (typically 40--70\%), with degradation at both very low and very high throttle levels.\cite{UltimateFPVDrone} This is critical for autonomous drones.
+
+If a drone hovers at 100\% throttle, it has zero authority to climb, stabilize, or reject wind gusts---any disturbance forces maximum output, leaving no control margin and risking loss of stability during maneuvers.\cite{Innov8tive} Conversely, hovering at 40--50\% throttle reserves substantial available thrust for autonomous obstacle avoidance, gust rejection, and rapid maneuvers required during precision autonomous flight.\cite{roboticsDroneDesignCalculations}
+
+\subsection{Motor Selection: EMAX ECOII 2004 1600KV}
+
+\textbf{Why This Motor?}
+
+The EMAX ECOII 2004 series is specified for 4--5 inch ultralight builds.\cite{EmaxECOII} The 2004 designation specifies stator dimensions: 20mm diameter and 4mm height.\cite{EmaxECOII}
+
+Pilot testing of a similar 2004-series motor (T-Motor F2004 1700KV, comparable in stator dimensions) paired with 4-inch GF4023 propellers and a 6S battery demonstrated approximately 860 grams of static thrust per motor.\cite{drone24hoursTMotorF20041700KV, oscarHowChooseFPV2024} With four motors, this yields combined thrust capacity of approximately 3,440 grams---establishing the system's TWR.
+
+\textbf{TWR Calculation} (estimated final weight 800--1,000g):
+\begin{itemize}
+    \item Total available thrust: 3,440g
+    \item Target weight: 900g (midpoint)
+    \item TWR = 3,440 / 900 = \textbf{3.82:1}
+\end{itemize}
+
+This places the design in the research/autonomous platform zone. A TWR of 3.8:1 means the drone can sustain controlled hovering well within the efficient mid-throttle operating range.
+
+\textbf{Understanding Motor Nomenclature}
+
+The \textbf{2004 designation} specifies 20mm stator diameter and 4mm height. Larger stator diameters generate more torque but have slower transient response (RPM changes take longer to complete) compared to smaller-diameter motors.\cite{mechtexUnderstandingRelationshipKV} This trade-off is deliberate: at mid-throttle operation, the 2004's larger stator sustains higher efficiency than smaller, higher-KV alternatives that must spin faster to produce equivalent thrust. For autonomous flight requiring smooth, predictable thrust response, this characteristic is desirable.
+
+The \textbf{1600 KV rating} indicates 1600 RPM per applied volt. This low-KV designation was selected specifically for the 6S battery voltage.
+
+\subsection{Battery Selection: 6S LiPo}
+
+\textbf{Why 6S and Not 4S?}
+
+Battery voltage selection cascades through the entire drivetrain. The \textbf{6S (six-cell) LiPo pack} produces nominal voltage of 22.2V (6 cells \(\times\) 3.7V per cell).\cite{UnderstandingLiPoBattery2025} This voltage selection determines optimal motor KV and operating efficiency.
+
+\textbf{1600 KV with 6S Battery:}
+\begin{itemize}
+    \item Theoretical no-load RPM: 1600 KV \(\times\) 22.2V = \textbf{35,520 RPM}\cite{UltimateFPVDrone}
+    \item Practical RPM under propeller load: \textasciitilde24,000--28,000 RPM (typically 70--80\% of theoretical no-load speed due to air resistance and propeller drag)\cite{oscarHowChooseFPV2024}
+    \item This range is optimal for 4-inch propellers, avoiding excessive tip speeds that reduce aerodynamic efficiency
+\end{itemize}
+
+\textbf{Higher voltage = less current for equivalent thrust.} When motors operate on 4S (\textasciitilde14.8V nominal), they require significantly higher current draw to achieve the same thrust.\cite{oscarUsingLiPoBatteries2025} Higher current increases internal losses in battery, ESCs, and motor windings---manifesting as excess heat and reduced flight time. 6S draws proportionally less current for equivalent thrust, keeping system temperature lower. This is measurable: one study comparing 4S vs 6S motor systems on the same mechanical load found that 6S exhibits ``greater low-end control'' with lower current heat generation under identical thrust demands.\cite{recursionlabsRecursionLabs6s2021}
+
+\subsection{Voltage Sag: Detailed Mechanism}
+
+\textbf{What is Voltage Sag and Why It Matters}
+
+Voltage sag refers to the \textbf{temporary voltage drop that occurs during high-current discharge events}. This drop is caused by battery internal resistance (IR). Ohm's Law describes this relationship: \textbf{Voltage Drop = Current \(\times\) Internal Resistance}.\cite{UnderstandingLiPoBattery}
+
+Every LiPo battery contains internal resistance---even high-quality cells. When you demand high current from the battery (e.g., during rapid acceleration), that current flowing through internal resistance creates a voltage drop.\cite{oscarUsingLiPoBatteries2025} For example:
+
+\begin{itemize}
+    \item A 4S battery (14.8V nominal) with typical internal resistance might sag from 14.8V down to \textbf{10.2V} during peak acceleration
+    \item A 6S battery (22.2V nominal) with equivalent quality, under the same peak current draw, experiences proportionally less sag (from 22.2V down to \textasciitilde16.5V)\cite{LiPoBatteriesFPV}
+\end{itemize}
+
+The absolute sag magnitude (difference in volts) may be similar between 4S and 6S. \textbf{But the percentage impact is vastly different:}
+
+\begin{itemize}
+    \item 4S sag example: 14.8V \(\to\) 10.2V is a \textbf{31\% voltage loss}
+    \item 6S sag example: 22.2V \(\to\) 16.5V is only a \textbf{26\% voltage loss}
+\end{itemize}
+
+\textbf{Why This Matters for Autonomous Flight Controllers}
+
+The Pixhawk 6C relies on stable voltage to maintain consistent motor response during rapid maneuvering. The flight controller sends throttle commands expecting motors to accelerate at a predictable rate. \textbf{Excessive voltage sag introduces latency between commanded acceleration and actual motor output.} The causal chain:
+
+\begin{enumerate}
+    \item Flight controller commands 70\% throttle for obstacle avoidance maneuver
+    \item Motor voltage sags unexpectedly from 22V to 16V due to high current draw
+    \item Motor RPM drops below what the controller expected
+    \item Actual thrust output is lower than the controller's state estimator predicted
+    \item The control loop detects the mismatch and must recalculate---introducing lag
+\end{enumerate}
+
+During high-speed autonomous maneuvers, this lag degrades control stability and can risk uncommanded behavior. Higher baseline voltage (6S) provides a larger voltage margin, reducing the percentage impact of sag on motor performance.\cite{oscarUsingLiPoBatteries2025}
+
+\textbf{6S Enables Efficient Hover at Higher Throttle Margin}
+
+Since 6S provides higher baseline voltage, the motor's hover throttle point is positioned differently on the efficiency curve compared to 4S. Hover throttle percentage depends on specific motor and load characteristics---\textbf{there is no direct proportionality between voltage and hover throttle}. However, empirical testing shows: \textbf{``6S is a clear winner in efficiency up to around 45 throttle [percentage].''}\cite{recursionlabsRecursionLabs6s2021}
+
+The 1600KV motor on 6S should hover in the \textbf{45--50\% throttle range} based on the estimated drone weight and motor thrust.\cite{mechtexUnderstandingRelationshipKV} This operating point---hovering near the motor efficiency peak---means extractable maximum flight time from the battery while maintaining responsive control authority (50\% throttle reserves 50\% available thrust for maneuvers and environmental disturbances).
+
+\subsection{System Integration: How Components Work Together}
+
+This configuration is tightly coupled---changing any single parameter cascades inefficiencies throughout the system:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|p{5cm}|}
+\hline
+\textbf{Parameter} & \textbf{Design} & \textbf{Rationale} \\
+\hline
+Frame size & 4-inch wheelbase & Pixhawk 6C form factor (84.8 \(\times\) 44 \(\times\) 12.4 mm) + indoor flight compliance \\
+\hline
+Motor KV & 1600 KV & Produces 24,000--28,000 RPM under load on 6S; optimal for 4-inch propellers\cite{oscarHowChooseFPV2024} \\
+\hline
+Battery voltage & 6S (22.2V nominal) & Reduces voltage sag percentage impact; improves efficiency at cruise throttle\cite{recursionlabsRecursionLabs6s2021} \\
+\hline
+Hover throttle & \textasciitilde45--50\% & Operates at motor efficiency peak; reserves 50\% available thrust\cite{mechtexUnderstandingRelationshipKV, recursionlabsRecursionLabs6s2021} \\
+\hline
+Estimated TWR & 3.82:1 & Responsive yet efficient for research autonomous missions \\
+\hline
+\end{tabular}
+\end{table}
+
+If switched to 4S battery, for example, lower-KV motors would be needed (e.g., 1100KV) to maintain similar RPM. But lower-KV motors produce less torque, potentially requiring larger propellers or higher current draw---both of which degrade efficiency. Every selection interconnects. The component choices represent a validated system point.

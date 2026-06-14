@@ -7,8 +7,18 @@ C_MOCAP = '#1F77B4'      # Steel Blue (Actual Ground Truth)
 C_CMD = '#D62728'        # Crimson Red (Commanded Setpoint)
 C_BAT = '#9467BD'        # Muted Purple (Battery Voltage)
 
-def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False, achieved_angle=None, draw_labels=True, label_pos='top', draw_end_label=True):
-    """Draws perfectly aligned, standard timeline event markers on the given axis (General Plot Rule 6)."""
+def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False, achieved_angle=None, draw_labels=True, label_pos='top', draw_end_label=True, draw_start_label=True):
+    """Draws perfectly aligned, standard timeline event markers on the given axis (General Plot Rule 6).
+
+    Parameters
+    ----------
+    draw_start_label : bool
+        If False, suppress Exp. Start-point line and label (used in combined plots
+        where the timeline is centered on Column Center Passed instead of WP2).
+    draw_end_label : bool
+        If False, suppress Exp. End-point label (used in combined plots with
+        tighter timelines where the end marker may be outside the visible range).
+    """
     y_min, y_max = y_lims
 
     esp_time = wp_events.get('WP2')   # refined experiment start (actual forward movement)
@@ -22,7 +32,7 @@ def draw_timeline_markers(ax, wp_events, arming_time, y_lims, is_absolute=False,
         ax.axvspan(t_rel_impact - 0.05, t_rel_impact + 0.35, color='#D62728', alpha=0.10, zorder=3)
 
     events = []
-    if esp_time is not None:
+    if esp_time is not None and draw_start_label:
         events.append(('Exp. Start-point', esp_time, '#9467BD', ':', 1.8, '#444444'))
     if t_passed is not None:
         events.append(('Column Center Passed', t_passed, '#FF9900', '--', 1.8, '#995C00'))
@@ -85,18 +95,17 @@ def get_timeline_limits(wp_events, arming_time, df_t, is_absolute=False):
 
 
 def get_combined_timeline_limits(wp_events, arming_time, is_absolute=False):
-    """Combined side-by-side crop: [WP2 refined - 0.5s, Column Center Passed + 2.5s].
+    """Combined side-by-side crop: [Column Center Passed − 1.0s, Column Center Passed + 1.5s].
 
-    Tighter window than the standard plot for combined Rotating|Fixed comparisons —
-    starts closer to sweep onset and ends just after the drone clears the column.
+    Centered on the column-passer event — 1 s before to capture the approach
+    and deceleration, 1.5 s after to capture the post-collision dynamics.
     """
-    start = (wp_events.get('WP2 refined') or wp_events.get('WP2', 0.0))
-    end   = (wp_events.get('Column Center Passed')
-             or wp_events.get('Column Passed')
-             or wp_events.get('Column Impact')
-             or start + 10.0)
-    t_min = start - 0.5
-    t_max = end + 2.5
+    center = (wp_events.get('Column Center Passed')
+              or wp_events.get('Column Passed')
+              or wp_events.get('Column Impact')
+              or wp_events.get('WP2', 0.0))
+    t_min = center - 1.0
+    t_max = center + 1.5
     if is_absolute:
         t_min += arming_time
         t_max += arming_time
@@ -700,9 +709,9 @@ def plot_ekf_kinetic_profile(ekf_t, ekf_speed, ekf_rate, df_mocap, wp_events,
 def plot_ekf_kinetic_combined(rot_data, fix_data, output_path=None):
     """Side-by-side EKF kinetic profile: Rotating Cage | Fixed Cage.
 
-    Timeline uses get_combined_timeline_limits (tighter than standard).
+    Timeline uses get_combined_timeline_limits ([Column Center Passed − 1s, +1.5s]).
     Each column: EKF velocity (top) + tangential acceleration (bottom).
-    """
+    Exp. Start-point line/label suppressed — timeline is centered on the column.  """
     from dev_logs.analysis.database.flight_loader import compute_ekf_velocity
 
     ekf_rot = compute_ekf_velocity(rot_data)
@@ -787,19 +796,21 @@ def plot_ekf_kinetic_combined(rot_data, fix_data, output_path=None):
     draw_timeline_markers(axes[0, 0], rot_data["wp_events"], rot_arm,
                           (-0.05, 0.85), is_absolute=False,
                           achieved_angle=rot_data.get("achieved_angle"),
-                          draw_labels=True, draw_end_label=False)
+                          draw_labels=True, draw_end_label=False,
+                          draw_start_label=False)
     draw_timeline_markers(axes[1, 0], rot_data["wp_events"], rot_arm,
                           (-8.0, 8.0), is_absolute=False,
                           achieved_angle=rot_data.get("achieved_angle"),
-                          draw_labels=False)
+                          draw_labels=False, draw_start_label=False)
     draw_timeline_markers(axes[0, 1], fix_data["wp_events"], fix_arm,
                           (-0.05, 0.85), is_absolute=False,
                           achieved_angle=fix_data.get("achieved_angle"),
-                          draw_labels=True, draw_end_label=False)
+                          draw_labels=True, draw_end_label=False,
+                          draw_start_label=False)
     draw_timeline_markers(axes[1, 1], fix_data["wp_events"], fix_arm,
                           (-8.0, 8.0), is_absolute=False,
                           achieved_angle=fix_data.get("achieved_angle"),
-                          draw_labels=False)
+                          draw_labels=False, draw_start_label=False)
 
     fig.suptitle("EKF Kinetic Profile — Rotating Cage vs Fixed Cage",
                  fontsize=14, fontweight="bold", y=0.98)
@@ -830,8 +841,9 @@ def plot_ekf_kinetic_combined(rot_data, fix_data, output_path=None):
 def plot_imu_dynamics_combined(rot_data, fix_data, output_path=None):
     """Side-by-side IMU collision dynamics: Rotating Cage | Fixed Cage.
 
-    Timeline uses get_combined_timeline_limits.
+    Timeline uses get_combined_timeline_limits ([Column Center Passed − 1s, +1.5s]).
     Each panel: accel deviation (left Y) + gyro magnitude (right Y).
+    Exp. Start-point line/label suppressed.
     """
     rot_arm = rot_data["arming_time"]
     fix_arm = fix_data["arming_time"]
@@ -905,7 +917,7 @@ def plot_imu_dynamics_combined(rot_data, fix_data, output_path=None):
 
         draw_timeline_markers(ax, wp_events, arm, (-1.0, 20.0),
                               is_absolute=False, achieved_angle=angle,
-                              draw_end_label=False)
+                              draw_end_label=False, draw_start_label=False)
         ax.set_xlim(t_min, t_max)
         ax.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
 
@@ -945,8 +957,9 @@ def plot_imu_dynamics_combined(rot_data, fix_data, output_path=None):
 def plot_imu_xyz_combined(rot_data, fix_data, output_path=None):
     """Side-by-side IMU X/Y/Z components: Rotating Cage | Fixed Cage.
 
-    Timeline uses get_combined_timeline_limits.
+    Timeline uses get_combined_timeline_limits ([Column Center Passed − 1s, +1.5s]).
     Each column: accel + gyro per axis (X lateral/roll, Y longitudinal/pitch, Z vertical/yaw).
+    Exp. Start-point line/label suppressed.
     """
     rot_arm = rot_data["arming_time"]
     fix_arm = fix_data["arming_time"]
@@ -1031,7 +1044,7 @@ def plot_imu_xyz_combined(rot_data, fix_data, output_path=None):
             draw_timeline_markers(ax, wp_events, arm, (y_min, y_max),
                                   is_absolute=False, achieved_angle=angle,
                                   draw_labels=(i == 0), label_pos='bottom',
-                                  draw_end_label=False)
+                                  draw_end_label=False, draw_start_label=False)
             ax.grid(True)
 
             # Collect handles from left column only (one legend for all)

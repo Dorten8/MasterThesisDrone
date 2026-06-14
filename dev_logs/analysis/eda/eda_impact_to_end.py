@@ -61,8 +61,8 @@ if not os.path.exists(DB_PATH):
     DB_PATH = os.path.join(THIS_DIR, "..", "experiments_summary.db")
 
 CONDITION_COLORS = {
-    'Fixed Cage': '#1F77B4',      # blue
-    'Rotating Cage': '#FF7F0E',   # orange
+    'Rotating Cage': '#1F77B4',   # blue
+    'Fixed Cage': '#D62728',      # red
 }
 
 
