@@ -1,648 +1,295 @@
-# Intro
+# RATFLY — Deflective Advantage: Confined-Space Drone Operations
 
-ROS 2 Humble development environment for autonomous PX4-based drone, built on Docker with Ubuntu 22.04 base image for Gazebo Classic compatibility.
+[![PX4](https://img.shields.io/badge/PX4-v1.16.1rc-orange)](https://px4.io/)
+[![ROS2](https://img.shields.io/badge/ROS2-Humble-blue)](https://docs.ros.org/en/humble/)
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04%20(container)-E95420)](https://ubuntu.com/)
 
-## System Architecture Overview
+Reproduction companion for the Master's thesis *"The Deflective Advantage: Reducing Impact Shock and Vibration in Confined-Space Drone Operations"* by Jakub Sejkora (ITU Copenhagen).
 
-```mermaid
-flowchart TB
-    subgraph RPi5 ["Raspberry Pi 5"]
-        subgraph HostOS ["Ubuntu 24.04 (Host OS)"]
-            subgraph Docker ["Docker Container (Ubuntu 22.04 Base Image)"]
-                ROS2["ROS2 Humble"]
-                VSCode["VS Code with Remote Development"]
-                MAV["MAVlink-router"]
-                Opti["OptiTrack (Local Motion Capture)"]
-            end
-        end
-    end
+This repository contains the complete hardware BOM, software stack, and data analysis pipeline for an autonomous quadcopter with a freely rotating protective cage, designed to survive and exploit physical collisions in signal-denied indoor environments.
 
-    style RPi5 fill:#458B00,stroke:#2d5e00,stroke-width:2px,color:#fff
-    style HostOS fill:#32CD32,stroke:#228B22,stroke-width:1px,color:#fff
-    style Docker fill:#4F4F4F,stroke:#333,stroke-width:1px,color:#fff
-    
-    classDef appBoxes fill:#ffffff,stroke:#333,stroke-width:1px,color:#000
-    class ROS2,VSCode,MAV,Opti appBoxes
+---
+
+## Repository Structure
+
+```
+.
+├── .devcontainer/          # Docker + VS Code devcontainer config
+├── config/                 # PX4 parameters, drone_config.json
+├── drone_control/          # Flight control Python nodes
+│   ├── flight_director.py  # Primary mission executor
+│   ├── flight_missions.py  # Discrete flight routines (collision sweeps)
+│   ├── ghost_flight.py     # Alternative trajectory generation
+│   └── flight_recorder.py  # Telemetry logger (MCAP output)
+├── dev_logs/
+│   ├── flights/            # Raw .mcap telemetry files
+│   ├── analysis/           # Python analysis pipeline + Jupyter notebooks
+│   └── session_journals/   # Daily development log
+├── src/                    # ROS 2 packages (submodules)
+│   ├── mocap/              # OptiTrack client (forked)
+│   ├── mocap_px4_bridge/   # ENU→NED coordinate transformer
+│   └── px4_msgs/           # PX4 message definitions
+└── thesis/                 # LaTeX source for the thesis document
 ```
 
-### Bibliography
-AI -> read newest Master Thesis_bibliography in the root of this repository
+---
 
-## Development Environment
+## Hardware Bill of Materials
 
-- **Base Image:** Ubuntu 22.04 (Jammy)
-- **ROS Distribution:** ROS 2 Humble Hawksbill
-- **Simulator:** Gazebo Classic (requires Ubuntu 22.04 for full compatibility)
+| Component | Model | Purpose |
+|---|---|---|
+| Flight Controller | Holybro Pixhawk 6C | PX4 autopilot, dual IMU |
+| Companion Computer | Raspberry Pi 5 (8 GB) | High-level autonomy, ROS 2 |
+| Frame | 4-inch wheelbase (custom) | Indoor flight compliance |
+| Motors | EMAX ECOII 2004 1600KV (×4) | 860 g thrust each at 6S |
+| ESCs | Tekko32 F4 4-in-1 50 A (AM32) | Motor control |
+| Propellers | Gemfan GF4023 (4-inch, ×4) | Matched to motor specs |
+| Battery | 6S LiPo 22.2 V nominal | High voltage → lower current draw |
+| Cage (Fixed) | PETG-printed, 35.8 cm diameter | Rigid collision protection |
+| Cage (Rotating) | PETG-printed, bearing-mounted | Freely rotating shell |
+| Optical Flow | Matek 3901-L | Supplemental EKF2 velocity |
+| Power Module | Holybro PM02 | Regulated 5 V for FC |
 
-- **Hardware:** Raspberry Pi 5 (Ubuntu 24.04 host)
-- **Flight Controller:** Pixhawk 6C (Firmware: PX4 v1.16.1rc)
-- **Power module** Holybro PM02
-- **Optical Flow sensor:** Matek 3901 Optical Flow
-- **ESC** Tekko32 F4 4in1 50A ESC(AM32) 
+**Design rationale:** The 2004 stator (20 mm diameter × 4 mm height) provides high torque at mid-throttle, operating at ~45–50 % hover throttle for optimal efficiency. The 1600 KV motors on 6S produce 24 000–28 000 RPM under load, well within the 4-inch propeller's efficient range. Full TWR: ~3.8:1.
 
-### Resources
+---
 
-- [PX4 Autopilot Documentation](https://docs.px4.io/)
+## Pi 5 Host Setup
 
-## Prerequisites
+### 1. Flash OS
 
-### On Development Computer
-- Docker
-- VS Code with [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
-- SSH client
+Flash **Ubuntu 24.04 Desktop** using Raspberry Pi Imager:
+- Hostname: `pi5drone`
+- SSH enabled (Services tab)
+- Wi-Fi configured for local network
+- Locale: Europe/Copenhagen
 
-### On Raspberry Pi 5 (Host OS)
-The following must be configured on the Ubuntu 24.04 host system (not in container):
+### 2. Post-Flash Fixes
 
-# How to
-## PX4 based flight conntroller (Pixhawk 6C in my case)
-apart from well documented settup of the flight controller (FC) a correct middleware settup is crucial. This middlaware is used for communication of the FC and either a companion computer (mounted on [...])
 ```bash
-# Mavlink setup
-MAV_0_CONFIG = TELEM2
-MAV_1_CONFIG = 0 (Disabled)
-UXRCE_DDS_CFG = 0 (Disabled)
-SER_TEL2_BAUD = 57600  # Standard MAVLink baud rate
-                       # NOTE: Using 921600 for simplicity when planning to
-                       # switch to ROS2 later (avoids baud rate reconfiguration)
+# SSH server is NOT auto-started despite Imager setting
+sudo apt install openssh-server
+sudo systemctl enable --now ssh
 
-# ROS2 uXRCE-DDS setup
-MAV_0_CONFIG = TELEM2  # Can keep MAV_0 enabled for simultaneous MAVLink telemetry
-MAV_1_CONFIG = 0 (Disabled)
-UXRCE_DDS_CFG = 102 (TELEM2)
-SER_TEL2_BAUD = 921600  # Required for ROS2 DDS bridge
+# mDNS hostname resolution
+sudo apt install avahi-daemon
+# (also install on workstation: avahi-daemon libnss-mdns)
+sudo systemctl enable --now avahi-daemon
+
+# Test: ping pi5drone.local from workstation
 ```
 
-## Pi5 host OS(UBUNTU 24.04 used in this case)
-#### 1. Install Required Packages
-```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
+### 3. Docker
 
-# Install Docker
-sudo apt install -y docker.io
+```bash
+sudo apt install docker.io docker-ce docker-ce-cli containerd.io \
+  docker-buildx-plugin docker-compose-plugin
+
+# ⚠️ Remove conflicting package first:
+sudo apt remove containerd
+
+# Rootless Docker
+sudo groupadd docker
 sudo usermod -aG docker $USER
-
-# Install Avahi for mDNS hostname resolution
-sudo apt install -y avahi-daemon avahi-utils
-
-# Install SSH server
-sudo apt install -y openssh-server
+newgrp docker
 ```
 
-#### 2. Configure Hostname for Network Discovery
+### 4. UART (for Pixhawk serial)
+
 ```bash
-# Set hostname (makes Pi discoverable as pi5drone.local)
-sudo hostnamectl set-hostname pi5drone
-
-# Restart Avahi
-sudo systemctl restart avahi-daemon
-
-# Verify mDNS is working
-avahi-browse -a -t
-```
-
-#### 3. Configure SSH Server
-```bash
-# Enable and start SSH
-sudo systemctl enable ssh
-sudo systemctl start ssh
-
-# Optional: Configure SSH for key-only authentication
-sudo nano /etc/ssh/sshd_config
-# Set: PasswordAuthentication no (after adding your public key)
-
-# Restart SSH service
-sudo systemctl restart ssh
-```
-
-#### 4. Add Your Development Computer's SSH Key
-```bash
-# On your development computer, generate key if needed
-ssh-keygen -t ed25519 -C "your-email@example.com"
-
-# Copy public key to Pi
-ssh-copy-id dorten@pi5drone.local
-
-# Test connection
-ssh dorten@pi5drone.local
-```
-
-#### UART pinout assignment 
-```bash
-### frees pins from login console to be used as UART
 sudo nano /boot/firmware/config.txt
-### scroll to end and add:
+# Add at end:
 enable_uart=1
-# reboot and check if it worked
+
+# Reboot and verify:
 cat /boot/firmware/cmdline.txt
-    # if:
-    console=tty1 # then it worked
+# Expected: console=tty1 (not serial)
+ls -l /dev/ttyAMA0
 ```
 
-#### Finding the UART Device File
-
-##### 
+### 5. Python Venv (for host-side tooling)
 
 ```bash
-# Check for the convenient symlink first
-ls -l /dev/serial0
-# if exists use </dev/serial0> in the code (older Pies)
-# else: 
-ls -l /dev/ttyAMA* #(the actual hardware UART on Pi5)
-# look for </dev/ttyAMA0>, if found all good
+sudo apt install python3.12-venv
+python3 -m venv ~/ros2_env
 ```
 
-***
+---
 
-##### Why two names?
+## Container Setup (ROS 2 Humble)
 
-- **`/dev/ttyAMA0`** = the actual hardware device (always exists if UART is enabled)
-- **`/dev/serial0`** = a convenient alias/symlink (created on some systems, not others)
-
-
-## Setup Instructions in Docker container
-The UART configuration below is done on the **Raspberry Pi host OS**, not inside the container:
-- UART is exposed by the host Linux kernel, and `/boot/firmware/config.txt` is a host boot-time file, so container changes cannot configure hardware UART.
-- Practical implication: editing this from inside Docker will not persist hardware boot configuration for the Pi.
-```bash
-sudo nano /boot/firmware/config.txt
-### add this line at the end (if not present)
-enable_uart=1
-```
-
-
-### 1. Clone Repository
-
-**On Raspberry Pi 5:**
-```bash
-cd /home
-git clone git@github.com:Dorten8/MasterThesisDrone.git ws
-cd ws
-```
-
-### 2. Configure SSH for Container
-
-The container is configured to use the host's SSH keys via read-only mount. Ensure you have SSH keys on the Pi host:
+Ubuntu 24.04 (Pi 5 host) is not directly compatible with ROS 2 Humble binary packages. Containerisation provides an Ubuntu 22.04 environment with native ROS 2 support.
 
 ```bash
-# Generate SSH key on Pi (if not already done)
-ssh-keygen -t ed25519 -C "your-email@example.com"
-
-# Add public key to GitHub
-cat ~/.ssh/id_ed25519.pub
-# Copy output and add to: https://github.com/settings/keys
+mkdir -p ~/ws/.devcontainer
+cd ~/ws
+git clone git@github.com:Dorten8/MasterThesisDrone.git .
 ```
 
-**How it works:**
-- `.devcontainer/devcontainer.json` mounts host's `~/.ssh` into container
-- Container has `openssh-client` installed via Dockerfile
-- Git operations inside container use host's SSH credentials
+The `.devcontainer/` directory contains:
+- **`Dockerfile`** — Ubuntu 22.04 + ROS 2 Humble base, `openssh-client`, non-root user, passwordless sudo
+- **`devcontainer.json`** — `--net=host`, `--pid=host`, `--privileged` (UART access), X11 forwarding, SSH key mount
 
-### 3. Open in VS Code
+Open in VS Code:
+1. Install Remote-SSH and Dev Containers extensions
+2. `Ctrl+Shift+P` → Remote-SSH: Connect to Host → `dorten@pi5drone.local`
+3. Open `/home/ws`
+4. "Reopen in Container" (first build: ~30–50 min on Pi 5)
 
-**From your development computer:**
+Verify:
 ```bash
-# Connect to Pi via SSH
-ssh dorten@pi5drone.local
-
-# Or use VS Code Remote-SSH extension:
-# 1. Install Remote-SSH extension
-# 2. Press F1 → "Remote-SSH: Connect to Host"
-# 3. Enter: dorten@pi5drone.local
-# 4. Open folder: /home/ws
+lsb_release -a          # Ubuntu 22.04 LTS
+ros2 --version          # ROS 2 Humble
+echo $ROS_DISTRO        # humble
 ```
 
-**When VS Code opens the workspace:**
-1. VS Code detects `.devcontainer` configuration
-2. Click "Reopen in Container" when prompted
-3. Container builds automatically (first time takes ~5-10 minutes)
-4. Development environment ready
+---
 
-### 4. Verify Setup
+## PX4 Integration
 
-Inside the container:
-```bash
-# Check ROS 2 installation
-ros2 --version
+### Pixhawk ↔ Pi Wiring
 
-# Check SSH access to GitHub
-ssh -T git@github.com
+| Pixhawk TELEM2 | Pi GPIO | Function |
+|---|---|---|
+| TX (pin 2) | GPIO 15 / RXD (pin 10) | FC → Pi |
+| RX (pin 3) | GPIO 14 / TXD (pin 8) | Pi → FC |
+| GND (pin 6) | Ground (pin 6) | Common ground |
 
-# Check Git configuration
-git status
-```
+### PX4 Parameters (set via QGroundControl)
 
-### 4.1 Verify PX4 <-> ROS 2 XRCE-DDS Link (SITL)
+| Parameter | Value | Reason |
+|---|---|---|
+| `MAV_0_CONFIG` | TELEM2 | Primary MAVLink (debug only) |
+| `UXRCE_DDS_CFG` | 102 (TELEM2) | uXRCE-DDS client on serial |
+| `SER_TEL2_BAUD` | 921600 | Baud for uXRCE-DDS link |
+| `EKF2_MAG_TYPE` | 5 (None) | Disable magnetometer indoors |
+| `EKF2_EV_DELAY` | ~20–60 ms | Calibrate via cross-correlation (see *Critical Gotchas*) |
 
-These checks confirm PX4 SITL can publish to ROS 2 and accept commands back.
-
-#### A) PX4 -> ROS 2 (read path)
-```bash
-source /opt/ros/humble/setup.bash
-source /home/ws/install/setup.bash
-
-ros2 topic list | grep -E '^/fmu/|^/rt/fmu/'
-ros2 interface show px4_msgs/msg/VehicleStatus
-ros2 topic hz /fmu/out/vehicle_status
-ros2 topic echo /fmu/out/vehicle_status
-```
-
-#### B) ROS 2 -> PX4 (write path)
-```bash
-source /opt/ros/humble/setup.bash
-source /home/ws/install/setup.bash
-
-ros2 topic pub /fmu/in/vehicle_command px4_msgs/msg/VehicleCommand "{timestamp: 0, param1: 1.0, param2: 0.0, command: 400, target_system: 1, target_component: 1, source_system: 1, source_component: 1,[...]
-```
-In the PX4 shell, confirm an ACK arrives:
-```bash
-listener vehicle_command_ack
-```
-Note: If `result: 1` appears, the command was rejected (common when not ready to arm), but the round-trip link still works.
-
-#### C) XRCE status and time sync (sanity)
-```bash
-source /opt/ros/humble/setup.bash
-source /home/ws/install/setup.bash
-
-ros2 topic echo /fmu/out/timesync_status
-ros2 topic hz /fmu/out/sensor_combined
-```
-
-### 5. Getting Started (Docker) for `mocap_px4_bridge`
-
-Inside the container, use this repository as ROS 2 workspace root (`/home/ws`), and place ROS packages in `/home/ws/src`:
+### Launch
 
 ```bash
-cd /home/ws/src
+# Terminal 1: uXRCE-DDS agent
+MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600
 
-git clone https://github.com/SaxionMechatronics/mocap.git
-git clone https://github.com/SaxionMechatronics/mocap_px4_bridge.git
-git clone https://github.com/PX4/px4_msgs.git
+# Terminal 2: Verify topics
+ros2 topic list
+ros2 topic echo /fmu/out/vehicle_odometry
 
-cd /home/ws
-source /opt/ros/humble/setup.bash
-rosdep update
-# `rosdep init` is already handled in the Docker image; `rosdep update` should run as the current user to keep cache files in that user's home.
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
-source /home/ws/install/setup.bash
-
-ros2 launch mocap_px4_bridge run.launch.py
+# Terminal 3: Startup sequence
+./startup-sequence.sh
 ```
 
-Notes:
-- This adapts the upstream `mocap_px4_bridge` Getting Started flow to this Docker workspace layout.
-- Keep all ROS 2 packages in `/home/ws/src` so `rosdep` and `colcon` can resolve and build correctly.
-- Clone/build inside the container terminal so dependency resolution and builds run against the ROS 2 Humble Docker environment, not the host OS.
+---
 
-## Architecture Notes
+## 🚨 Critical Gotchas
 
-### Why Ubuntu 22.04 in Container on Ubuntu 24.04 Host?
-- **ROS 2 Humble** officially supports Ubuntu 22.04 (Jammy)
-- **Gazebo Classic** requires Ubuntu 22.04 dependencies
-- Docker provides isolation, allowing older Ubuntu in container while host runs newer version
-- Ensures reproducible environment across different development machines
+These are hard-won lessons from the development process. Ignore them at your peril.
 
-### Why Docker Container on Pi 5?
-- **Portability:** Identical environment on any machine
-- **Isolation:** Development dependencies don't affect host system
-- **Version Control:** Container configuration tracked in Git
-- **Reproducibility:** Anyone can replicate exact setup
+### 1. EKF2 Magnetometer Must Be Disabled Indoors
+
+Set `EKF2_MAG_TYPE = 5` (None). Indoor magnetic fields (building steel, power cabling, lab equipment) fight the MoCap yaw data. The EKF2 will oscillate between magnetic north and the OptiTrack yaw, producing yaw drift that destabilises the controller.
+
+### 2. Velocity Feedforward Requires Explicit Heartbeat Flag
+
+The offboard heartbeat message must set `hb.velocity = True`. Without it, PX4 completely ignores the velocity vector in `TrajectorySetpoint`. The drone will then rely on a laggy P-only position controller, producing jerky velocity spikes and waypoint overshoot.
+
+```python
+hb.position = True
+hb.velocity = True   # ← This is the critical line
+```
+
+### 3. Geofence Boundaries Must Account for Cage Radius
+
+The PETG cage has a 17.9 cm radius (35.8 cm diameter). If you place a waypoint at coordinate limit `1.350 m`, the cage edge will be at `1.350 + 0.179 = 1.529 m` — breaching a 1.50 m geofence and triggering motor shutdown. **Always subtract the cage radius** from the geofence boundary to find the true waypoint limit.
+
+### 4. Battery Voltage Sag → 3-Minute Effective Flight Time
+
+Under high-torque load, a 6S battery drops over 1 V instantly. Measured consumption rate is ~20 % per minute, yielding a hard limit of **3 minutes** per battery pack. Set a failsafe to land/disarm at 40 % battery to avoid cell damage. The voltage sag also introduces control latency — the FC commands 70 % throttle, but the actual motor RPM corresponds to a lower voltage than expected.
+
+### 5. NatNet Streaming Up-Axis: Z-Axis (Not Y-Axis)
+
+Motive's internal viewport is Y-Up, but the ROS 2 `mocap_px4_bridge` expects Z-Up (ENU). In Motive: **Settings → Streaming → NatNet → Up Axis = Z-Axis**. If set to Y-Axis, the bridge will misinterpret Y-as-altitude, crashing the EKF2.
+
+### 6. The 90-Degree Cross-Coupling Trap
+
+The `mocap_px4_bridge` C++ node hardcodes:
+```
+X_ned = X_mocap
+Y_ned = -Y_mocap
+```
+Your Python offboard controller must apply *exactly* this convention. A different rotation matrix will cause the drone to fly figure-eights or spiral sideways.
+
+### 7. QoS Durability: PX4 Subscribes with TRANSIENT_LOCAL
+
+When publishing to `/fmu/in/vehicle_command` or `/fmu/in/offboard_control_mode`, use `durability = TRANSIENT_LOCAL`. If you publish with `VOLATILE`, PX4 never sees the commands.
+
+Similarly, when subscribing to `/poses` (from `motion_capture_tracking`), use `VOLATILE` — otherwise you get stale cached poses.
+
+### 8. EKF2_EV_DELAY Calibration via Cross-Correlation
+
+The MoCap pipeline (camera exposure + NatNet network + bridge processing) introduces 20–60 ms of latency. If `EKF2_EV_DELAY = 0`, the EKF2 fuses vision data at the wrong timestamp, breaking gyro-to-vision alignment.
+
+**Calibration method:** Cross-correlate the onboard gyroscope yaw rate against the delayed visual odometry yaw rate from a flight recording. The time offset maximising the correlation is your true `EKF2_EV_DELAY` in milliseconds.
+
+---
+
+## Experiment Pipeline
+
+### Startup Sequence
+
+The `startup-sequence.sh` script automates the full pipeline:
+
+1. NTP time synchronisation (or MOCAP fallback)
+2. `MicroXRCEAgent` (serial, 921600 baud)
+3. `motion_capture_tracking_node` (OptiTrack receiver)
+4. `mocap_px4_bridge` (ENU → NED)
+5. `flight_director.py` + `flight_recorder.py`
+
+### Collision Sweep Loop
+
+The `column_sweep_loop.py` mission flies a fixed-cycle waypoint pattern:
+- **WP1**: `(0.000, 1.200, 0.500)` — pause
+- **WP2**: `(0.100, 1.200, 0.500)` — transition
+- **WP3**: `(0.100, −1.200, 0.500)` — collection sweep
+- **WP4**: `(0.000, −1.200, 0.500)` — pause, loop back to WP1
+
+The loop runs autonomously. At WP1 and WP4 the drone pauses, waiting for an operator prompt before continuing. Collision targets are placed at the column position with adjustable incidence angles (45°, 75°).
+
+### Telemetry
+
+All ROS 2 topics are logged to segmented `.mcap` files (one per loop iteration) in `dev_logs/flights/`. The `flight_recorder.py` node synchronises MoCap poses, PX4 odometry, and actuator feedback at native publish rates (~100 Hz).
+
+---
+
+## Data Analysis Pipeline
+
+The analysis pipeline lives in `dev_logs/analysis/`:
+
+```
+experiments_analysis.ipynb   # Primary analysis notebook
+experiments_kinematics.ipynb # Kinematic decomposition
+exa_loader.py               # MCAP → NumPy ingestion
+exa_pipeline.py             # Savitzky-Golay filtering + event detection
+exa_kinematics.py           # Perpendicular error, closest approach
+kin_calculator.py           # Collision clearance, SDLD metrics
+```
+
+**Key metrics:**
+- **Impact angle**: Measured from velocity vector at collision
+- **Closest clearance**: `min_dist_center − column_radius − cage_radius`
+- **Path spread (SDLD)**: `np.std(perpendicular_distances) × 1000` (mm)
+- **SIAE**: Spatial integral of absolute error (recovery area)
+
+---
 
 ## Troubleshooting
 
-### Cannot connect to Pi via hostname
-```bash
-# On Pi, check Avahi status
-sudo systemctl status avahi-daemon
-
-# On development computer, check mDNS resolution
-ping pi5drone.local
-```
-
-### SSH connection refused
-```bash
-# On Pi, check SSH service
-sudo systemctl status ssh
-
-# Check firewallT
-sudo ufw status
-```
-
-### Git push fails with "Permission denied"
-```bash
-# Verify SSH key is on GitHub
-ssh -T git@github.com
-
-# Should respond: "Hi Dorten8! You've successfully authenticated..."
-```
-
-### Container won't build
-```bash
-# Check Docker service
-sudo systemctl status docker
-
-# Clean Docker cache
-docker system prune -a
-```
-
-
-### 5. Getting Started (Docker) for `mocap_px4_bridge`
-...
-
-## Motion Capture (Mocap) Integration with OptiTrack
-
-### Overview
-
-The drone uses motion capture data from an OptiTrack system to provide accurate position and orientation estimates. The `mocap_px4_bridge` package bridges mocap data from the OptiTrack client into ROS 2.
-
-### Architecture
-
-```
-OptiTrack System
-       ↓
-   mocap package (OptiTrack client)
-       ↓
-  ROS 2 Topics (/mocap/pose, etc.)
-       ↓
-mocap_px4_bridge (converts to px4_msgs)
-       ↓
-uXRCE-DDS Bridge
-       ↓
-PX4 Autopilot (EKF2 estimator fusion)
-```
-
-### How It Works
-
-1. **mocap package**: 
-   - Reads pose data from OptiTrack hardware/software
-   - Publishes stamped pose and marker data as ROS 2 topics
-   - Handles coordinate frame transformations and sensor synchronization
-
-2. **mocap_px4_bridge**:
-   - Subscribes to mocap ROS 2 topics
-   - Converts mocap pose estimates to PX4 vehicle odometry messages (`px4_msgs/VehicleOdometry`)
-   - Publishes on uXRCE-DDS bridge for PX4 to consume
-
-3. **PX4 Autopilot**:
-   - Receives mocap odometry via uXRCE-DDS
-   - Fuses with onboard sensors (IMU, barometer, optical flow) in EKF2 estimator
-   - Uses fused state for autonomous flight control
-
-### Dependencies
-
-The mocap integration relies on three key packages managed as Git submodules:
-
-1. **mocap** (`Dorten8/mocap`)
-   - **Source:** Forked from [SaxionMechatronics/mocap](https://github.com/SaxionMechatronics/mocap)
-   - **Reason for fork:** The original repository supports both Vicon and OptiTrack motion capture systems. Since this project uses **OptiTrack exclusively**, the Vicon SDK was removed to reduce build dependencies.
-   - **Key modifications:** Disabled Vicon SDK build configuration, removed Vicon client headers and source files
-
-2. **mocap_px4_bridge** (`SaxionMechatronics/mocap_px4_bridge`)
-   - **Source:** Upstream from [SaxionMechatronics/mocap_px4_bridge](https://github.com/SaxionMechatronics/mocap_px4_bridge)
-   - **Purpose:** Bridges ROS 2 mocap topics to PX4 vehicle odometry messages
-   - **No modifications:** Used as-is from upstream
-
-3. **px4_msgs** (`SaxionMechatronics/px4_msgs`)
-   - **Source:** Upstream from [PX4/px4_msgs](https://github.com/PX4/px4_msgs) via Saxion
-   - **Purpose:** Provides PX4 message definitions for ROS 2
-   - **No modifications:** Used as-is from upstream
-
-### Building
-
-The packages are automatically cloned and built as part of the normal colcon workflow:
-
-```bash
-cd /home/ws
-colcon build --symlink-install
-```
-
-### ⚠️ Critical Mocap Coordinate Alignment Rules
-
-#### 1. NatNet Streaming Up-Axis Configuration (Crucial for EKF2)
-While Motive's internal viewport is Y-Up (Green axis Up), the ROS 2 `mocap_px4_bridge` and Foxglove strictly expect the standard ROS Z-Up (ENU) frame.
-* **The Trap:** If Motive's NatNet stream setting is set to **`Up Axis: Y-Axis`**, the broadcast `/poses` topic outputs coordinates where `Y` is the altitude. The C++ bridge (which assumes Z is Up) will misinterpret the axes.
-* **The Law:** In the Motive UI, navigate to **Settings** → **Streaming** → **NatNet** and ensure **`Up Axis`** is explicitly set to **`Z-Axis`**. This tells Motive to mathematically rotate its internal coordinates into the ROS standard frame.
-
-#### 2. EKF2 Altitude Origin vs. MoCap World Origin
-* **The Hurdle:** When the Pixhawk boots, the EKF2 estimator initializes its own local coordinate system (`/fmu/out/vehicle_local_position`) by pinning its `[0,0,0]` origin to the starting sensor calibration point. Meanwhile, the mocap system has its own fixed room-origin.
-* **The Architecture Solution (Transform Layer):** Because our geofencing safety boundaries and obstacle boxes are defined in absolute room coordinates (`mocap_world` frame), we decouple safety and control:
-  1. Calculate the active spatial offset vector at takeoff: $\Delta = P_{ekf2} - P_{mocap}$.
-  2. Map all absolute room coordinate setpoints $S_{mocap}$ onto the flight controller's active frame: $S_{ekf2} = S_{mocap} + \Delta$.
-  3. Enforce geofencing checks by subscribing directly to the absolute, drift-free `/poses` topic, keeping the emergency safety boundary independent of PX4's EKF2 state.
-
-#### 3. ROS 2 QoS Compatibility (Durability Policy Mismatches)
-* **The Hurdle:** In ROS 2, if a subscriber specifies a QoS durability policy, any publisher *must* offer a matching or stronger durability policy. If a subscriber expects `TRANSIENT_LOCAL` and the publisher only offers `VOLATILE`, the subscriber will never receive messages.
-* **The Offboard Trap:** PX4's uXRCE-DDS agent subscribes to `/fmu/in/vehicle_command` and `/fmu/in/offboard_control_mode` with **`TRANSIENT_LOCAL`** durability. If a custom offboard control node publishes these topics with `VOLATILE` durability, PX4 will never see the commands.
-* **The Subscription Trap:** The OptiTrack `motion_capture_tracking_node` publishes the `/poses` topic with **`VOLATILE`** durability. If your control node subscribes to `/poses` using a `TRANSIENT_LOCAL` policy, you will receive stale cached messages instead of fresh pose data.
-* **The Law:**
-  * Use **`durability=DurabilityPolicy.TRANSIENT_LOCAL`** for all ROS 2 *publishers* sending commands into the Pixhawk.
-  * Use **`durability=DurabilityPolicy.VOLATILE`** for all ROS 2 *subscribers* receiving external data (such as `/poses` and PX4 telemetry `/fmu/out/*`).
-
-#### 4. The Eager Local State Transition Control Loop Anti-Pattern
-* **The Hurdle:** Never assume an arming or mode-change command sent to PX4 has been executed immediately on the next local script tick. Transitioning states eagerly locally (e.g., setting `self.state = "ARMED"` right after sending the arm command) creates a logic race condition.
-* **The Law:** Keep the offboard heartbeat stream active in the `"ARMING"` state and only transition the local state to `"ARMED"` when the flight controller broadcasts physical confirmation back over the `/fmu/out/vehicle_status` topic.
-
-#### 5. The 90-Degree Cross-Coupling Trap (Horizontal Instability)
-* **The Hurdle:** The `mocap_px4_bridge` C++ node hardcodes its coordinate transforms by setting $X_{ned} = X_{mocap}$ and $Y_{ned} = -Y_{mocap}$. This mirrors the Y-axis but keeps X identical. If you apply a different rotation matrix in your Python offboard controller, the drone will oscillate in figure-eights or spiral sideways.
-* **The Law:** Ensure your companion computer offboard command layer applies the exact coordinate transforms utilized by the physical bridge:
-  $$\text{m\_ned\_x} = x_{\text{enu}}$$
-  $$\text{m\_ned\_y} = -y_{\text{enu}}$$
-  $$\text{m\_ned\_z} = -z_{\text{enu}}$$
-
-#### 6. The Trigonometric Yaw Inversion (Counter-Clockwise vs. Clockwise)
-* **The Hurdle:** Standard Python trigonometry functions like `math.atan2(dy, dx)` compute angles increasing in the **counter-clockwise (CCW)** direction. However, in PX4's local frame, the Z-axis points down (FRD frame), so yaw angles increase **clockwise (CW)** when viewed from above.
-* **The Law:** Always negate the calculated trigonometric angle to translate counter-clockwise angles into clockwise yaw orientations:
-  $$\psi_{\text{px4}} = -\text{atan2}(dy, dx)$$
-
-#### 7. Sensor Latency & EKF2_EV_DELAY Cross-Correlation Calibration
-* **The Hurdle:** Motion Capture processing, camera exposure times, and network packet transmission to the companion computer introduce a physical latency of 20-60ms. If `EKF2_EV_DELAY` is set to 0, EKF2 will fuse mocap odometry at the wrong timestamp, breaking gyro-to-vision alignment and causing yaw drift.
-* **The Law:** Use cross-correlation analysis of your flight records to align the instantaneous onboard gyroscope yaw rate against the delayed raw visual odometry yaw rate. The time offset that yields maximum correlation is your true `EKF2_EV_DELAY` in milliseconds.
-
-# RVIZ simple start
-### Goal
-Show a visible object in **RViz on the laptop** that is **published from the Pi** over ROS 2 (Humble) using the simplest reliable setup: **static TF + Marker**.
-
-Assumptions:
-- Pi IP: `192.168.74.5`
-- Laptop and Pi are on the same Wi‑Fi.
-- Both use `ROS_DOMAIN_ID=0` and `rmw_fastrtps_cpp`.
-
----
-## Pi (inside the devcontainer)
-
-### Terminal A — publish TF (`map -> base_link`)
-```bash
-source /opt/ros/humble/setup.bash
-export ROS_DOMAIN_ID=0
-export ROS_LOCALHOST_ONLY=0
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-
-ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map base_link
-```
-
-### Terminal B — publish a red cube marker on `/visualization_marker`
-```bash
-source /opt/ros/humble/setup.bash
-export ROS_DOMAIN_ID=0
-export ROS_LOCALHOST_ONLY=0
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-
-ros2 topic pub -r 5 /visualization_marker visualization_msgs/msg/Marker "{
-  header: {frame_id: 'map'},
-  ns: 'demo',
-  id: 1,
-  type: 1,
-  action: 0,
-  pose: {position: {x: 1.0, y: 0.0, z: 0.5}, orientation: {w: 1.0}},
-  scale: {x: 0.5, y: 0.5, z: 0.5},
-  color: {r: 1.0, g: 0.0, b: 0.0, a: 1.0}
-}"
-```
-
-Leave both running.
-
----
-
-## Laptop
-
-### Terminal — set env + start RViz
-(fish shell version)
-```fish
-set -x ROS_DOMAIN_ID 0
-set -x ROS_LOCALHOST_ONLY 0
-set -x RMW_IMPLEMENTATION rmw_fastrtps_cpp
-bash -lc 'source /opt/ros/humble/setup.bash && rviz2'
-```
-
-### RViz steps
-1. Set **Fixed Frame** = `map`
-2. **Add** → **Marker**
-3. Set **Topic** = `/visualization_marker`
-
-You should see the red cube.
-
-(Optional quick check from laptop terminal)
-```fish
-bash -lc 'source /opt/ros/humble/setup.bash && ros2 topic echo /visualization_marker --once'
-```
-# Micro-XRCE-DDS Agent
-I needed to re-implment this agent as per the offical guide to PX4 with ROS2
-### Basic work check
-```bash
-MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600 
-#prints topic_created....etc
-
-#in another terminal on the companion computer:
-ros2 topic echo /fmu/out/vehicle_status_v1 --qos-reliability best_effort
-# prints one of the topics -> in real
-```
-
-# motion_capture_tracking -> submodule
-this submodule connects Optitrack settup directly with ros2 poses topics
-I used a forked version by Alejandro Moira
-https://github.com/Lorite/motion_capture_tracking
-
-this needs addtional dependency 
-```bash
-sudo apt-get update && sudo apt-get install -y libpcl-dev
-#then run from docker workspace
-colcon build --packages-select motion_capture_tracking
-# alternatively just:
-colcon build # finished with some warnings but works fine
-# source anew from the install folder
-source /home/ws/install/setup.bash
-# run the motion_capture_tracking_node
-ros2 run motion_capture_tracking motion_capture_tracking_node --ros-args -p type:=optitrack -p hostname:=192.168.74.9
-#under ros2, run motion capture                               --            type: optitrack    hostname:=the multicasting ip of the optitrack server
-
-#this should automatically publish into ros2 topic /poses, views it in another terminal
-ros2 topic echo /poses 
-# PS dev note -> need to only get only pose of one ID
-# From now on plan:
-# - limit the pose to be taken from the MOCAP to only 1ID
-# - transform the poses via: src/mocap_px4_bridge/src/mocap_px4_bridge.cpp, already prepped, 
-# - publish it to visual odomotetry topic -> PX4 should be already subscribed to it
-      ros2 topic info /fmu/in/vehicle_visual_odometry -v
-      # or
-      ros2 topic info /fmu/in/vehicle_mocap_odometry -v
-      # Type: px4_msgs/msg/VehicleOdometry
-
-      # Publisher count: 0 ### this needs to be 1 
-
-      # Subscription count: 1
-
-      # Node name: px4_micro_xrce_dds
-      # Node namespace: /
-      # Topic type: px4_msgs/msg/VehicleOdometry
-      # Endpoint type: SUBSCRIPTION
-      # GID: 01.0f.0d.fc.51.3a.a6.52.00.00.00.00.00.00.14.04.00.00.00.00.00.00.00.00
-      # QoS profile:
-      # Reliability: BEST_EFFORT
-      # History (Depth): UNKNOWN
-      # Durability: VOLATILE
-      # Lifespan: Infinite
-      # Deadline: Infinite
-      # Liveliness: AUTOMATIC
-      # Liveliness lease duration: Infinite
-# - Make visual odometry SSoT
-# - Make sure Rviz works with these
-# - Make sure simple commands work from ros2 to PX4 -> simple python program
-# - when it is aware of everthing -> implmenet reliable killswitch to turn it off whenever!!!
-# - Make it take off, hover, land
-# - Make it Take off, hover, Fly from A -> B hover, B->A, hover, land
-# - Its ready for experiments!!!!
-
-```
-
-
-# Expertiments
-architerture of running the experiments
-```mermaid
-flowchart TD
-    %% ==================== Drone side (SSH) ====================
-    subgraph Drone["🛸 Drone (SSH) – `startup‑sequence.sh`"]
-        direction TB
-        A[Start script] --> B[Time Synchronisation<br/>(NTP / MOCAP fallback)]
-        B --> C[MicroXRCEAgent (serial on /dev/ttyAMA0)]
-        C --> D[Motion Capture Tracking Node]
-        D --> E[← /poses topic (multicast from MOCAP PC)]
-        D --> F[mocap_px4_bridge]
-        F --> G[Publish to /fmu/in/vehicle_visual_odometry]
-        G --> H[Foxglove Bridge (ROS2 launch)]
-        H --> I[WebSocket WS://0.0.0.0:8765]:::ws
-    end
-
-    %% ==================== Local PC side =====================
-    subgraph PC["💻 Local PC"]
-        direction TB
-        J[Foxglove Studio] --> K[WebSocket client<br/>ws://192.168.74.8:8765]:::ws
-        L[MOCAP PC (6 cameras)] -->|multicast 120 Hz| M[/poses ROS2 topic]:::topic
-    end
-
-    %% ==================== Connections ======================
-    I -.-> K
-    M -.-> D
-    style Drone fill:#1f2937,stroke:#3b82f6,color:#f9fafb
-    style PC fill:#111827,stroke:#10b981,color:#f9fafb
-    classDef ws fill:#fff3c4,stroke:#d97706,color:#1f2937;
-    classDef topic fill:#e0f2fe,stroke:#0369a1,color:#1f2937;
-```
-
-
-## Thesis Finish Bootstrap (Draft)
-
-1. Lock the ROS 2 <-> PX4 link (SITL + FC) using the XRCE-DDS checks above.
-2. Bring up the FC in XRCE-DDS mode on TELEM2 at 921600 and confirm `/fmu/out/*` topics.
-3. Ingest OptiTrack mocap and convert ENU/FLU -> NED/FRD once, immediately after read.
-4. Feed the transformed pose into `mocap_px4_bridge` -> `/fmu/in/vehicle_visual_odometry`.
-5. Validate fusion with stationary tests (move up/down, yaw) against `vehicle_odometry` or `vehicle_local_position`.
-6. Run simple ROS 2 commands: takeoff, hover, land.
-7. Run a simple end-to-end test setup from A -> B.
-8. Introduce obstacles.
-9. Design and run tests that collide with the obstacle.
-10. Review data in Foxglove, plot signals, and check hypothesized correlations.
-11. Write the empirical part of the thesis.
-12. Write the remaining thesis sections.
+| Issue | Cause | Fix |
+|---|---|---|
+| SSH connection fails | SSH daemon not running | `sudo systemctl status ssh; sudo systemctl enable --now ssh` |
+| `pi5drone.local` unreachable | Avahi not running | `sudo systemctl enable --now avahi-daemon` (on both Pi and workstation) |
+| Docker build very slow | First build on ARM64 | Normal; subsequent builds are cached |
+| ROS 2 commands not found | Environment not sourced | Verify `postCreateCommand` in devcontainer.json |
+| uXRCE-DDS won't connect | UART wiring or baud mismatch | Check `enable_uart=1` in config.txt; verify `/dev/ttyAMA0` exists; confirm 921600 baud matches between Agent and PX4 parameter |
+| ROS 2 topics empty | uXRCE-DDS client not running on FC | Verify `UXRCE_DDS_CFG = 102` in PX4 parameters |
+| MoCap tracking drops during cage collision | Occlusion of reflective markers | Normal — EKF2 bridges via IMU propagation (see Data Processing in thesis) |
