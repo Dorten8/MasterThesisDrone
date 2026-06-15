@@ -58,7 +58,7 @@ The physical experiments were conducted at the REALLAB at the IT University of C
 \end{figure}
 
 \subsubsection{Experiment Control and Data Collection}
-The experimental platform relies on an integrated software architecture designed to bridge abstracted trajectory generation with real-time hardware constraints. The low-level flight stack utilizes PX4 Autopilot firmware on a NuttX real-time operating system (RTOS), with internal state estimation handled strictly by an Extended Kalman Filter (EKF2).\cite{PX4Docs} \textbf{L1 Node} — the EKF2 is the primary source of velocity state data for the entire analysis pipeline, fused from the onboard 250\,Hz IMU (gyroscope and accelerometer) and the 120\,Hz external MoCap vision odometry stream.
+The experimental platform relies on an integrated software architecture designed to bridge abstracted trajectory generation with real-time hardware constraints. The low-level flight stack utilizes PX4 Autopilot firmware on a NuttX real-time operating system (RTOS), with internal state estimation handled strictly by an Extended Kalman Filter (EKF2).\cite{PX4Docs} \textbf{L1 Node} --- the EKF2 is the primary source of velocity state data for the entire analysis pipeline, fused from the onboard 250\,Hz IMU (gyroscope and accelerometer) and the 120\,Hz external MoCap vision odometry stream.
 
 High-level position commanding is managed within a ROS~2 abstraction layer running on an external offboard computing node. Real-time topic translation between the ROS~2 node graph and the internal PX4 uORB messaging system is handled via a micro-XRCE-DDS agent.
 
@@ -143,8 +143,9 @@ To accurately assess energetic demands, efficiency metrics were extracted from t
     \label{fig:deceleration_vs_battery}
 \end{figure}
 
-\subsection{Impact Kinematics}
-\label{sec:impact_kinematics}
+\subsection{Impact Acceleration and Vibrations}
+\label{sec:impact_acceleration_vibrations}
+
 The fixed cage demonstrated a 59\% higher maximum deceleration compared to the rotating cage (Fixed: $\mu = -1.64 \pm 0.64\:\text{m/s}^2$, Rotating: $\mu = -1.03 \pm 0.50\:\text{m/s}^2$). An independent samples t-test (Welch) confirms this difference is highly significant ($t(124.7) = 6.00$, $p < 0.001$) with a large effect size (Cohen's $d = 1.05$). The following figures disaggregate this result by examining the IMU and state-estimation dynamics that underlie the aggregate deceleration measurement, and then relate the force-transfer characteristics to the geometric clearance and path-tracking outcomes.
 
 \begin{figure}[htbp]
@@ -168,7 +169,16 @@ The fixed cage demonstrated a 59\% higher maximum deceleration compared to the r
     \label{fig:raw_imu_xyz}
 \end{figure}
 
-% NOTE: LOCATE THE MISSING RAW IMU XYZ DATA — the saved data/proof for the raw IMU component comparison still needs to be found. The figure exists but verify the underlying source data is complete.***
+% NOTE: LOCATE THE MISSING RAW IMU XYZ DATA --- the saved data/proof for the raw IMU component comparison still needs to be found. The figure exists but verify the underlying source data is complete.***
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{plots/IMU Vibration Spread by Cage Configuration.png}
+    \caption{XYZ oscillation variance and vibration tail spread visualized as box plots, comparing the stabilization period of the fixed and rotating cage configurations.}
+    \label{fig:xyz_oscillation_variance}
+\end{figure}
+
+By integrating the standard deviation of linear accelerations ($a_x, a_y, a_z$) and angular rates ($w_x, w_y, w_z$) over a strict post-impact stabilization tail ($t_{\text{impact}} + 0.2\text{s}$ to $+ 3.0\text{s}$), distinct vibration footprints emerge.
 
 \begin{figure}[htbp]
     \centering
@@ -176,6 +186,9 @@ The fixed cage demonstrated a 59\% higher maximum deceleration compared to the r
     \caption{Comparison of EKF-estimated velocity against MoCap-derived velocity for representative Fixed Cage (left) and Rotating Cage (right) flights. The panels validate that the onboard Extended Kalman Filter maintains state estimation fidelity through the collision event despite the vibration differences documented above.}
     \label{fig:combined_ekf}
 \end{figure}
+
+\subsection{Deviation from the Norm}
+\label{sec:deviation_from_norm}
 
 \subsubsection{Collision Geometry and Path Spread}
 \label{sec:clearance_sdld}
@@ -186,7 +199,7 @@ The spatial consequences of the force-transfer mechanisms above are captured by 
 \[
 \mathrm{clearance} = d_{\text{centre}} - r_{\text{column}} - r_{\text{cage}}
 \]
-where $d_{\text{centre}}$ is the minimum 2-D Euclidean distance between the drone's MoCap position and the column centre, $r_{\text{column}} = 0.045$~m (column radius), and $r_{\text{cage}} = 0.179$~m (cage radius). A negative clearance value indicates that the drone centre has entered the sum-of-radii boundary --- i.e. physical contact has occurred.
+where $d_{\text{centre}}$ is the minimum 2-D Euclidean distance between the drone's MoCap position and the column centre, $r_{\text{column}} = 0.045$~m (column radius), and $r_{\text{cage}} = 0.179$~m (cage radius). A negative clearance value indicates that the drone centre has entered the sum-of-radii boundary --- i.e.\ physical contact has occurred.
 
 \textbf{Path Spread (SDLD)} --- the standard deviation of lateral displacement --- quantifies how tightly the drone tracks the ideal straight-line path from Exp.\ Start-point to Exp.\ End-point. For each MoCap sample in the transit segment, the perpendicular distance to the line connecting WP1 and WP2 is computed; SDLD is the standard deviation of these distances:
 \[
@@ -203,22 +216,13 @@ Unlike maximum deviation (which captures a single extreme point), SDLD reflects 
 
 The rotating cage exhibits a larger mean negative clearance (Fixed: $\mu = -0.470 \pm 0.165$~m; Rotating: $\mu = -0.637 \pm 0.172$~m), consistent with the larger maximum trajectory deviation reported in \autoref{sec:post_collision_recovery}. Despite this deeper incursion into the column boundary, the path spread (SDLD) remains comparable between the two configurations (Fixed: $37.4 \pm 11.0$~mm; Rotating: $40.3 \pm 9.8$~mm), suggesting that the bearing mechanism does not produce erratic path behaviour --- the trajectory is simply displaced further at the point of closest contact.
 
-\subsection{Vibration and Lateral Stability}
-\label{sec:vibration_stability}
-By integrating the standard deviation of linear accelerations ($a_x, a_y, a_z$) and angular rates ($w_x, w_y, w_z$) over a strict post-impact stabilization tail ($t_{\text{impact}} + 0.2\text{s}$ to $+ 3.0\text{s}$), distinct vibration footprints emerge.
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{plots/IMU Vibration Spread by Cage Configuration.png}
-    \caption{XYZ oscillation variance and vibration tail spread visualized as box plots, comparing the stabilization period of the fixed and rotating cage configurations.}
-    \label{fig:xyz_oscillation_variance}
-\end{figure}
-
-\subsection{Post-Collision Trajectory and Recovery}
+\subsubsection{Post-Collision Trajectory and Recovery}
 \label{sec:post_collision_recovery}
+
 While the Rotating Cage minimizes internal shock and vibration, the trajectory tracking metrics present a nuanced trade-off. By evaluating the Maximum Trajectory Deviation ($d_{\text{max}}$) and the Spatial Integral of Absolute Error (SIAE) recovery area, the kinematic footprint of the recovery phase is established.
 
-Two complementary metrics quantify the spatial consequences of impact. \textbf{Maximum Trajectory Deviation} ($d_{\text{max}}$) is the peak perpendicular distance between the executed MoCap track and the commanded reference line from Exp.\ Start-point to Exp.\ End-point (WP1$\to$WP2), capturing the single worst-case excursion during the obstacle transit. \textbf{Spatial Integral of Absolute Error} (SIAE) measures the total area between the executed and commanded paths over the full recovery leg from Exp.\ End-point to Recovery (WP2$\to$WP3):
+Two complementary metrics quantify the spatial consequences of impact. \textbf{Maximum Trajectory Deviation} ($d_{\text{max}}$) is the peak perpendicular distance between the executed MoCap track and the commanded reference line from Exp.\ Start-point to Exp.\ End-point (WP1$\to$WP2), capturing the single worst-case excursion during the obstacle transit. \newline
+\textbf{Spatial Integral of Absolute Error} (SIAE) measures the total area between the executed and commanded paths over the full recovery leg from Exp.\ End-point to Recovery (WP2$\to$WP3):
 \[
 \mathrm{SIAE} = \int_{t_{\mathrm{WP2}}}^{t_{\mathrm{WP3}}} \bigl| \mathrm{perp\_dist}(t) \bigr| \; dt
 \]
@@ -231,12 +235,29 @@ expressed in m$^{2}$ (normalised to the waypoint segment length, yielding units 
     \label{fig:trajectory_deviation_recovery}
 \end{figure}
 
+% TODO [USER]: Verify the file path for the Figure 16 image (Max Trajectory Deviation and Recovery Area Comparison.png). The figure is failing to render---check that the file exists at the plotted path.
+
 The rotating cage exhibited a slightly wider maximum trajectory deviation than the fixed cage (Fixed: $\mu = 118.4 \pm 30.4\:\text{mm}$, Rotating: $\mu = 131.0 \pm 32.1\:\text{mm}$). A Mann-Whitney U test confirms this difference is statistically significant ($U = 2484$, $p = 0.022$), though the effect size is small (Cohen's $d = 0.41$).
 
 However, the total spatial area required by the PID controller to arrest the drift and return to the setpoint (SIAE) remains nearly identical between both configurations (Rotating: $\mu = 120.4 \pm 32.2$, Fixed: $\mu = 117.4 \pm 33.2$, $U = 2009$, $p = 0.998$, not significant).
 
-\subsection{Angle Prediction via Random Forest}
+\subsection{Result Analysis}
+\label{sec:result_analysis}
+
+% TODO [USER]: Insert Gemini's transition paragraph about angle differences and the IMU correlation plot here.
+
+\begin{figure}[htbp]
+    \centering
+    % TODO [USER]: Upload 'missing_IMU_correlation_plot.png' to Overleaf and insert the exact filename in the \includegraphics line below.
+    % \includegraphics[width=\textwidth]{plots/missing_IMU_correlation_plot.png}
+    \caption{IMU correlation plot showing the relationship between impact angle and IMU-derived features.}
+    \label{fig:imu_correlation}
+\end{figure}
+
+\subsubsection{Angle Prediction via Random Forest}
 \label{sec:angle_prediction}
+
+% TODO [USER]: Insert Gemini's high-level introduction to Random Forest here.
 
 While the preceding sections characterise the mechanical consequences of collision, they rely on post-processed MOCAP ground truth. A practical drone operating in a confined space does not have access to an external tracking system --- it must infer collision properties from onboard sensors alone. To evaluate whether impact angle can be estimated from the vibration and inertial signatures recorded by the onboard IMU, a Random Forest regressor was trained on the 14 IMU-derived features described in the methodology (\autoref{sec:mocap_ekf2}). The model was evaluated separately for each cage configuration using stratified 5-fold cross-validation, enabling direct comparison of how well the vibration-to-angle mapping survives the mechanical differences between fixed and rotating designs.
 
@@ -250,6 +271,8 @@ The 5-fold cross-validation procedure splits the impact flights for each cage co
     \caption{Consolidated five-fold cross-validation: predicted vs.\ actual impact angle for both cage configurations. Fixed Cage (left) and Rotating Cage (right) are shown side by side with identical axis limits, aspect ratio, and tick spacing for direct visual comparison. Each marker colour denotes one cross-validation fold; the black dashed line marks the $y=x$ identity; the grey band shows $\pm5^\circ$ tolerance.}
     \label{fig:rf_cv_consolidated}
 \end{figure}
+
+% TODO [USER]: Insert Gemini's explanation of evaluation metrics (MAE, RMSE, R-squared) here.
 
 Both configurations produced predictive performance substantially above chance, though with distinct error profiles (Table~\ref{tab:rf_cv_metrics}). The Rotating Cage achieved lower absolute error (MAE = 4.53$^\circ$, RMSE = 6.06$^\circ$) than the Fixed Cage (MAE = 4.87$^\circ$, RMSE = 6.71$^\circ$), indicating its predictions were physically closer to the true impact angles. The Fixed Cage, however, returned a slightly higher $R^2$ (0.731 vs.~0.719), reflecting stronger overall correlation between its predicted and actual trends despite marginally larger absolute deviations. This apparent paradox --- higher $R^2$ but higher MAE/RMSE --- arises because $R^2$ measures the proportion of variance explained, not the absolute magnitude of error, and the Fixed Cage angle distribution spans a wider dynamic range.
 
@@ -282,16 +305,18 @@ The residual plots (\autoref{fig:rf_residuals_consolidated}) reveal a diagnostic
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plots/consolidated_residuals.png}
-    \caption{Consolidated residual plots for both cage configurations. Left: Fixed Cage residuals (actual $-$ predicted) against predicted angle; Right: Rotating Cage residuals. The black dashed horizontal line marks zero error; residuals are coloured by cross-validation fold.}
+    \caption{Consolidated residual plots for both cage configurations. Rotating Cage (left) and Fixed Cage (right). The black dashed horizontal line marks zero error; residuals are coloured by cross-validation fold.}
     \label{fig:rf_residuals_consolidated}
 \end{figure}
+
+% TODO [USER]: Update the residual plot image (consolidated_residuals.png) with the version truncated to ±30° on the Y-axis, and with the Rotating cage on the left and Fixed cage on the right.
 
 \subsubsection{Learning Curves and Overfitting}
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.85\textwidth]{plots/consolidated_learning_curves.png}
-    \caption{Consolidated learning curves for both cage configurations. Left: Fixed Cage; Right: Rotating Cage. Each panel shows training $R^2$ and validation $R^2$ against training-set size with shared vertical axis limits, enabling direct comparison of the overfitting margin between the two cage types.}
+    \caption{Consolidated learning curves for both cage configurations. Rotating Cage (left) and Fixed Cage (right). Each panel shows training $R^2$ and validation $R^2$ against training-set size with shared vertical axis limits, enabling direct comparison of the overfitting margin between the two cage types.}
     \label{fig:rf_learning_consolidated}
 \end{figure}
 
@@ -301,10 +326,26 @@ The learning curves for both cage configurations exhibit a clear overfitting sig
 
 To establish whether the multi-feature Random Forest provides genuine predictive value beyond a simple linear approach, the model was benchmarked against a Huber linear regressor operating on the single best-correlated IMU feature.
 
+% TODO [USER]: Insert Gemini's introduction to Huber Regression here.
+
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=\textwidth]{plots/consolidated_model_comparison.png}
-    \caption{Consolidated model comparison: Random Forest vs.\ Huber linear baseline for Fixed Cage (left) and Rotating Cage (right). Bar charts show $R^2$ with $\pm1\sigma$ error bars across folds, with identical vertical axis limits for direct comparison.}
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        % TODO [USER]: Insert the filename for the NEW Rotating Cage model comparison plot here.
+        % \includegraphics[width=\textwidth]{plots/NEW_rotating_cage_model_comparison.png}
+        \caption{Rotating Cage.}
+        \label{fig:rf_huber_rotating}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        % TODO [USER]: Insert the filename for the NEW Fixed Cage model comparison plot here.
+        % \includegraphics[width=\textwidth]{plots/NEW_fixed_cage_model_comparison.png}
+        \caption{Fixed Cage.}
+        \label{fig:rf_huber_fixed}
+    \end{subfigure}
+    \caption{Model comparison: Random Forest vs.\ Huber linear baseline. Rotating Cage (left) and Fixed Cage (right). Bar charts show $R^2$ with $\pm1\sigma$ error bars across folds, with identical vertical axis limits for direct comparison.}
     \label{fig:rf_huber_consolidated}
 \end{figure}
 
@@ -330,10 +371,13 @@ A critical practical question is whether a model trained on one cage type can pe
     \label{fig:rf_transfer_rotating}
 \end{figure}
 
-The transfer results are unequivocal: neither direction succeeds. The Fixed Cage model, when applied to Rotating Cage data, produces an $R^2$ of $-0.095$ --- worse than predicting the mean. The Rotating Cage model on Fixed Cage data fares marginally better at $R^2 = 0.257$, but still falls far below the within-condition performance of either model. A systematic bias is visible in both transfers: the predictions follow a distinct off-diagonal band, suggesting that a linear correction could partially align the two domains but that the underlying feature-to-angle relationship is fundamentally altered by the cage mechanics. The bearing mechanism does not merely add noise to an otherwise stable signal --- it changes which IMU channels carry the information and how they combine, rendering a model trained under one mechanical regime invalid in the other.
+% TODO [USER]: Insert Gemini's rewritten objective sentence for the transfer results paragraph here.
+
+The transfer results are informative about the underlying mechanical divergence. The Fixed Cage model, when applied to Rotating Cage data, produces an $R^2$ of $-0.095$ --- worse than predicting the mean. The Rotating Cage model on Fixed Cage data fares marginally better at $R^2 = 0.257$, but still falls far below the within-condition performance of either model. A systematic bias is visible in both transfers: the predictions follow a distinct off-diagonal band, suggesting that a linear correction could partially align the two domains but that the underlying feature-to-angle relationship is fundamentally altered by the cage mechanics. The bearing mechanism does not merely add noise to an otherwise stable signal --- it changes which IMU channels carry the information and how they combine, rendering a model trained under one mechanical regime invalid in the other.
 
 \subsubsection{Feature Importance: Which IMU Channels Carry the Signal?}
 
 To understand which physical signatures the models rely on, the permutation-based feature importance was examined for both configurations. Permutation importance measures the drop in $R^2$ when a single feature's values are randomly shuffled, breaking its association with the target while preserving its marginal distribution. A larger drop indicates a more critical feature.
 
 Across both configurations, vibration-derived features in the gyroscope domain dominate the importance rankings, consistent with the physical expectation that angular rate perturbations carry richer information about the impact direction than linear accelerations alone. The precise ordering differs between cage types, reflecting the mechanical redistribution of collision energy described in the Discussion chapter.
+\endinput
