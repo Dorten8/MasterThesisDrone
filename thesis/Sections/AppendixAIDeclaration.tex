@@ -1,3 +1,4 @@
+\clearpage
 \section{Declaration of Generative AI Use}
 \label{sec:ai_declaration}
 
@@ -7,30 +8,20 @@ In accordance with IT University of Copenhagen guidelines on the responsible use
 
 During the development of this thesis, I utilised Google's Gemini model for a range of analytical and editorial tasks. The tool was employed to verify the scientific rigour of specific claims prior to their inclusion in the manuscript, to critique draft passages for logical consistency and clarity, and to generate candidate graphics for data visualisation and conceptual diagrams. Gemini additionally assisted in brainstorming approaches to data analysis, helping to identify potentially informative feature engineering strategies and statistical tests that were then implemented and validated manually. General image-editing tasks, such as resolution enhancement and format conversion for figures, were also carried out through this tool. In every case, the output produced by Gemini served as a starting point or candidate that I independently verified, refined, and approved before incorporation into the final thesis.
 
-% TODO [USER]: Replace with actual prompts used
 Example prompts for Gemini included:
 \begin{itemize}
-    \item \texttt{``[Verify a statistical claim, e.g.: 'Verify whether the statement that a rotating cage reduces peak deceleration by 59\% is statistically supported given the reported t-test results and effect size.']''}
-    \item \texttt{``[Brainstorm analytical approaches, e.g.: 'Suggest feature-engineering strategies for extracting impact-angle information from six-axis IMU time-series data collected during sub-200 ms collision events.']''}
-    \item \texttt{``[Critique a section draft, e.g.: 'Critique this Discussion section for logical consistency: does the argument that the rotating cage disperses angle information follow from the reported Huber baseline collapse? Identify any leaps or unsupported claims.']''}
-    \item \texttt{``[Generate a conceptual diagram, e.g.: 'Produce a two-panel figure illustrating the ENU vs NED coordinate frame conventions with labelled axes, suitable for inclusion in a Methodology section.']''}
-    \item \texttt{``[Verify a bibliography entry, e.g.: 'Extract the full author list, year, journal name, volume, and page range for this paper title from the uploaded PDF.']''}
-    \item \texttt{``[Edit an image, e.g.: 'Remove the background from this drone photograph while preserving the propeller blade outlines and cage structure.']''}
+    \item \texttt{``Do you have any more critical comments? Do you find something was wrongly implemented? Does anything feel off?''}
+    \item \texttt{``Are we correctly citing everything? Are there unsupported claims?''}
+    \item \texttt{``Are we discussing the results well? Are we pointing out what we see correctly? Are we thoroughly going over the analysis?''}
 \end{itemize}
 
 \subsection{DeepSeek (via Claude Code) and Antigravity (via Gemini Model)}
 
 The coding and formatting pipeline for this thesis relied on two generative AI coding assistants. DeepSeek, accessed through the Claude Code environment, and Antigravity, a custom IDE powered by a Gemini model, were used as extended development tools for data dissection and analysis. These assistants wrote the Python scripts that populated the experimental SQLite database, implemented the Savitzky--Golay filtering and event-detection routines, generated the full suite of publication-quality plotting scripts for the Results chapter, and handled substantial LaTeX editing and styling tasks throughout the thesis document. All code produced by these tools was reviewed line by line, tested against the experimental data, and validated to ensure that the analytical output faithfully reflected the underlying measurements before being accepted into the final analysis pipeline or manuscript.
 
-% TODO [USER]: Replace with actual prompts used
 Example prompts for these coding assistants included:
 \begin{itemize}
-    \item \texttt{``[Data processing, e.g.: 'Write a Python function that segments a rosbag MCAP file into individual collision-pass windows based on waypoint-id timestamp markers and saves each pass as a separate MCAP slice.']''}
-    \item \texttt{``[Plotting, e.g.: 'Generate a consolidated matplotlib figure with twin subplots showing a parallel-coordinates plot of the top six IMU features coloured by angle bin, with identical axis limits across both cage configurations.']''}
-    \item \texttt{``[Database pipeline, e.g.: 'Create a SQLite ingestion script that reads the sliced MCAP passes, computes clearance and RMSLD metrics, and stores them in a table with columns for cage type, angle, and per-axis IMU variance.']''}
-    \item \texttt{``[LaTeX formatting, e.g.: 'Restructure the Experiments section so that the ML subsection follows the vibrations subsection, with a transition paragraph linking them. Preserve all cross-references and figure labels.']''}
-    \item \texttt{``[LaTeX cleanup, e.g.: 'Find and replace all instances of SDLD with RMSLD in Experiments.tex, update the formula and the descriptive text to reflect that this is a root-mean-square quantity rather than a standard deviation.']''}
-    \item \texttt{``[Critical review, e.g.: 'Read the Discussion chapter end-to-end and identify any place where a claim is stated without sufficient evidential support from the Results section.']''}
+    \item \texttt{``The README should also be in the appendix, and it is basically a software implementation overview. Also there should be a QR code on perhaps the title page of the appendix with the location of my thesis on GitHub. Commit changes and make an entry to the journal about what we have done today.''}
 \end{itemize}
 
 \subsection{Microsoft Designer}

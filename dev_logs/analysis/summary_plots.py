@@ -459,15 +459,15 @@ def plot_deceleration_vs_battery_split(df_impacts, output_path=None,
     cbar.set_label('Collision Impact Angle (deg)', fontsize=9.5, fontweight='bold')
     cbar.ax.tick_params(labelsize=8.5)
 
-    # Improvement annotation
-    rot_mean = df_rot['deceleration'].dropna().mean()
-    fix_mean = df_fix['deceleration'].dropna().mean()
-    improvement = (fix_mean - rot_mean) / fix_mean * 100
-    direction = 'reduces' if improvement > 0 else 'increases'
-    fig.text(0.5, 0.07,
-             f"Rotating Cage {direction} impact deceleration by "
-             f"{abs(improvement):.1f}% vs Fixed Cage",
-             ha='center', va='center', fontsize=9.5, fontweight='bold')
+    # Improvement annotation — REMOVED per user request (misleading aggregate number)
+    # rot_mean = df_rot['deceleration'].dropna().mean()
+    # fix_mean = df_fix['deceleration'].dropna().mean()
+    # improvement = (fix_mean - rot_mean) / fix_mean * 100
+    # direction = 'reduces' if improvement > 0 else 'increases'
+    # fig.text(0.5, 0.07,
+    #          f"Rotating Cage {direction} impact deceleration by "
+    #          f"{abs(improvement):.1f}% vs Fixed Cage",
+    #          ha='center', va='center', fontsize=9.5, fontweight='bold')
 
     # Footnotes (§4.1B, §4.1A)
     fig.text(0.08, 0.02,

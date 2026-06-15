@@ -719,7 +719,7 @@ def plot_consolidated_parallel_coordinates(df_fix, df_rot, save_path=None, show=
                   '60–75°': '#2CA02C', '75°+': '#D62728'}
 
     # ── Build 2×1 figure (NO sharex — each panel needs its own tick labels) ──
-    fig, axes = plt.subplots(2, 1, figsize=(14, 10), dpi=150)
+    fig, axes = plt.subplots(2, 1, figsize=(7, 10), dpi=150)
 
     conditions = [
         ('Rotating Cage', rot_plot, len(df_rot)),
@@ -756,7 +756,7 @@ def plot_consolidated_parallel_coordinates(df_fix, df_rot, save_path=None, show=
         ax.set_ylabel('Normalized value', fontweight='bold')
         ax.set_ylim(-0.05, 1.05)
         ax.set_title(f'{cond_name} — Parallel Coordinates (N={n})',
-                     fontweight='bold', fontsize=13, pad=15, color='black')
+                     fontweight='bold', fontsize=13, color='black')
         ax.grid(True, linestyle=':', alpha=0.3, axis='y')
 
     # ── Manually sync x-limits across panels ───────────────────────────────
@@ -770,10 +770,8 @@ def plot_consolidated_parallel_coordinates(df_fix, df_rot, save_path=None, show=
                    fontsize=9, title_fontsize=10, loc='upper right')
 
     # ── Global title ────────────────────────────────────────────────────────
-    fig.suptitle('Parallel Coordinates — IMU Features by Impact-Angle Group\n'
-                 '(Features ordered by Rotating Cage |r|; '
-                 'top ticks = Fixed rank, bottom ticks = Rotating rank)',
-                 fontweight='bold', fontsize=14, y=1.02)
+    fig.suptitle('Parallel Coordinates — IMU Features by Impact-Angle Group\n',
+                 fontweight='bold', fontsize=14, y=1.03)
 
     # ── Data source ─────────────────────────────────────────────────────────
     fig.text(0.02, -0.02, f"Source: flights_summary (N={len(df_rot)})",
@@ -783,7 +781,7 @@ def plot_consolidated_parallel_coordinates(df_fix, df_rot, save_path=None, show=
              ha='right', va='bottom',
              fontsize=7, fontstyle='italic', color='#555555')
 
-    fig.subplots_adjust(top=0.92, hspace=0.25, bottom=0.10, left=0.06, right=0.98)
+    fig.subplots_adjust(top=0.78, hspace=0.25, bottom=0.15, left=0.06, right=0.98)
 
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -1234,12 +1232,12 @@ def plot_consolidated_top_features(df_fix, df_rot, save_path=None, show=True):
                  fontweight='bold', fontsize=13, y=1.03)
 
     # ── Source & stat footnotes (per skill §4.1, §4.1B, §4.1C) ────────────
-    fig.text(0.00, -0.05,
+    fig.text(0.00, 0,
              "Note: Trendlines computed via robust Huber regression\n"
              "to mitigate the influence of outliers\n"
              "(y = mx + c).",
              ha='left', va='bottom', fontsize=6.5, fontstyle='italic', color='#555555')
-    fig.text(1, -0.05,
+    fig.text(0.98, 0,
              f"flights_summary (N={len(df_rot)} Rotating, N={len(df_fix)} Fixed)",
              ha='right', va='bottom', fontsize=7.0, color='#555555')
 

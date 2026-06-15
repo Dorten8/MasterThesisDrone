@@ -1,3 +1,4 @@
+\clearpage
 \section{Related Work}
 
 \subsection{The Autonomy Bottleneck and Navigation by Contact}
@@ -15,11 +16,6 @@ To manage this kinetic penalty, a significant portion of the literature has focu
 A more mechanically straightforward approach involves rigid, protective cages that physically decouple the drone's attitude from the collision surface. Mahmud~\cite{mahmudDevelopmentCollisionResilient2021} evaluated different rigid geometries for cluttered environments, specifically comparing a freely rotating spherical gimbal against a mono-monostatic (G\"omb\"oc) shell~\cite{Gomboc2026}. The G\"omb\"oc (turtle-like) shape is stably upright in only one orientation; when inverted, its elevated center of gravity makes it unstable, allowing it to passively self-right on the ground. Mahmud concluded this form was superior for post-crash recovery, noting a complementary use case for inspecting stainless steel tanks where a drone could leverage its low center of gravity to self-stabilise through narrow manhole exits.
 
 However, freely rotating spherical cages provide a distinct kinematic advantage during the \emph{airborne} impact itself: they convert linear collision momentum into rotational energy. This mechanism allows the cage to roll along a surface rather than scrape, mitigating the aggressive stick-slip friction dynamics that typically destabilise a drone's flight controller during sustained contact. This principle of kinetic impact deflection forms the mechanical baseline investigated in this thesis.
-
-\subsection{Software Infrastructure for Iterative Development}
-
-This work was partially inspired by the SpinFly platform by A.~Lerche~\cite{lercheSpinFlyUAVSystem}, who addressed a similar problem statement regarding autonomous inspection in confined spaces.
-
 
 \subsection{Tactile Sensing and the IMU Noise Problem}
 

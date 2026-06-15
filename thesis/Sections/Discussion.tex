@@ -1,3 +1,4 @@
+\clearpage
 \section{Discussion}
 \label{sec:discussion}
 
@@ -9,9 +10,10 @@ The primary design rationale for the rotating cage is to deflect, rather than ab
 
 The fixed cage absorbs collision shock structurally, transmitting the full deceleration force directly into the central fuselage and flight controller. In contrast, the rotating cage's bearing mechanism allows the outer shell to spin upon contact, converting linear momentum into rotational energy and shunting a substantial portion of the shockwave away from the sensitive onboard electronics. This mechanical decoupling is the primary mechanism behind the large effect size ($d = 1.05$) observed in the deceleration data.
 
-\subsection{Structural Resonance and Stick-Slip Dynamics}
+\subsection{Structural Resonances}
 
-The IMU vibration data reveals qualitatively distinct post-impact mechanical behaviors between the two designs. The fixed cage drags against the column surface, producing sustained high-frequency pitch and roll oscillations consistent with stick-slip resonance. In this regime, dynamic friction between the cage and the obstacle continuously catches and releases during the scraping contact, injecting broadband vibration into the airframe and keeping the IMU in an elevated noise state well beyond the initial impact event.
+The IMU vibration data reveals qualitatively distinct post-impact mechanical behaviors between the two designs. The fixed cage drags against the column surface, producing sustained high-frequency pitch and roll oscillations consistent with stick-slip resonance \cite{bowden2001friction}.% TODO [USER]: Insert citation for Bowden \& Tabor (2001) regarding stick-slip friction here.
+In this regime, dynamic friction between the cage and the obstacle continuously catches and releases during the scraping contact, injecting broadband vibration into the airframe and keeping the IMU in an elevated noise state well beyond the initial impact event.
 
 The rotating cage decouples this frictional feedback by separating the contact surface from the airframe. By rolling across the obstacle rather than scraping, the cage prevents the stick-slip mechanism from forming, allowing the internal IMU to return to a nominal flight state substantially faster. The practical implication is that a rotating-cage platform can maintain sensor fidelity --- and therefore state estimation quality --- during sustained or multi-impact collision sequences in a way that a fixed cage cannot.
 
@@ -27,7 +29,7 @@ These findings are subject to several constraints that bound their generalizabil
 
 The battery drain rate was comparable across both cage configurations (21.3\,\% min$^{-1}$; \autoref{sec:efficiency_baseline}). The interaction between battery depletion and cage type was not separately isolated in the experimental design, and the aggregate deceleration-vs.-battery trend should not be interpreted as a direct measure of motor torque degradation.
 
-Finally, all trajectory and deviation analysis in this work relies on post-processed MOCAP ground truth. The extent to which these dynamics are observable through onboard sensors alone is addressed by the Random Forest analysis presented in \autoref{sec:angle_prediction} and interpreted below.
+Finally, all trajectory and deviation analysis in this work relies on post-processed MoCap ground truth. The extent to which these dynamics are observable through onboard sensors alone is addressed by the Random Forest analysis presented in \autoref{sec:angle_prediction} and interpreted below.
 
 \subsection{Onboard Tactical Awareness: Interpreting the Random Forest Results}
 

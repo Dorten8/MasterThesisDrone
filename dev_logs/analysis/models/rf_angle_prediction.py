@@ -952,11 +952,11 @@ def plot_consolidated_feature_importance(results_fix, results_rot,
 
     # ── Build 2×2 figure ───────────────────────────────────────────────────
     # Left column = Rotating Cage, Right column = Fixed Cage
-    fig = plt.figure(figsize=(12, max(9, len(feat_list) * 0.85)), dpi=150)
+    fig = plt.figure(figsize=(16, max(9, len(feat_list) * 0.85)), dpi=150)
 
-    gs = fig.add_gridspec(2, 2, hspace=0.30, wspace=0.25,
+    gs = fig.add_gridspec(2, 2, hspace=0.30, wspace=0.6,
                           height_ratios=[1, 1],
-                          left=0.18, right=0.95, top=0.92, bottom=0.12)
+                          left=0.15, right=0.98, top=0.92, bottom=0.12)
 
     for row_idx, imp_type in enumerate(['mdi', 'perm']):
         for col_idx, (cond_name, res) in enumerate(conditions):
@@ -1021,7 +1021,7 @@ def plot_consolidated_feature_importance(results_fix, results_rot,
 
             if imp_type == 'mdi':
                 # X-axis: hardcoded limits [0, 0.25], ticks every 0.1
-                ax.set_xlim(0, 0.25)
+                ax.set_xlim(0, 0.27)
                 ax.set_xticks([0, 0.1, 0.2])
                 ax.set_xlabel('MDI Importance', fontweight='bold', fontsize=9)
             else:
@@ -1048,7 +1048,7 @@ def plot_consolidated_feature_importance(results_fix, results_rot,
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.99, -0.05,
+    fig.text(0.90, 0.00,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
@@ -1173,11 +1173,11 @@ def plot_consolidated_actual_vs_predicted(results_fix, results_rot,
     fig.suptitle('5-Fold Cross-Validation: Predicted vs Actual Impact Angle',
                  fontweight='bold', fontsize=14, y=0.98)
 
-    fig.subplots_adjust(top=0.90, bottom=0.10, wspace=0.25)
+    fig.subplots_adjust(top=0.90, bottom=0.18, wspace=0.25)
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.99, -0.05,
+    fig.text(0.90, 0.00,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
@@ -1253,11 +1253,11 @@ def plot_consolidated_residuals(results_fix, results_rot,
 
     fig.suptitle('Residual Plots — Prediction Error Distribution',
                  fontweight='bold', fontsize=14, y=1.05)
-    fig.subplots_adjust(top=0.90, bottom=0.10, wspace=0.25)
+    fig.subplots_adjust(top=0.90, bottom=0.18, wspace=0.25)
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.99, -0.05,
+    fig.text(0.90, 0,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
@@ -1327,11 +1327,11 @@ def plot_consolidated_model_comparison(results_fix, results_rot,
 
     fig.suptitle('Model Comparison: Huber vs Random Forest',
                  fontweight='bold', fontsize=14)
-    fig.subplots_adjust(top=0.88, bottom=0.12, wspace=0.25)
+    fig.subplots_adjust(top=0.88, bottom=0.18, wspace=0.25)
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.99, -0.05,
+    fig.text(0.90, 0.0,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
@@ -1451,11 +1451,11 @@ def plot_consolidated_cross_condition_transfer(results_fix, results_rot,
 
     fig.suptitle('Cross Condition Transfer',
                  fontweight='bold', fontsize=14, y=0.98)
-    fig.subplots_adjust(top=0.90, bottom=0.10, wspace=0.25)
+    fig.subplots_adjust(top=0.90, bottom=0.18, wspace=0.25)
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.99, -0.05,
+    fig.text(0.90, 0.00,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
@@ -1532,11 +1532,11 @@ def plot_consolidated_learning_curves(results_fix, results_rot,
 
     fig.suptitle('Learning Curves: Training Size vs R² Score',
                  fontweight='bold', fontsize=14, y=0.97)
-    fig.subplots_adjust(top=0.88, bottom=0.12, wspace=0.25)
+    fig.subplots_adjust(top=0.88, bottom=0.18, wspace=0.25)
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.99, -0.05,
+    fig.text(0.90, 0.00,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
