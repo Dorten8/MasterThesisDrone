@@ -1,55 +1,66 @@
 %% Drone Software Stack Architecture
+%% 5-layer layout: Hardware → Middleware → ROS 2 → Control → Data
 graph TD
-    %% Nodes and Relationships
-    subgraph Hardware and Firmware
+    %% ── Layer 1: Hardware and Firmware ──────────────────────────────────
+    subgraph Hardware["Hardware and Firmware"]
         Pixhawk[Pixhawk 6C]
         PX4[PX4 Autopilot]
         Pixhawk <--> PX4
     end
 
-    subgraph Middleware
-        MavlinkRouter[MAVLink Router]
+    %% ── Layer 2: Middleware ────────────────────────────────────────────
+    subgraph Middleware["Middleware"]
         MicroXRCE[Micro-XRCE-DDS Agent]
-        PX4 <-->|MAVLink| MavlinkRouter
         PX4 <-->|uORB / XRCE-DDS| MicroXRCE
     end
 
-    subgraph ROS2 Environment
-        PX4ROSCom[px4_ros_com]
+    %% ── Layer 3: ROS 2 Environment ─────────────────────────────────────
+    subgraph ROS2["ROS 2 Environment"]
         PX4Msgs[px4_msgs]
-        Rviz[RViz Visualization]
+        PX4ROSCom[px4_ros_com]
+        PX4Msgs -->|message definitions| PX4ROSCom
         MicroXRCE <--> PX4ROSCom
-        PX4ROSCom -.-> PX4Msgs
-        PX4Msgs -.-> Rviz
     end
 
-    subgraph Motion Capture
+    %% ── Motion Capture ─────────────────────────────────────────────────
+    subgraph MoCap["Motion Capture"]
         MocapTracking[Motion Capture Tracking]
         MocapBridge[mocap_px4_bridge]
-        MocapTracking --> MocapBridge
+        MocapTracking -->|"Wi-Fi connection\nthrough a multicast"| MocapBridge
         MocapBridge --> PX4ROSCom
-        MocapBridge -.->|MAVLink Odometry| MavlinkRouter
     end
 
-    subgraph High-Level Control
+    %% ── Layer 4: High-Level Control ────────────────────────────────────
+    subgraph Control["High-Level Control"]
+        Mission[Mission]
         FlightDirector[flight_director.py]
         FlightRecorder[flight_recorder.py]
         GhostFlight[ghost_flight.py]
+        Mission --> FlightDirector
         FlightDirector --> PX4ROSCom
         GhostFlight --> PX4ROSCom
         PX4ROSCom --> FlightRecorder
     end
 
-    subgraph Data and Analysis
+    %% ── User Input (outside all clusters) ───────────────────────────────
+    UserInput[User Input]
+
+    %% ── Layer 5: Data and Analysis ──────────────────────────────────────
+    subgraph Data["Data and Analysis"]
         Logs[MCAP / ULog Files]
+        DBPipeline[DB Pipeline]
+        ExpSummary[Experiment Summary]
         Jupyter[Jupyter Diagnostics]
-        SQLite[experiments_summary.db]
         FlightRecorder --> Logs
-        Logs --> Jupyter
-        Jupyter --> SQLite
+        Logs --> DBPipeline
+        DBPipeline --> ExpSummary
+        ExpSummary --> Jupyter
     end
 
-    %% Class Definitions
+    %% ── User Input connection (cross-cluster) ───────────────────────────
+    UserInput --> FlightDirector
+
+    %% ── Class Definitions ───────────────────────────────────────────────
     classDef hardware fill:#f44336,stroke:#b71c1c,stroke-width:2px,color:#000;
     classDef firmware fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#000;
     classDef middleware fill:#4caf50,stroke:#1b5e20,stroke-width:2px,color:#000;
@@ -57,12 +68,14 @@ graph TD
     classDef mocap fill:#9c27b0,stroke:#4a148c,stroke-width:2px,color:#000;
     classDef control fill:#00bcd4,stroke:#006064,stroke-width:2px,color:#000;
     classDef analysis fill:#607d8b,stroke:#263238,stroke-width:2px,color:#000;
+    classDef user fill:#ffffff,stroke:#333333,stroke-width:1px,color:#000;
 
-    %% Class Assignments
+    %% ── Class Assignments ───────────────────────────────────────────────
     class Pixhawk hardware;
     class PX4 firmware;
-    class MavlinkRouter,MicroXRCE middleware;
-    class PX4ROSCom,PX4Msgs,Rviz ros;
+    class MicroXRCE middleware;
+    class PX4ROSCom,PX4Msgs ros;
     class MocapTracking,MocapBridge mocap;
-    class FlightDirector,FlightRecorder,GhostFlight control;
-    class Logs,Jupyter,SQLite analysis;
+    class Mission,FlightDirector,FlightRecorder,GhostFlight control;
+    class Logs,DBPipeline,ExpSummary,Jupyter analysis;
+    class UserInput user;

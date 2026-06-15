@@ -18,9 +18,8 @@ However, freely rotating spherical cages provide a distinct kinematic advantage 
 
 \subsection{Software Infrastructure for Iterative Development}
 
-This work serves as a spiritual continuation of the SpinFly platform by A.~Lerche~\cite{lercheSpinFlyUAVSystem}, who addressed a similar problem statement regarding autonomous inspection in confined spaces. From his work, several structural lessons were identified. Lerche utilised the iNAV flight control framework, which, while capable of autonomous flight, proved poorly suited for rapid development iteration. Considerable time was spent on hardware integration and troubleshooting iNAV's software compatibility issues.
+This work was partially inspired by the SpinFly platform by A.~Lerche~\cite{lercheSpinFlyUAVSystem}, who addressed a similar problem statement regarding autonomous inspection in confined spaces.
 
-Beyond physical survivability, the choice of autonomous flight software is critical for testing novel tactile algorithms. Two platforms currently dominate the open-source UAV ecosystem: ArduPilot and PX4. PX4 was selected for this work due to its permissive BSD licensing, its modular publish-subscribe architecture (uORB), and its well-developed hardware standards under the Dronecode Foundation~\cite{meierPX4NodebasedMultithreaded2015}. These factors promised faster integration with the ROS~2 middleware layer and significantly reduced hardware-software troubleshooting relative to the iNAV approach.
 
 \subsection{Tactile Sensing and the IMU Noise Problem}
 
