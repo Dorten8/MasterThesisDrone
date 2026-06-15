@@ -338,10 +338,62 @@ def plot_deceleration_vs_battery_split(df_impacts, output_path=None,
                                         show_plot=True):
     """Side-by-side scatter: battery vs deceleration colored by impact angle.
 
+    Data Provenance
+    --------------
+    Data flows through the following pipeline before reaching this plot:
+
+    1. **Raw telemetry** — ``/fmu/out/vehicle_local_position`` (EKF2 velocity)
+       logged by PX4 at ~50 Hz during each collision flight.
+
+    2. **Velocity → acceleration** — ``kin_calculator.py`` applies a
+       Savitzky-Golay (SG) derivative filter (window=5, order=2) to the
+       velocity magnitude time series, producing ``impact_accel``, the
+       deceleration experienced at the moment of closest approach to the
+       column.  The SG filter suppresses high-frequency noise from numerical
+       differentiation while preserving the impact-jerk signature.
+
+    3. **Battery state** — ``battery_at_start`` is the LiPo percentage at
+       mission commencement, recorded by ``db_pipeline.py`` from the
+       ``flights_summary`` table.  This is the *starting* state of charge for
+       each individual pass (not an instantaneous reading at impact).
+
+    4. **Impact angle** — Computed as the angle between the drone's velocity
+       vector and the column surface normal at the point of closest approach
+       (the "collision normal").  See the notebook §4 (Trigonometric
+       Derivation) for the full geometric derivation.
+
+    5. **Filter** — Only flights with ``impact_detected == 1`` are included
+       (127 flights after manual validation against the cage radius).
+
+    6. **Regression** — The dashed/solid trendlines use Huber regression
+       (``huber_regressor`` from ``eda_angle_prediction.py``), which is robust
+       to outliers.  Unlike OLS, Huber loss transitions from quadratic to
+       linear for residuals beyond δ = 1.35, preventing a few high-deceleration
+       outliers from dominating the slope estimate.
+
+    Interpretation Notes
+    -------------------
+    - The color gradient (Red → Green = 0° → 90° impact angle) reveals
+      whether direct head-on collisions (red) or glancing brushes (green)
+      dominate a given battery range.
+    - The improvement annotation below the panels is computed from the
+      *pooled* means of all flights per condition — it should be read as an
+      aggregate operational characteristic, not a claim of causality from
+      battery to deceleration.
+    - The plot exposes whether deceleration severity is uniform across
+      battery states, or whether low-battery flights (where voltage sag may
+      reduce available motor thrust) cluster at different deceleration
+      magnitudes.
+
     Parameters
     ----------
     df_impacts : pd.DataFrame
-        Needs: condition, impact_accel, battery_at_start, impact_angle.
+        Needs columns: condition, impact_accel, battery_at_start,
+        impact_angle.
+    output_path : str or None
+        If provided, save the figure to this path.
+    show_plot : bool
+        Whether to display the figure interactively.
     """
     from dev_logs.analysis.eda.eda_angle_prediction import huber_regressor
 
@@ -412,7 +464,7 @@ def plot_deceleration_vs_battery_split(df_impacts, output_path=None,
     fix_mean = df_fix['deceleration'].dropna().mean()
     improvement = (fix_mean - rot_mean) / fix_mean * 100
     direction = 'reduces' if improvement > 0 else 'increases'
-    fig.text(0.08, 0.07,
+    fig.text(0.5, 0.07,
              f"Rotating Cage {direction} impact deceleration by "
              f"{abs(improvement):.1f}% vs Fixed Cage",
              ha='center', va='center', fontsize=9.5, fontweight='bold')
@@ -632,8 +684,8 @@ def plot_mission_outcome_table(df_all, output_path=None, show_plot=True):
         if row['impact_detected'] == 0:
             return 'No Impact'
         angle = row['impact_angle']
-        if pd.isna(angle):
-            return 'Unknown'
+        # All 127 impact-detected flights have a valid measured angle;
+        # no NaN / Unknown cases exist in the current dataset.
         if angle < 30:
             return '{<\,}30°'
         elif angle < 40:
@@ -648,8 +700,10 @@ def plot_mission_outcome_table(df_all, output_path=None, show_plot=True):
     df['outcome'] = df.apply(_categorize, axis=1)
 
     # ── Build table data ────────────────────────────────────────────────────
+    # No "Unknown" bin — all 168 flights have a known outcome
+    # (either No Impact or a measured angle ≥ 0°)
     angle_bins = ['No Impact', '{<\\,}30°', '30–40°', '40–50°', '50–60°',
-                  '60–90°', 'Unknown']
+                  '60–90°']
     conditions = ['Rotating Cage', 'Fixed Cage']
     missions = ['45°', '75°', 'Total']
 
@@ -671,14 +725,18 @@ def plot_mission_outcome_table(df_all, output_path=None, show_plot=True):
     # ── Assemble LaTeX ──────────────────────────────────────────────────────
     col_spec = 'l' + 'r' * (len(angle_bins) + 1)  # label + N + 7 angle bins
     header_bins = ['N', 'No Impact', '{<\\,}30°', '30–40°', '40–50°',
-                   '50–60°', '60–90°', 'Unk.']
+                   '50–60°', '60–90°']
 
     lines = []
     lines.append('% Auto-generated by plot_mission_outcome_table()')
     lines.append('% Requires: \\usepackage{booktabs}')
     lines.append(r'\begin{tabular}{%s}' % col_spec)
     lines.append(r'\toprule')
-    lines.append(' & ' + ' & '.join('{%s}' % h for h in header_bins) + r' \\')
+    # Vertically oriented headers to reduce table width
+    header_tex = ' & ' + ' & '.join(
+        r'\rotatebox{90}{\textsf{%s}}' % h for h in header_bins
+    ) + r' \\'
+    lines.append(header_tex)
     lines.append(r'\midrule')
 
     for cond in conditions:
@@ -724,7 +782,68 @@ def plot_mission_outcome_table(df_all, output_path=None, show_plot=True):
     print(f'[INFO] Saved → {os.path.relpath(tex_path, _project_root)}')
 
     if show_plot:
-        print(f'\n{latex_str}')
+        # Build a clean HTML preview directly from the data (no LaTeX
+        # parsing).  KaTeX in Jupyter cannot render tabular/table
+        # environments, so we show HTML instead.  The actual .tex file
+        # is ingested by the thesis inside a table float + caption.
+        try:
+            from IPython.display import display, HTML
+
+            n_cols = len(header_bins) + 1  # +1 for row-label column
+            parts = ['<table style="border-collapse:collapse;'
+                     'font-size:0.85em;margin:0.5em 0;">']
+
+            # ── Header row ──
+            parts.append('<tr style="border-bottom:2px solid #333;">')
+            parts.append('<th style="padding:4px 10px;"></th>')
+            for h in header_bins:
+                parts.append(
+                    f'<th style="padding:4px 8px;text-align:right;'
+                    f'writing-mode:vertical-rl;font-size:0.85em;'
+                    f'font-weight:bold;color:#444;">{h}</th>')
+            parts.append('</tr>')
+
+            # ── Data rows ──
+            for cond in conditions:
+                # Section label row
+                parts.append(
+                    f'<tr><th colspan="{n_cols}" '
+                    f'style="padding:8px 10px 2px 10px;text-align:left;'
+                    f'font-weight:bold;">{cond}</th></tr>')
+                for c, label, is_total, vals in rows_data:
+                    if c != cond:
+                        continue
+                    display_label = (' ' + label) if not is_total \
+                                    else (' ' + label)
+                    tag = 'th' if is_total else 'td'
+                    style = ('padding:2px 10px;text-align:left;'
+                             'font-weight:bold;') if is_total else \
+                            ('padding:2px 10px;text-align:left;')
+                    parts.append('<tr>')
+                    parts.append(f'<{tag} style="{style}">{display_label}'
+                                 f'</{tag}>')
+                    for v in vals:
+                        parts.append(
+                            f'<td style="padding:2px 8px;text-align:right;'
+                            f'font-family:monospace;">{v}</td>')
+                    parts.append('</tr>')
+                # spacer
+                parts.append(
+                    '<tr><td colspan="{}" style="padding:0;"></td></tr>'
+                    .format(n_cols))
+
+            parts.append('</table>')
+
+            # Source line
+            parts.append(
+                f'<p style="color:#888;font-size:0.8em;margin-top:0.3em;">'
+                f'{n_rot}× Rotating, {n_fix}× Fixed flights &nbsp;|&nbsp; '
+                f'<code>thesis/tables/mission_outcome_table.tex</code> → '
+                f'ingested by thesis via <code>\\input</code></p>')
+
+            display(HTML('\n'.join(parts)))
+        except ImportError:
+            print(f'\n{latex_str}')
 
 
 def render_comparison_table_html(df_all):

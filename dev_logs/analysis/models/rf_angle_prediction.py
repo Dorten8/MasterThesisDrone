@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ── Headless-safe backend (Agg when no display, notebook overrides) ──────────
-import os, sys as _sys
+import os, sys as _sys, shutil
 if not os.environ.get("DISPLAY") and "JPY_SESSION_NAME" not in os.environ:
     import matplotlib as _mpl; _mpl.use("Agg")
 
@@ -71,6 +71,11 @@ from dev_logs.analysis.eda.eda_angle_prediction import (
     IMU_COLS, DISPLAY_NAMES, FEATURE_GROUPS, GROUP_COLORS,
     huber_regressor, GRAPHICS_DIR,
 )
+
+# ── Thesis plots output directory ─────────────────────────────────────────
+THESIS_PLOTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..",
+                                 "thesis", "plots")
+THESIS_PLOTS_DIR = os.path.abspath(THESIS_PLOTS_DIR)
 
 # ── Professional plotting style (thesis) ────────────────────────────────────
 plt.rcParams.update({
@@ -1040,11 +1045,12 @@ def plot_consolidated_feature_importance(results_fix, results_rot,
     fig.suptitle('Random Forest Feature Importance',
                  fontweight='bold', fontsize=14, y=0.97)
 
-    # ── Source text ────────────────────────────────────────────────────────
-    fig.text(0.02, 0.015, r'$p < 0.05$',
-             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
-    fig.text(0.98, 0.015, r'$p < 0.05$',
-             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    # ── Data origin ──────────────────────────────────────────────────────
+    n_rot = len(results_rot.get('y_true', []))
+    n_fix = len(results_fix.get('y_true', []))
+    fig.text(0.99, -0.05,
+             f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
+             ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
         path = os.path.join(GRAPHICS_DIR, "consolidated_feature_importance.png")
         plt.savefig(path, dpi=300, bbox_inches='tight')
@@ -1168,11 +1174,12 @@ def plot_consolidated_actual_vs_predicted(results_fix, results_rot,
                  fontweight='bold', fontsize=14, y=0.98)
 
     fig.subplots_adjust(top=0.90, bottom=0.10, wspace=0.25)
-    # ── Source text ────────────────────────────────────────────────────────
-    fig.text(0.02, 0.015, r'$p < 0.05$',
-             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
-    fig.text(0.98, 0.015, r'$p < 0.05$',
-             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    # ── Data origin ──────────────────────────────────────────────────────
+    n_rot = len(results_rot.get('y_true', []))
+    n_fix = len(results_fix.get('y_true', []))
+    fig.text(0.99, -0.05,
+             f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
+             ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
         path = os.path.join(GRAPHICS_DIR, "consolidated_actual_vs_predicted.png")
         plt.savefig(path, dpi=300, bbox_inches='tight')
@@ -1228,9 +1235,9 @@ def plot_consolidated_residuals(results_fix, results_rot,
 
         # Strict formatting
         ax.set_xlim(0, 90)
-        ax.set_ylim(-45, 45)
+        ax.set_ylim(-30, 30)
         ax.set_xticks([0, 15, 30, 45, 60, 75, 90])
-        ax.set_yticks([-45, -30, -15, 0, 15, 30, 45])
+        ax.set_yticks([-30, -15, 0, 15, 30])
 
         ax.set_xlabel('Predicted Impact Angle (°)', fontweight='bold')
 
@@ -1245,13 +1252,14 @@ def plot_consolidated_residuals(results_fix, results_rot,
         ax.grid(True, linestyle=':', alpha=0.4)
 
     fig.suptitle('Residual Plots — Prediction Error Distribution',
-                 fontweight='bold', fontsize=14, y=0.97)
+                 fontweight='bold', fontsize=14, y=1.05)
     fig.subplots_adjust(top=0.90, bottom=0.10, wspace=0.25)
-    # ── Source text ────────────────────────────────────────────────────────
-    fig.text(0.02, 0.015, r'$p < 0.05$',
-             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
-    fig.text(0.98, 0.015, r'$p < 0.05$',
-             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    # ── Data origin ──────────────────────────────────────────────────────
+    n_rot = len(results_rot.get('y_true', []))
+    n_fix = len(results_fix.get('y_true', []))
+    fig.text(0.99, -0.05,
+             f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
+             ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
         path = os.path.join(GRAPHICS_DIR, "consolidated_residuals.png")
         plt.savefig(path, dpi=300, bbox_inches='tight')
@@ -1320,11 +1328,12 @@ def plot_consolidated_model_comparison(results_fix, results_rot,
     fig.suptitle('Model Comparison: Huber vs Random Forest',
                  fontweight='bold', fontsize=14)
     fig.subplots_adjust(top=0.88, bottom=0.12, wspace=0.25)
-    # ── Source text ────────────────────────────────────────────────────────
-    fig.text(0.02, 0.015, r'$p < 0.05$',
-             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
-    fig.text(0.98, 0.015, r'$p < 0.05$',
-             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    # ── Data origin ──────────────────────────────────────────────────────
+    n_rot = len(results_rot.get('y_true', []))
+    n_fix = len(results_fix.get('y_true', []))
+    fig.text(0.99, -0.05,
+             f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
+             ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
         path = os.path.join(GRAPHICS_DIR, "consolidated_model_comparison.png")
         plt.savefig(path, dpi=300, bbox_inches='tight')
@@ -1443,11 +1452,12 @@ def plot_consolidated_cross_condition_transfer(results_fix, results_rot,
     fig.suptitle('Cross Condition Transfer',
                  fontweight='bold', fontsize=14, y=0.98)
     fig.subplots_adjust(top=0.90, bottom=0.10, wspace=0.25)
-    # ── Source text ────────────────────────────────────────────────────────
-    fig.text(0.02, 0.015, r'$p < 0.05$',
-             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
-    fig.text(0.98, 0.015, r'$p < 0.05$',
-             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    # ── Data origin ──────────────────────────────────────────────────────
+    n_rot = len(results_rot.get('y_true', []))
+    n_fix = len(results_fix.get('y_true', []))
+    fig.text(0.99, -0.05,
+             f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
+             ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
         path = os.path.join(GRAPHICS_DIR,
                             "consolidated_cross_condition_transfer.png")
@@ -1523,11 +1533,12 @@ def plot_consolidated_learning_curves(results_fix, results_rot,
     fig.suptitle('Learning Curves: Training Size vs R² Score',
                  fontweight='bold', fontsize=14, y=0.97)
     fig.subplots_adjust(top=0.88, bottom=0.12, wspace=0.25)
-    # ── Source text ────────────────────────────────────────────────────────
-    fig.text(0.02, 0.015, r'$p < 0.05$',
-             ha='left', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
-    fig.text(0.98, 0.015, r'$p < 0.05$',
-             ha='right', va='bottom', fontsize=7.5, fontstyle='italic', color='#555555')
+    # ── Data origin ──────────────────────────────────────────────────────
+    n_rot = len(results_rot.get('y_true', []))
+    n_fix = len(results_fix.get('y_true', []))
+    fig.text(0.99, -0.05,
+             f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
+             ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
         path = os.path.join(GRAPHICS_DIR, "consolidated_learning_curves.png")
         plt.savefig(path, dpi=300, bbox_inches='tight')
@@ -1592,6 +1603,30 @@ def generate_consolidated_plots(results_fix, results_rot,
 
     print(f"\n✅ All 6 consolidated figures → "
           f"{os.path.relpath(GRAPHICS_DIR, os.path.dirname(__file__))}/")
+
+    # ── Dual-save to thesis/plots/ per §4.0.1 ────────────────────────────
+    _thesis_copies = {
+        "consolidated_actual_vs_predicted.png":
+            "consolidated_actual_vs_predicted.png",
+        "consolidated_residuals.png":
+            "consolidated_residuals.png",
+        "consolidated_model_comparison.png":
+            "consolidated_model_comparison.png",
+        "consolidated_learning_curves.png":
+            "consolidated_learning_curves.png",
+        "consolidated_feature_importance.png":
+            "consolidated_feature_importance.png",
+        "consolidated_cross_condition_transfer.png":
+            "consolidated_cross_condition_transfer.png",
+    }
+    os.makedirs(THESIS_PLOTS_DIR, exist_ok=True)
+    for src_name, dst_name in _thesis_copies.items():
+        src = os.path.join(GRAPHICS_DIR, src_name)
+        dst = os.path.join(THESIS_PLOTS_DIR, dst_name)
+        if os.path.exists(src):
+            shutil.copy2(src, dst)
+            print(f"   📎 → thesis/plots/{dst_name}")
+    print(f"✅ Thesis copies → {THESIS_PLOTS_DIR}/")
 
 #  Main — run all analysis when called as a script
 # ══════════════════════════════════════════════════════════════════════════════

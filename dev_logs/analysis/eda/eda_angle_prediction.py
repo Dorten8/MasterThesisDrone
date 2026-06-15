@@ -885,7 +885,7 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
 
     # ── Figure title ───────────────────────────────────────────────────────
     fig.suptitle('IMU Feature Correlation with Impact Angle',
-                 fontweight='bold', fontsize=13, y=1.04)
+                 fontweight='bold', fontsize=13, y=0.99)
 
     # ═══════════════════════════════════════════════════════════════════════
     #  Col 0: Rotating Cage Keys  (rank + feature name, right-aligned
@@ -915,7 +915,7 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
         ax_rot_heat.spines[spine].set_visible(False)
 
     # Sub-title centred directly above the heatmap column
-    ax_rot_heat.text(0.5, y_top + 1.2, 'Rotating Cage',
+    ax_rot_heat.text(0.5, y_top + 1.0, 'Rotating Cage',
                      fontweight='bold', fontsize=11, va='bottom', ha='center',
                      color='black', transform=ax_rot_heat.get_yaxis_transform())
 
@@ -951,7 +951,7 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
         ax_fix_heat.spines[spine].set_visible(False)
 
     # Sub-title centred directly above the heatmap column
-    ax_fix_heat.text(0.5, y_top + 1.2, 'Fixed Cage',
+    ax_fix_heat.text(0.5, y_top + 1.0, 'Fixed Cage',
                      fontweight='bold', fontsize=11, va='bottom', ha='center',
                      color='black', transform=ax_fix_heat.get_yaxis_transform())
 
@@ -1032,15 +1032,6 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
                    fontweight='bold', fontsize=8.5)
     cbar.ax.tick_params(labelsize=7)
 
-    # ── Footnotes (per skill §4.1, §4.1B) ──────────────────────────────────
-    # Stat significance key (left) — explains the * markers in cell annotations
-    fig.text(0.02, 0.005,
-             '$*\\,p<0.05$    $**\\,p<0.01$    $***\\,p<0.001$',
-             ha='left', va='bottom', fontsize=6.5, fontstyle='italic', color='#888888')
-    # Data origin (right)
-    fig.text(0.98, 0.005,
-             f"flights_summary (N={len(df_rot)} Rotating, N={len(df_fix)} Fixed)",
-             ha='right', va='bottom', fontsize=7.5, color='#555555')
 
     # ── Final layout adjustments ───────────────────────────────────────────
     fig.subplots_adjust(left=0.02, right=0.94, top=0.88, bottom=0.05)

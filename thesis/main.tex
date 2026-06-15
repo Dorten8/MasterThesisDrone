@@ -4,6 +4,7 @@
 \usepackage{svg}
 \usepackage{amsmath}
 \usepackage{lastpage}
+\usepackage[hyphens]{url}
 \usepackage{hyperref}
 \usepackage{listings}
 \usepackage{xcolor}
@@ -11,7 +12,6 @@
 \usepackage{multicol}
 \usepackage{multirow}
 \usepackage[shortlabels]{enumitem}
-\usepackage{hyperref}
 \usepackage{cleveref}
 \usepackage{subcaption}
 \usepackage{fancyhdr}
@@ -109,13 +109,12 @@
 \pagenumbering{Roman}
 
 \begin{titlepage}
-    \vfill
+    \vspace*{-2cm}
     \begin{center}
-    \includegraphics[width=0.7\textwidth]{Figures/logo_small.png} \\
-        \hfill \\
+        \includegraphics[width=0.55\textwidth]{Figures/logo_small.png} \\[0.5em]
         \Large{\DEPARTEMENT} \\
-        \Large{\COURSENUM\;-\;\COURSENAME} \\
-        \vfill
+        \Large{\COURSENUM\;-\;\COURSENAME} \\[1em]
+        \includegraphics[width=0.38\textwidth]{Figures/drone_side_view_transparent.png} \\[0.8em]
         \textbf{\LARGE{\REPORTTITLE}}
     \end{center}
     \vfill
@@ -125,7 +124,7 @@
         \Large{\textbf{Co-supervised by:} \COSUPERVISOR} \\
         \Large{\textbf{Date:} \today}
     \end{flushleft}
-    \vfill
+    \vspace*{1cm}
 \end{titlepage}
 
 %-----------------------------------------------%

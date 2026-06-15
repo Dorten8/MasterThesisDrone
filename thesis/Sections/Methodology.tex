@@ -150,6 +150,13 @@ The EKF2 estimator fuses this external vision with the onboard 250\,Hz IMU data,
 
 The flight controller and companion computer communicate over a UART serial link (TELEM2, 921\,600 baud). During experimental flights, the link uses \textbf{uXRCE-DDS} exclusively: the PX4 uXRCE-DDS client publishes internal uORB topics (\texttt{vehicle\_odometry}, \texttt{vehicle\_status}, \texttt{actuator\_motors}) to the ROS~2 node graph via \texttt{MicroXRCEAgent} running on the Pi~5. A secondary \textbf{MAVLink} stream can be enabled on the same port for ground-station debugging (QGroundControl), but the two protocols are not used simultaneously during active data collection.
 
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{diagrams/architecture_xrce-dds_ros2_FROMpF4DOCS.pdf}
+    \caption{Architecture of the uXRCE-DDS communication layer bridging PX4 (uORB) and ROS~2. The MicroXRCE-DDS Client runs on the flight controller and publishes topics such as \texttt{vehicle\_odometry} and \texttt{actuator\_motors} over UART to the MicroXRCE-DDS Agent on the companion computer, where they enter the ROS~2 node graph. Adapted from PX4 documentation~\cite{PX4ROS2UserGuide}.}
+    \label{fig:architecture_xrce_dds}
+\end{figure}
+
 \subsubsection{Software Framework}
 
 \paragraph{Source Submodules}

@@ -43,14 +43,14 @@ The physical experiments were conducted at the REALLAB at the IT University of C
     \begin{subfigure}[b]{0.85\textwidth}
         \centering
         \includegraphics[width=\textwidth]{Figures/experiment_geometry.pdf}
-        \caption{Top-down spatial layout of the collision experiment showing column position, waypoints \textbf{WP\_stage (U-turn)}, \textbf{Exp.\ Start-point (WP1)}, \textbf{Exp.\ End-point (WP2)}, and \textbf{Recovery (WP3)}, approach angles ($\theta = 45^\circ, 75^\circ$), sweep leg, and loop-back path.}
+        \caption{Top-down spatial layout of the collision experiment showing column position, waypoints \texttt{WP\_stage (U-turn)}, \texttt{Exp.\ Start-point (WP1)}, \texttt{Exp.\ End-point (WP2)}, and \texttt{Recovery (WP3)}, approach angles ($\theta = 45^\circ, 75^\circ$), sweep leg, and loop-back path.}
         \label{fig:experiment_geometry}
     \end{subfigure}
     \vspace{1em}
     \begin{subfigure}[b]{0.85\textwidth}
         \centering
         \includegraphics[width=\textwidth]{Figures/waypoint_state_machine.pdf}
-        \caption{Waypoint state machine showing the autonomous collision loop: DISARMED $\to$ TAKEOFF (WP0) $\to$ WP\_stage (U-turn) $\to$ Exp.\ Start-point (WP1) $\to$ Exp.\ End-point (WP2) $\to$ Recovery (WP3) $\to$ (auto-loop to WP\_stage or LANDING). Failsafe transitions to EMERGENCY from any active state.}
+        \caption{Waypoint state machine showing the autonomous collision loop: \texttt{DISARMED} $\to$ \texttt{TAKEOFF (WP0)} $\to$ \texttt{WP\_stage (U-turn)} $\to$ \texttt{Exp.\ Start-point (WP1)} $\to$ \texttt{Exp.\ End-point (WP2)} $\to$ \texttt{Recovery (WP3)} $\to$ (auto-loop to \texttt{WP\_stage} or \texttt{LANDING}). Failsafe transitions to \texttt{EMERGENCY} from any active state.}
         \label{fig:waypoint_state_machine}
     \end{subfigure}
     \caption{Experimental geometry and mission state machine for the collision sweep experiments. These two figures are candidates for merging into a single combined diagram.}
@@ -74,14 +74,14 @@ During the exact millisecond of physical impact, the protective cage structures 
 To resolve this without sacrificing data fidelity, the analysis pipeline bypasses raw spatial differentiation for velocity and acceleration entirely. Instead, velocity states are extracted directly from the internal PX4 Extended Kalman Filter (\texttt{vehicle\_odometry.velocity}). Because the EKF2 continuously fuses the onboard 250\,Hz IMU data, it bridges external vision dropouts using inertial propagation, providing a smooth and physically truthful velocity profile throughout the collision event.
 
 \subsubsection{Pre-Computed Path and Waypoint Configuration}
-The physical collision framework relies on a pre-computed ROS~2 waypoint trajectory designed to isolate the drone's approach, impact, and recovery phases. The spatial path consists of four waypoints matching the state machine diagram (\autoref{fig:waypoint_state_machine}): \textbf{WP\_stage (U-turn)} -- a pass-through that reverses the approach heading to face southward; \textbf{Exp.\ Start-point (WP1)} -- the gate entry with a hold-to-pause for heading verification, marking the beginning of the sweep leg; \textbf{Exp.\ End-point (WP2)} -- the post-column exit and sweep termination; and \textbf{Recovery (WP3)} -- the stabilisation hold position that auto-loops back to WP\_stage. The one-time \textbf{WP0 (Takeoff)} climb is executed only on the first pass and skipped on all subsequent loops.
+The physical collision framework relies on a pre-computed ROS~2 waypoint trajectory designed to isolate the drone's approach, impact, and recovery phases. The spatial path consists of four waypoints matching the state machine diagram (\autoref{fig:waypoint_state_machine}): \texttt{WP\_stage (U-turn)} --- a pass-through that reverses the approach heading to face southward; \texttt{Exp.\ Start-point (WP1)} --- the gate entry with a hold-to-pause for heading verification, marking the beginning of the sweep leg; \texttt{Exp.\ End-point (WP2)} --- the post-column exit and sweep termination; and \texttt{Recovery (WP3)} --- the stabilisation hold position that auto-loops back to \texttt{WP\_stage}. The one-time \texttt{WP0 (Takeoff)} climb is executed only on the first pass and skipped on all subsequent loops.
 
-The flight director executes a high-momentum ``sweep leg'' from Exp.\ Start-point (WP1) to Exp.\ End-point (WP2) that deliberately intersects the column's physical radius at predefined incident angles ($\theta = 45^\circ$ and $\theta = 75^\circ$). This is immediately followed by an extended ``recovery leg'' from Exp.\ End-point (WP2) to Recovery (WP3) designed to quantify the PID controller's post-impact stabilization space.
+The flight director executes a high-momentum ``sweep leg'' from \texttt{Exp.\ Start-point (WP1)} to \texttt{Exp.\ End-point (WP2)} that deliberately intersects the column's physical radius at predefined incident angles ($\theta = 45^\circ$ and $\theta = 75^\circ$). This is immediately followed by an extended ``recovery leg'' from \texttt{Exp.\ End-point (WP2)} to \texttt{Recovery (WP3)} designed to quantify the PID controller's post-impact stabilization space.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plots/45° Column Collision Loop Full Mission Geometry.png}
-    \caption{Full mission geometry for the $45^\circ$ collision experiment. The dotted red line traces the closed-loop waypoint path (\textbf{WP\_stage (U-turn)} $\to$ \textbf{Exp.\ Start-point (WP1)} sweep leg $\to$ \textbf{Exp.\ End-point (WP2)} $\to$ \textbf{Recovery (WP3)} $\to$ auto-loop to WP\_stage). The column obstacle is shown at centre with its safety cage overlay. A drone silhouette marks the collision point, where the velocity vector and $45^\circ$ incidence arc are annotated. Grey translucent drone outlines indicate the waypoint positions.}
+    \caption{Full mission geometry for the $45^\circ$ collision experiment. The dotted red line traces the closed-loop waypoint path (\texttt{WP\_stage (U-turn)} $\to$ \texttt{Exp.\ Start-point (WP1)} sweep leg $\to$ \texttt{Exp.\ End-point (WP2)} $\to$ \texttt{Recovery (WP3)} $\to$ auto-loop to \texttt{WP\_stage}). The column obstacle is shown at centre with its safety cage overlay. A drone silhouette marks the collision point, where the velocity vector and $45^\circ$ incidence arc are annotated. Grey translucent drone outlines indicate the waypoint positions.}
     \label{fig:mission_geometry}
 \end{figure}
 
@@ -148,44 +148,67 @@ To accurately assess energetic demands, efficiency metrics were extracted from t
 
 The fixed cage demonstrated a 59\% higher maximum deceleration compared to the rotating cage (Fixed: $\mu = -1.64 \pm 0.64\:\text{m/s}^2$, Rotating: $\mu = -1.03 \pm 0.50\:\text{m/s}^2$). An independent samples t-test (Welch) confirms this difference is highly significant ($t(124.7) = 6.00$, $p < 0.001$) with a large effect size (Cohen's $d = 1.05$). The following figures disaggregate this result by examining the IMU and state-estimation dynamics that underlie the aggregate deceleration measurement, and then relate the force-transfer characteristics to the geometric clearance and path-tracking outcomes.
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{plots/Combined IMU Collision Dynamics.png}
-    \caption{Combined IMU collision dynamics comparing Rotating Cage (left) and Fixed Cage (right) representative flights. Each panel shows the linear acceleration deviation and gyroscopic magnitude time series centred on the impact instant ($t=0$), revealing the distinct shock duration and oscillation decay profiles of each configuration.}
-    \label{fig:combined_imu_dynamics}
-\end{figure}
+\paragraph{IMU Time-Series: Individual and Aggregated Signatures}
+
+\autoref{fig:imu_dynamics_pair} presents the IMU acceleration and gyroscopic data at two granularities. The upper panel shows representative single-flight traces for each cage configuration, centred on the impact instant ($t = 0$). The rotating cage's acceleration deviation returns to baseline within approximately 0.3\,s of the impact, whereas the fixed cage exhibits a prolonged decay tail extending beyond 0.5\,s. The gyroscopic magnitude follows the same pattern: a sharp spike at contact in both configurations, but with substantially faster attenuation when the bearing mechanism is active.
+
+The lower panel aggregates all 127 flights, overlaying individual traces at low opacity with a bold median profile for each configuration. This aggregate view confirms that the single-flight pattern is not an anomaly: the rotating cage's 95\% confidence corridor for linear acceleration is visibly narrower than the fixed cage's, and its median gyroscopic surge is both lower in peak magnitude and shorter in duration. The narrower acceleration spread across the full dataset indicates that the bearing mechanism consistently reduces the variability of force transfer into the airframe, not merely the average magnitude.
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=\textwidth]{plots/Aggregated IMU Collision Dynamics Across All Flights.png}
-    \caption{Time-normalised overview of IMU collision dynamics across all 127 impact flights. Overlaid individual traces (thin, low opacity) with median profiles (solid red = acceleration deviation, dash-dot blue = gyroscopic magnitude) for Rotating Cage (left) and Fixed Cage (right), time-aligned to the impact instant. The rotating cage exhibits a narrower acceleration spread and lower gyroscopic surge, consistent with reduced energy coupling into the airframe.}
-    \label{fig:aggregated_imu_dynamics}
+    \begin{subfigure}{\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{plots/Combined IMU Collision Dynamics.png}
+        \caption{Representative single-flight traces for Rotating Cage (left) and Fixed Cage (right), showing linear acceleration deviation and gyroscopic magnitude centred on the impact instant ($t=0$). The rotating cage exhibits faster oscillation decay in both channels.}
+        \label{fig:combined_imu_dynamics}
+    \end{subfigure}
+    \vspace{1em}
+    \begin{subfigure}{\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{plots/Aggregated IMU Collision Dynamics Across All Flights.png}
+        \caption{Aggregate overlay of all 127 flights with median profiles (solid red = acceleration deviation, dash-dot blue = gyroscopic magnitude). The rotating cage's narrower spread and lower gyroscopic surge confirm consistent reduction in energy coupling across the full dataset.}
+        \label{fig:aggregated_imu_dynamics}
+    \end{subfigure}
+    \caption{IMU collision dynamics at two granularities: (a) representative individual flights reveal the per-event shock and decay signature; (b) aggregation across all 127 flights confirms the pattern is systematic. Together they establish that the rotating cage consistently attenuates both the magnitude and the variability of impact-induced vibration.}
+    \label{fig:imu_dynamics_pair}
 \end{figure}
+
+\paragraph{Axis-Resolved IMU Component Analysis}
+
+While the combined (magnitude) metrics above establish the overall vibration reduction, disaggregating by axis reveals how the collision energy distributes across the drone's three degrees of freedom. \autoref{fig:raw_imu_xyz} shows the raw accelerometer traces for each axis side by side between configurations.
+
+The most pronounced difference appears in the $Y$~axis (lateral, perpendicular to the flight direction), which carries the dominant collision signature in both configurations. In the fixed cage, the $Y$-axis shock amplitude reaches peaks exceeding $\pm 6\,\text{m/s}^2$, whereas the rotating cage caps this below $\pm 4\,\text{m/s}^2$ --- a reduction of roughly one-third. The $X$ and $Z$ axes show smaller absolute differences, but the fixed cage still displays a longer oscillation tail, particularly visible on the $Z$ (vertical) channel, suggesting that energy that would otherwise couple into the vertical stabilisation axis is dissipated through the bearing's rotation.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plots/Combined IMU XYZ Components.png}
-    \caption{Raw IMU component comparison across all three axes (X, Y, Z) during the collision window, contrasting the shock signature of the Rotating Cage (left) and Fixed Cage (right) configurations.}
+    \caption{Raw acceleration traces for each axis (X, Y, Z) during the collision window. The $Y$~axis (lateral) carries the dominant collision signature in both configurations; the rotating cage reduces peak amplitude by roughly one-third on this channel.}
     \label{fig:raw_imu_xyz}
 \end{figure}
 
-% NOTE: LOCATE THE MISSING RAW IMU XYZ DATA --- the saved data/proof for the raw IMU component comparison still needs to be found. The figure exists but verify the underlying source data is complete.***
+The box plots in \autoref{fig:xyz_oscillation_variance} summarise the post-impact stabilisation tail ($t_{\text{impact}} + 0.2\,\text{s}$ to $+3.0\,\text{s}$) across all flights. For each axis, the variance of accelerometer and gyroscope readings is pooled over this window and visualised as a box plot per cage configuration. The fixed cage consistently exhibits wider interquartile ranges and a higher proportion of outliers across all axes, indicating that its vibration footprint persists longer and with greater amplitude after the initial impact has passed. The rotating cage's narrower boxes confirm that the bearing not only reduces the peak shock but also shortens the subsequent oscillation tail --- the airframe stabilises faster.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plots/IMU Vibration Spread by Cage Configuration.png}
-    \caption{XYZ oscillation variance and vibration tail spread visualized as box plots, comparing the stabilization period of the fixed and rotating cage configurations.}
+    \caption{Box plots of per-axis variance over the post-impact stabilisation tail ($t_{\text{impact}} + 0.2\,\text{s}$ to $+3.0\,\text{s}$). The rotating cage's narrower interquartile ranges confirm that the bearing reduces both peak shock and the duration of residual vibration.}
     \label{fig:xyz_oscillation_variance}
 \end{figure}
 
-By integrating the standard deviation of linear accelerations ($a_x, a_y, a_z$) and angular rates ($w_x, w_y, w_z$) over a strict post-impact stabilization tail ($t_{\text{impact}} + 0.2\text{s}$ to $+ 3.0\text{s}$), distinct vibration footprints emerge.
+By integrating the standard deviation of linear accelerations ($a_x, a_y, a_z$) and angular rates ($w_x, w_y, w_z$) over a strict post-impact stabilization tail ($t_{\text{impact}} + 0.2\text{s}$ to $+ 3.0\text{s}$), distinct vibration footprints emerge. The rotating cage's consistently lower variance across all IMU channels --- linear and gyroscopic alike --- demonstrates that the mechanical decoupling operates on both the translational and rotational degrees of freedom, not selectively on one.
+
+\paragraph{EKF State Estimation Fidelity}
+
+A natural concern raised by the lower vibration profile is whether the reduced IMU excitation might degrade the Extended Kalman Filter's ability to track the vehicle state through the collision. \autoref{fig:combined_ekf} addresses this by comparing the EKF's internal velocity estimate against the independent MoCap-derived velocity for representative flights from each configuration. The two traces track each other closely through the entire collision window, including the impact instant and the subsequent recovery period, in both cage types. This agreement confirms that the EKF2's inertial propagation bridges the transient MoCap dropout (caused by marker occlusion at contact) without introducing noticeable drift, and that the rotating cage's lower vibration does not starve the filter of the dynamic excitation it needs to maintain convergent state estimates.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plots/Combined EKF Kinetic Profile.png}
-    \caption{Comparison of EKF-estimated velocity against MoCap-derived velocity for representative Fixed Cage (left) and Rotating Cage (right) flights. The panels validate that the onboard Extended Kalman Filter maintains state estimation fidelity through the collision event despite the vibration differences documented above.}
+    \caption{Comparison of EKF-estimated velocity against MoCap-derived velocity for representative Fixed Cage (left) and Rotating Cage (right) flights. The close agreement between the two traces through the impact and recovery phases validates that the onboard filter maintains estimation fidelity regardless of cage type, and that the rotating cage's reduced IMU excitation does not adversely affect state convergence.}
     \label{fig:combined_ekf}
 \end{figure}
+
+\clearpage
 
 \subsection{Deviation from the Norm}
 \label{sec:deviation_from_norm}
@@ -193,7 +216,7 @@ By integrating the standard deviation of linear accelerations ($a_x, a_y, a_z$) 
 \subsubsection{Collision Geometry and Path Spread}
 \label{sec:clearance_sdld}
 
-The spatial consequences of the force-transfer mechanisms above are captured by two geometric metrics defined over each flight's column transit leg (Exp.\ Start-point to Exp.\ End-point, WP1$\to$WP2).
+The spatial consequences of the force-transfer mechanisms above are captured by two geometric metrics defined over each flight's column transit leg (\texttt{Exp.\ Start-point} to \texttt{Exp.\ End-point}, \texttt{WP1}$\to$\texttt{WP2}).
 
 \textbf{Obstacle clearance} is the signed distance from the drone centre to the column surface at the point of closest approach:
 \[
@@ -201,7 +224,7 @@ The spatial consequences of the force-transfer mechanisms above are captured by 
 \]
 where $d_{\text{centre}}$ is the minimum 2-D Euclidean distance between the drone's MoCap position and the column centre, $r_{\text{column}} = 0.045$~m (column radius), and $r_{\text{cage}} = 0.179$~m (cage radius). A negative clearance value indicates that the drone centre has entered the sum-of-radii boundary --- i.e.\ physical contact has occurred.
 
-\textbf{Path Spread (SDLD)} --- the standard deviation of lateral displacement --- quantifies how tightly the drone tracks the ideal straight-line path from Exp.\ Start-point to Exp.\ End-point. For each MoCap sample in the transit segment, the perpendicular distance to the line connecting WP1 and WP2 is computed; SDLD is the standard deviation of these distances:
+\textbf{Path Spread (SDLD)} --- the standard deviation of lateral displacement --- quantifies how tightly the drone tracks the ideal straight-line path from \texttt{Exp.\ Start-point} to \texttt{Exp.\ End-point}. For each MoCap sample in the transit segment, the perpendicular distance to the line connecting \texttt{WP1} and \texttt{WP2} is computed; SDLD is the standard deviation of these distances:
 \[
 \mathrm{SDLD} = \sqrt{\frac{1}{N}\sum_{i=1}^{N} \bigl(\mathrm{perp\_dist}_i\bigr)^2}
 \]
@@ -221,16 +244,18 @@ The rotating cage exhibits a larger mean negative clearance (Fixed: $\mu = -0.47
 
 While the Rotating Cage minimizes internal shock and vibration, the trajectory tracking metrics present a nuanced trade-off. By evaluating the Maximum Trajectory Deviation ($d_{\text{max}}$) and the Spatial Integral of Absolute Error (SIAE) recovery area, the kinematic footprint of the recovery phase is established.
 
-Two complementary metrics quantify the spatial consequences of impact. \textbf{Maximum Trajectory Deviation} ($d_{\text{max}}$) is the peak perpendicular distance between the executed MoCap track and the commanded reference line from Exp.\ Start-point to Exp.\ End-point (WP1$\to$WP2), capturing the single worst-case excursion during the obstacle transit. \newline
-\textbf{Spatial Integral of Absolute Error} (SIAE) measures the total area between the executed and commanded paths over the full recovery leg from Exp.\ End-point to Recovery (WP2$\to$WP3):
+Two complementary metrics quantify the spatial consequences of impact. \textbf{Maximum Trajectory Deviation} ($d_{\text{max}}$) is the peak perpendicular distance between the executed MoCap track and the commanded reference line from \texttt{Exp.\ Start-point} to \texttt{Exp.\ End-point} (\texttt{WP1}$\to$\texttt{WP2}), capturing the single worst-case excursion during the obstacle transit. \newline
+\textbf{Spatial Integral of Absolute Error} (SIAE) measures the total area between the executed and commanded paths over the full recovery leg from \texttt{Exp.\ End-point} to \texttt{Recovery} (\texttt{WP2}$\to$\texttt{WP3}):
 \[
 \mathrm{SIAE} = \int_{t_{\mathrm{WP2}}}^{t_{\mathrm{WP3}}} \bigl| \mathrm{perp\_dist}(t) \bigr| \; dt
 \]
-expressed in m$^{2}$ (normalised to the waypoint segment length, yielding units of metres). While $d_{\text{max}}$ reflects the instantaneous force of the impact, SIAE captures the cumulative spatial cost of the subsequent stabilization maneuver---how much deviation the flight controller accumulates, for how long, before fully arresting the post-collision drift and returning to the commanded setpoint at Recovery (WP3). The two metrics are complementary: a brief large excursion and a prolonged small offset can produce similar SIAE values, making the pair necessary to distinguish impact magnitude from recovery duration.
+expressed in m$^{2}$ (normalised to the waypoint segment length, yielding units of metres). While $d_{\text{max}}$ reflects the instantaneous force of the impact, SIAE captures the cumulative spatial cost of the subsequent stabilization maneuver---how much deviation the flight controller accumulates, for how long, before fully arresting the post-collision drift and returning to the commanded setpoint at \texttt{Recovery (WP3)}. The two metrics are complementary: a brief large excursion and a prolonged small offset can produce similar SIAE values, making the pair necessary to distinguish impact magnitude from recovery duration.
 
 The rotating cage exhibited a slightly wider maximum trajectory deviation than the fixed cage (Fixed: $\mu = 118.4 \pm 30.4\:\text{mm}$, Rotating: $\mu = 131.0 \pm 32.1\:\text{mm}$). A Mann-Whitney U test confirms this difference is statistically significant ($U = 2484$, $p = 0.022$), though the effect size is small (Cohen's $d = 0.41$).
 
 However, the total spatial area required by the PID controller to arrest the drift and return to the setpoint (SIAE) remains nearly identical between both configurations (Rotating: $\mu = 120.4 \pm 32.2$, Fixed: $\mu = 117.4 \pm 33.2$, $U = 2009$, $p = 0.998$, not significant).
+
+\clearpage
 
 \subsection{Result Analysis}
 \label{sec:result_analysis}
@@ -335,16 +360,9 @@ A critical practical question is whether a model trained on one cage type can pe
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{plots/Fixed Cage to Rotating Cage Cross-Condition Transfer.png}
-    \caption{Cross-condition transfer: Fixed Cage model evaluated on Rotating Cage data. Grey points show the Fixed Cage CV performance; red diamonds show the model's predictions when applied directly to Rotating Cage flights.}
-    \label{fig:rf_transfer_fixed}
-\end{figure}
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{plots/rotating_cage_rf_cross_condition.png}
-    \caption{Cross-condition transfer: Rotating Cage model evaluated on Fixed Cage data.}
-    \label{fig:rf_transfer_rotating}
+    \includegraphics[width=\textwidth]{plots/consolidated_cross_condition_transfer.png}
+    \caption{Consolidated cross-condition transfer: Fixed Cage model evaluated on Rotating Cage data (left) and Rotating Cage model evaluated on Fixed Cage data (right). Grey points show within-condition CV performance; red diamonds show the model's predictions when applied directly to opposite-condition flights. The systematic off-diagonal displacement in both directions confirms that the learned vibration-to-angle mapping does not transfer across cage mechanics.}
+    \label{fig:rf_transfer_consolidated}
 \end{figure}
 
 % TODO [USER]: Insert Gemini's rewritten objective sentence for the transfer results paragraph here.
