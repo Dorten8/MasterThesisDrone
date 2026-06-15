@@ -1,10 +1,10 @@
 \section{Methodology}
 \label{sec:methodology}
 The methodology for this thesis project stands on the development of a drone to use for the various tests and implementations, together with a controlled environment to test the drone in.
-The development consists of hardware choices, software choices, and the constraints arising from these two, which dictate much of the design. 
+The development consists of hardware choices, software choices, and the constraints arising from these two, which dictate much of the design.
 \subsection{Design and Development}
 \subsubsection{Flight Type}
-A quadcopter design was a very clear choice as these are widely used and allow for very nimble and precise movement as opposed to fixed-wing designs which need to be in forward motion to generate upthrust for their flight. The Quadcopter design due to its symmetric nature make it very easy to predictably control it. 
+A quadcopter design was a very clear choice as these are widely used and allow for very nimble and precise movement as opposed to fixed-wing designs which need to be in forward motion to generate upthrust for their flight. The Quadcopter design due to its symmetric nature make it very easy to predictably control it.
 
 On figure \autoref{fig:drone_movement} you can see standard quadcopter setup. If front motors ($m_1$, $m_2$) spin comparatively more the drone pitches up, if side propelers ( $m_1$, $m_4$) spin comparatively faster, then the drone rolls towards its left side, and thanks to the setup of alternating spin direction if propellers diagonally from each other fx $m_1$ and $m_3$ will spin faster, while $m_2$ and $m_4$ will spin slower the drone will turn on around in the direction of the propolers which are faster, in this case turn towards its left. This is given by Newton's first law as the inertia of propellers spinning faster will induce the rotation in the propellers' direction.
 Opposingly, pitch and roll is achieved by spinning pairs of propellers on one side faster than on the other (left vs right, front vs back).
@@ -53,9 +53,9 @@ The \textbf{Pixhawk 6C flight controller} was chosen as the hardware instantiati
 
 \begin{itemize}
     \item \textbf{Hardware swappability}: Sensors and peripheral electronics can be upgraded or replaced with components from different manufacturers (Holybro, ARK Electronics, CUAV) without redesigning integration.
-    
+
     \item \textbf{Ecosystem maturity}: Over 1 million Pixhawk-based devices are deployed across commercial, research, and hobbyist applications.\cite{simpsonLatestPixhawkOpen2023}
-    
+
     \item \textbf{Sensor integration}: The Pixhawk 6C includes integrated IMU and compass. Specifically, it features redundant inertial measurement units with onboard ICM-42688-P and BMI088 accelerometers/gyroscopes, plus an IST8310 magnetometer, with temperature-controlled operation via onboard heating resistors.\cite{TechnicalSpecificationHolybro2025, PX4Docs, Pixhawk6C6C} This eliminates the need for custom sensor fusion code---allowing focus on the research question rather than flight control tuning.
 \end{itemize}
 
@@ -88,21 +88,55 @@ The autonomous flight stack is organised into five layers, illustrated in \autor
 \end{figure}
 \end{landscape}
 
+\subsubsection{Frame and Cage Design}
+
+The protective cage design draws on established geometries from the collision-resilience literature. Mahmud~\cite{mahmudDevelopmentCollisionResilient2021} compared a freely rotating gimbal sphere against a G\"omb\"oc-shaped shell (a mono-monostatic body with a single stable equilibrium), concluding the turtle-like G\"omb\"oc form was superior for self-righting after ground impacts. The cage adopted for this work takes inspiration from Mahmud's rotating-shell principle while adapting it for airborne impact deflection rather than ground self-recovery.
+
+The development process began with CAD modelling of the frame and cage assembly in Fusion 360, iterating through several revisions to balance structural rigidity, weight, and propeller clearance. The frame plates were designed as a stack-up sandwich: a bottom plate for the power distribution board and ESCs, a middle deck for the Pixhawk 6C flight controller, and a top plate for the Raspberry Pi 5 companion computer. Each layer is separated by vibration-dampening standoffs to mechanically isolate the IMU from high-frequency motor vibrations.
+
+\todo{[USER ACTION - CAD Drawings: Insert CAD design drawings of the frame assembly and cage structure here.]}
+
+The cage itself is a PETG-printed spherical shell of 35.8\,cm diameter, mounted on a bearing assembly that allows the outer shell to spin freely upon contact with an obstacle. The bearing is integrated into the frame's structural core: the inner race is fixed to the frame plates, while the outer race carries the PETG shell. This mechanical decoupling converts linear collision momentum into rotational energy, shunting impact shock away from the central fuselage and flight controller.
+
+\todo{[USER ACTION - Hardware Photos: Insert photographs of the individual assembled frame parts, bearing assembly, and completed drone with cage here.]}
+
+The fixed-cage control configuration uses identical geometry but rigidly mounts the outer shell to the frame, eliminating the bearing's rotational degree of freedom. All other parameters (mass, diameter, material, propeller clearance) are held constant between the two configurations, isolating the effect of the bearing mechanism as the single experimental independent variable.
+
 \subsubsection{Hardware Platform}
 
-The companion computer is a \textbf{Raspberry Pi 5} running Ubuntu 24.04. It handles all high-level autonomy: waypoint navigation, MoCap data ingestion, offboard control logic, and telemetry logging. The Pi 5 communicates with the flight controller over UART (TELEM2) and mounts directly above it within the 4-inch frame envelope.
+The companion computer is a \textbf{Raspberry Pi 5} (8\,GB variant), selected for its substantial compute headroom over previous Pi generations: the quad-core Cortex-A76 provides roughly 2--3$\times$ the CPU throughput of the Pi~4, sufficient for concurrent MoCap data ingestion, offboard control computation, and high-bandwidth telemetry logging without frame drops.
+
+The Pi~5 runs \textbf{Ubuntu 24.04} natively on its host OS, as the Raspberry Pi~5 does not officially support older Ubuntu releases. However, the ROS~2 and PX4 development ecosystems are largely built and validated against Ubuntu~22.04 LTS with ROS~2 Humble. To bridge this compatibility gap while maintaining a clean separation of concerns, the flight software stack runs inside a \textbf{Docker container} provisioned with Ubuntu~22.04 LTS and ROS~2 Humble. This containerised approach isolates the flight-critical software from the host OS version, ensures reproducible builds, and grants the container full access to the Pi~5's hardware peripherals (UART, GPIO, networking) via Docker's device-mapping flags. All high-level autonomy---waypoint navigation, MoCap data ingestion, offboard control logic, and telemetry logging---executes within this container.
+
+The Pi~5 communicates with the flight controller over UART (TELEM2) and mounts directly above it within the 4-inch frame envelope.
 
 \subsubsection{Flight Controller}
 
-The \textbf{Pixhawk 6C} runs PX4 Autopilot firmware (\texttt{v1.16.1rc}) and is responsible for low-level attitude control, motor mixing, and sensor fusion. Its dual IMU redundancy (ICM-42688-P and BMI088) and onboard IST8310 magnetometer are fused in the EKF2 estimator alongside external vision odometry from the MoCap system. The magnetometer is disabled for indoor operation to prevent interference with MoCap yaw data. The full parameter configuration is given in the repository \texttt{README.md}.
+The \textbf{Pixhawk 6C} runs PX4 Autopilot firmware and is responsible for low-level attitude control, motor mixing, and sensor fusion.
+
+\todo{[USER ACTION - Firmware: Verify and update the specific PX4 firmware version. The version used during experiments may differ from the initial setup---check the Pixhawk 6C for the exact flashed firmware tag.]}
+
+Its dual IMU redundancy (ICM-42688-P and BMI088) and onboard IST8310 magnetometer are fused in the EKF2 estimator alongside external vision odometry from the MoCap system. The magnetometer is disabled for indoor operation to prevent interference with MoCap yaw data. The full parameter configuration is given in the repository \texttt{README.md}.
 
 \subsubsection{Motion Capture Integration}
 
-External state estimation is provided by an \textbf{OptiTrack Prime\textsuperscript{x}} 13-camera system streaming at 120\,Hz via NatNet. The \texttt{motion\_capture\_tracking} ROS 2 node receives the multicast stream, and the \texttt{mocap\_px4\_bridge} node transforms the poses from the MoCap ENU frame to PX4's NED/FRD convention, publishing them to \texttt{/fmu/in/vehicle\_visual\_odometry}. The EKF2 estimator fuses this external vision with the onboard 250\,Hz IMU data, bridging any MoCap tracking dropouts through inertial propagation.
+External state estimation is provided by a \textbf{6-camera OptiTrack Prime~22} system streaming at 120\,Hz via the Motive software platform (Mudfish network middleware). The Prime~22 offers sub-millimetre positional accuracy at short range, sufficient for the $\sim$5\,m$\times$5\,m capture volume used in these experiments.
 
-\subsubsection{Communication Middleware}
+The \texttt{motion\_capture\_tracking} ROS~2 node receives the multicast stream from Motive, and the \texttt{mocap\_px4\_bridge} node transforms the poses between coordinate frames before publishing them to \texttt{/fmu/in/vehicle\_visual\_odometry}.
 
-The flight controller and companion computer communicate over a UART serial link (TELEM2, 921\,600 baud). During experimental flights, the link uses \textbf{uXRCE-DDS} exclusively: the PX4 uXRCE-DDS client publishes internal uORB topics (\texttt{vehicle\_odometry}, \texttt{vehicle\_status}, \texttt{actuator\_motors}) to the ROS 2 node graph via \texttt{MicroXRCEAgent} running on the Pi 5. A secondary \textbf{MAVLink} stream can be enabled on the same port for ground-station debugging (QGroundControl), but the two protocols are not used simultaneously during active data collection.
+\paragraph{Coordinate Frame Transformations}
+
+Coordinate frame conventions differ between MoCap and PX4, and this is their first explicit treatment in this thesis. The OptiTrack system reports poses in the standard \textbf{ENU (East-North-Up)} frame: $X$ points East, $Y$ points North, $Z$ points Up. PX4's internal state estimator operates in the \textbf{NED (North-East-Down)} frame: $X$ points North, $Y$ points East, $Z$ points Down. The vehicle's body frame follows the \textbf{FRD (Forward-Right-Down)} convention: $X$ points forward (nose direction), $Y$ points right, $Z$ points down.\cite{PX4Docs}
+
+The \texttt{mocap\_px4\_bridge} performs this transform in two steps: first, a static rotation maps ENU to NED ($X_{\text{NED}} = Y_{\text{ENU}}$, $Y_{\text{NED}} = X_{\text{ENU}}$, $Z_{\text{NED}} = -Z_{\text{ENU}}$); second, the NED pose is rotated into the FRD body frame using the vehicle's current attitude quaternion. The resulting \texttt{VehicleVisualOdometry} message is published at 120\,Hz to \texttt{/fmu/in/vehicle\_visual\_odometry}.
+
+\todo{[USER ACTION - PX4 Frame Image: Insert the official explanatory diagram of the ENU/NED/FRD coordinate frames from the PX4 documentation here.]}
+
+The EKF2 estimator fuses this external vision with the onboard 250\,Hz IMU data, bridging any MoCap tracking dropouts through inertial propagation.
+
+\subsubsection{Communication Middleware Between Flight Controller and Pi~5}
+
+The flight controller and companion computer communicate over a UART serial link (TELEM2, 921\,600 baud). During experimental flights, the link uses \textbf{uXRCE-DDS} exclusively: the PX4 uXRCE-DDS client publishes internal uORB topics (\texttt{vehicle\_odometry}, \texttt{vehicle\_status}, \texttt{actuator\_motors}) to the ROS~2 node graph via \texttt{MicroXRCEAgent} running on the Pi~5. A secondary \textbf{MAVLink} stream can be enabled on the same port for ground-station debugging (QGroundControl), but the two protocols are not used simultaneously during active data collection.
 
 \subsubsection{Software Framework}
 
@@ -112,12 +146,16 @@ The ROS~2 workspace integrates several external repositories as Git submodules, 
 
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none,caption={Source submodules under \texttt{src/} providing the ROS~2--PX4 interface layer.},label={lst:submodules}]
 src/
-  px4_msgs/                    # PX4 message definitions (uORB <-> ROS 2)
-  px4_ros_com/                 # Frame transforms & utility libraries
-  Micro-XRCE-DDS-Agent/        # uXRCE-DDS middleware bridge agent
-  motion_capture_tracking/     # OptiTrack NatNet receiver node
-  mocap_px4_bridge/            # ENU -> NED coordinate transformer
-  PX4-Autopilot/               # PX4 firmware source (SITL builds only)
+  px4_msgs/                    # PX4 message definitions
+                                #   (uORB <-> ROS 2)
+  px4_ros_com/                 # Frame transforms &
+                                #   utility libraries
+  Micro-XRCE-DDS-Agent/        # uXRCE-DDS middleware
+                                #   bridge agent
+  motion_capture_tracking/     # OptiTrack NatNet
+                                #   receiver node
+  mocap_px4_bridge/            # ENU -> NED coordinate
+                                #   transformer
 \end{lstlisting}
 
 Three of these are critical for the MoCap-to-PX4 chain: \texttt{px4\_msgs} provides the interface message definitions (ROS~2 \texttt{.msg} files mirroring PX4 uORB topics), \texttt{px4\_ros\_com} handles frame transformations (ENU to NED/FRD), and \texttt{mocap\_px4\_bridge} publishes the transformed poses to \texttt{/fmu/in/vehicle\_visual\_odometry}.
@@ -127,10 +165,29 @@ Three of these are critical for the MoCap-to-PX4 chain: \texttt{px4\_msgs} provi
 The \texttt{flight\_director.py} node was developed directly from the PX4 ROS~Com offboard control examples, inheriting their structure for heartbeat publishing, offboard mode switching, and trajectory setpoint generation. It serves as the primary mission executor:
 
 \begin{itemize}
-    \item \textbf{State machine}: Implements the waypoint state machine shown in \autoref{fig:waypoint_state_machine}, transitioning through DISARMED $\to$ TAKEOFF (WP0) $\to$ WP\_stage (U-turn) $\to$ Exp.\ Start-point (WP1) $\to$ Exp.\ End-point (WP2) $\to$ Recovery (WP3) $\to$ (auto-loop to WP\_stage, or LANDING). Each state transition publishes a waypoint-identifier message that drives the event segmenter.
+    \item \textbf{State machine}: Implements the waypoint state machine shown in \autoref{fig:flight_director_state_machine}, transitioning through
+    \texttt{DISARMED} $\to$ \texttt{TAKEOFF} (WP0) $\to$ \texttt{WP\_stage} (U-turn) $\to$ \texttt{Exp.\ Start-point} (WP1) $\to$ \texttt{Exp.\ End-point} (WP2) $\to$ \texttt{Recovery} (WP3) $\to$ (auto-loop to \texttt{WP\_stage}, or \texttt{LANDING}). Each state transition publishes a waypoint-identifier message that drives the event segmenter.
     \item \textbf{Offboard control}: Publishes \texttt{TrajectorySetpoint} messages to \texttt{/fmu/in/trajectory\_setpoint} with explicit velocity feedforward (\texttt{hb.velocity = True}). Subscribes to \texttt{/fmu/out/vehicle\_status} for telemetry feedback.
-    \item \textbf{Safety enforcement}: Monitors the geofence boundary with the cage-radius offset (17.9\,cm) subtracted, and triggers an emergency landing on breach, MoCap loss, or spacebar kill-switch.
 \end{itemize}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{Figures/flight_director_state_machine.pdf}
+    \caption{Flight Director state machine transitions for the autonomous collision loop. Normal transitions (solid arrows) follow the mission sequence: \texttt{DISARMED} $\to$ \texttt{TAKEOFF} $\to$ \texttt{WP\_stage} $\to$ \texttt{WP1} $\to$ \texttt{WP2} $\to$ \texttt{WP3} $\to$ auto-loop to \texttt{WP\_stage} or \texttt{LANDING}. Dashed transitions represent failsafe triggers (MoCap loss, geofence breach, kill-switch) that command \texttt{EMERGENCY LAND} from any active state.}
+    \label{fig:flight_director_state_machine}
+\end{figure}
+
+\paragraph{Safety Enforcement}
+
+The flight director enforces a multi-layered safety regime designed to prevent the drone from leaving the OptiTrack capture volume under any flight condition.
+
+\textbf{Geofence boundary.} Before each experimental session, a geofence polygon is defined and loaded into the flight director. This boundary is deliberately drawn \emph{inside} the physical extents of the 6-camera OptiTrack Prime~22 capture volume, ensuring that the drone cannot exit the tracking area even at maximum excursion. The boundary is inflated inward by the cage radius (17.9\,cm) plus an additional safety margin, so that a geofence breach is triggered before any part of the cage can contact an external obstacle or leave the tracked volume. If the drone's MoCap position crosses this boundary at any time, the flight director immediately commands an emergency landing.
+
+\textbf{MoCap loss.} Should the OptiTrack tracking rate drop below a critical threshold---indicating marker occlusion or tracking degradation---the flight director triggers an automatic landing. This prevents the drone from flying blind in the event of a tracking failure.
+
+\textbf{Kill switch.} A spacebar-activated software kill switch runs in the flight director's main loop, providing the operator with an instant disarm capability independent of the geofence and MoCap monitors.
+
+\textbf{Pre-flight boundary verification.} Before the flight director accepts a mission, it performs an active pre-check: the planned waypoint trajectory (including the collision sweep leg and recovery path) is projected against the geofence boundary with the cage-radius offset subtracted. If any waypoint or its connecting path segment would violate the boundary, the mission is rejected before takeoff. This ensures that no commanded trajectory can accidentally steer the drone outside the safe capture volume.
 
 The complete experimental pipeline, from hardware through the ROS~2 node graph to telemetry storage, is illustrated in \autoref{fig:experiments_pipeline}.
 
@@ -142,13 +199,4 @@ The complete experimental pipeline, from hardware through the ROS~2 node graph t
 \end{figure}
 
 The \texttt{flight\_missions.py} module provides discrete flight routines (column sweep, hover verification), while \texttt{flight\_recorder.py} logs synchronised topic data to segmented \texttt{.mcap} files, one per loop iteration.
-
-
-
-\subsubsection{Frame and Cage Design}
-
-The protective cage design draws on two established geometries from the collision-resilience literature. Mahmud et al.\cite{mahmudDevelopmentCollisionResilient2021} compared a freely rotating gimbal sphere against a G\"omb\"oc-shaped shell (a mono-monostatic body with a single stable equilibrium), concluding the turtle-like G\"omb\"oc form was superior for self-righting after impacts. The cage adopted for this work shares the rotating-shell principle: a PETG-printed spherical cage of 35.8\,cm diameter, mounted on a bearing assembly that allows the outer shell to spin freely upon contact with an obstacle. This mechanical decoupling converts linear collision momentum into rotational energy, shunting impact shock away from the central fuselage and flight controller.
-
-The fixed-cage control configuration uses identical geometry but rigidly mounts the outer shell to the frame, eliminating the bearing's rotational degree of freedom. All other parameters (mass, diameter, material, propeller clearance) are held constant between the two configurations, isolating the effect of the bearing mechanism as the single experimental independent variable.
-
-\
+\endinput

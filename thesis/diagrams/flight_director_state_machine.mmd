@@ -1,0 +1,46 @@
+%% Flight Director State Machine
+%% Thesis figure: state transitions of the autonomous collision loop with thesis color schema.
+graph TD
+    %% ── States ──────────────────────────────────────────────────────────
+    DISARMED[DISARMED\nGround]
+    TAKEOFF[WP0 — TAKEOFF\nOne-time climb]
+    WP_stage[WP_stage\nU-turn]
+    WP1[Exp. Start-point\nWP1]
+    WP2[Exp. End-point\nWP2]
+    WP3[Recovery\nWP3]
+    LANDING[LANDING]
+    EMERGENCY[EMERGENCY LAND]
+
+    %% ── Normal Transitions ──────────────────────────────────────────────
+    DISARMED -->|"ARM + Offboard mode"| TAKEOFF
+    TAKEOFF -->|"Altitude reached"| WP_stage
+    WP_stage -->|"Position reached"| WP1
+    WP1 -->|"User confirms resume"| WP2
+    WP2 -->|"Collision + recovery"| WP3
+    WP3 -->|"AUTO-LOOP\n(skip WP0)"| WP_stage
+    WP3 -->|"User exit or\nbattery low"| LANDING
+    LANDING -->|"Touchdown + disarm"| DISARMED
+
+    %% ── Safety Transitions ──────────────────────────────────────────────
+    TAKEOFF -.->|"Failsafe"| EMERGENCY
+    WP_stage -.->|"Failsafe"| EMERGENCY
+    WP1 -.->|"Failsafe"| EMERGENCY
+    WP2 -.->|"Failsafe"| EMERGENCY
+    WP3 -.->|"Failsafe"| EMERGENCY
+    EMERGENCY -.->|"Land + disarm"| DISARMED
+
+    %% ── Class Definitions (thesis color schema) ─────────────────────────
+    classDef hardware fill:#f44336,stroke:#b71c1c,stroke-width:2px,color:#fff;
+    classDef firmware fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#000;
+    classDef control fill:#00bcd4,stroke:#006064,stroke-width:2px,color:#000;
+    classDef data fill:#607d8b,stroke:#263238,stroke-width:2px,color:#fff;
+    classDef emergency fill:#ff5722,stroke:#bf360c,stroke-width:2px,color:#fff;
+    classDef landing fill:#4caf50,stroke:#1b5e20,stroke-width:2px,color:#fff;
+
+    %% ── Class Assignments ───────────────────────────────────────────────
+    class DISARMED data;
+    class TAKEOFF,WP_stage control;
+    class WP1,WP2 firmware;
+    class WP3 control;
+    class LANDING landing;
+    class EMERGENCY emergency;
