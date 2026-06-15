@@ -121,9 +121,7 @@ The Pi~5 communicates with the flight controller over UART (TELEM2) and mounts d
 
 \subsubsection{Flight Controller}
 
-The \textbf{Pixhawk 6C} runs PX4 Autopilot firmware and is responsible for low-level attitude control, motor mixing, and sensor fusion.
-
-\todo{[USER ACTION - Firmware: Verify and update the specific PX4 firmware version. The version used during experiments may differ from the initial setup---check the Pixhawk 6C for the exact flashed firmware tag.]}
+The \textbf{Pixhawk 6C} runs PX4 Autopilot firmware (\texttt{v1.16.1rc}) and is responsible for low-level attitude control, motor mixing, and sensor fusion.\footnote{Confirmed via the experimental session logs; the \texttt{v1.16.1rc} tag is the release-candidate version that shipped with the Pixhawk 6C and remained unchanged throughout all experimental flights.}
 
 Its dual IMU redundancy (ICM-42688-P and BMI088) and onboard IST8310 magnetometer are fused in the EKF2 estimator alongside external vision odometry from the MoCap system. The magnetometer is disabled for indoor operation to prevent interference with MoCap yaw data. The full parameter configuration is given in the repository \texttt{README.md}.
 
