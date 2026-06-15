@@ -90,6 +90,13 @@ The autonomous flight stack is organised into five layers, illustrated in \autor
 
 \subsubsection{Frame and Cage Design}
 
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[angle=270,width=0.95\textwidth]{Figures/drone_all_parts.jpg}
+    \caption{Exploded view of the complete drone assembly showing all major components: frame plates, Pixhawk 6C flight controller, Raspberry Pi~5 companion computer, EMAX ECOII 2004 motors, 6S LiPo battery, and the PETG protective cage with bearing assembly.}
+    \label{fig:drone_all_parts}
+\end{figure}
+
 The protective cage design draws on established geometries from the collision-resilience literature. Mahmud~\cite{mahmudDevelopmentCollisionResilient2021} compared a freely rotating gimbal sphere against a G\"omb\"oc-shaped shell (a mono-monostatic body with a single stable equilibrium), concluding the turtle-like G\"omb\"oc form was superior for self-righting after ground impacts. The cage adopted for this work takes inspiration from Mahmud's rotating-shell principle while adapting it for airborne impact deflection rather than ground self-recovery.
 
 The development process began with CAD modelling of the frame and cage assembly in Fusion 360, iterating through several revisions to balance structural rigidity, weight, and propeller clearance. The frame plates were designed as a stack-up sandwich: a bottom plate for the power distribution board and ESCs, a middle deck for the Pixhawk 6C flight controller, and a top plate for the Raspberry Pi 5 companion computer. Each layer is separated by vibration-dampening standoffs to mechanically isolate the IMU from high-frequency motor vibrations.
