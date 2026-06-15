@@ -32,12 +32,14 @@ From these constraints, three design targets were formulated:
 
 The drone's physical dimensions are governed by a narrow three-way tradeoff, illustrated in \autoref{fig:drone_sizing_tradeoff}:
 
+\begin{landscape}
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.95\textwidth]{Figures/drone_sizing_tradeoff.pdf}
+    \includegraphics[width=1.35\textwidth]{Figures/drone_sizing_tradeoff.pdf}
     \caption{The three-way sizing constraint that defines the 4-inch platform: going smaller loses payload capacity; going larger violates indoor safety limits. The 4-inch wheelbase is the upper limit for confined indoor flight while providing sufficient thrust to carry the companion computer and protective cage.}
     \label{fig:drone_sizing_tradeoff}
 \end{figure}
+\end{landscape}
 
 \textbf{Lower bound: payload minimum.} The Raspberry~Pi~5 companion computer ($\sim$60\,g plus peripherals) and the PETG (polyethylene terephthalate glycol, a 3D-printing filament) protective cage (35.8\,cm diameter, bearing assembly) together require a minimum thrust budget that class-3-inch and below platforms cannot provide. A typical 3-inch build lacks both the stator diameter and the propeller disc area to lift these components while maintaining a safe TWR (thrust-to-weight ratio) margin.
 

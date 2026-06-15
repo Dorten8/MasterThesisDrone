@@ -228,15 +228,6 @@ Two complementary metrics quantify the spatial consequences of impact. \textbf{M
 \]
 expressed in m$^{2}$ (normalised to the waypoint segment length, yielding units of metres). While $d_{\text{max}}$ reflects the instantaneous force of the impact, SIAE captures the cumulative spatial cost of the subsequent stabilization maneuver---how much deviation the flight controller accumulates, for how long, before fully arresting the post-collision drift and returning to the commanded setpoint at Recovery (WP3). The two metrics are complementary: a brief large excursion and a prolonged small offset can produce similar SIAE values, making the pair necessary to distinguish impact magnitude from recovery duration.
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{plots/Max Trajectory Deviation and Recovery Area Comparison.png}
-    \caption{Statistical comparison of the maximum trajectory deviation and total SIAE recovery area between the fixed and rotating cage configurations.}
-    \label{fig:trajectory_deviation_recovery}
-\end{figure}
-
-% TODO [USER]: Verify the file path for the Figure 16 image (Max Trajectory Deviation and Recovery Area Comparison.png). The figure is failing to render---check that the file exists at the plotted path.
-
 The rotating cage exhibited a slightly wider maximum trajectory deviation than the fixed cage (Fixed: $\mu = 118.4 \pm 30.4\:\text{mm}$, Rotating: $\mu = 131.0 \pm 32.1\:\text{mm}$). A Mann-Whitney U test confirms this difference is statistically significant ($U = 2484$, $p = 0.022$), though the effect size is small (Cohen's $d = 0.41$).
 
 However, the total spatial area required by the PID controller to arrest the drift and return to the setpoint (SIAE) remains nearly identical between both configurations (Rotating: $\mu = 120.4 \pm 32.2$, Fixed: $\mu = 117.4 \pm 33.2$, $U = 2009$, $p = 0.998$, not significant).
@@ -248,9 +239,8 @@ However, the total spatial area required by the PID controller to arrest the dri
 
 \begin{figure}[htbp]
     \centering
-    % TODO [USER]: Upload 'missing_IMU_correlation_plot.png' to Overleaf and insert the exact filename in the \includegraphics line below.
-    % \includegraphics[width=\textwidth]{plots/missing_IMU_correlation_plot.png}
-    \caption{IMU correlation plot showing the relationship between impact angle and IMU-derived features.}
+    \includegraphics[width=\textwidth]{plots/consolidated_feature_correlation.png}
+    \caption{Consolidated feature correlation slopegraph: Pearson~$r$ between each of the 26 IMU aggregate metrics and \texttt{impact\_angle}, for Rotating Cage (left heatmap) and Fixed Cage (right heatmap). Splines connecting the two columns trace how each feature's rank shifts between cage types --- red splines indicate large rank shifts ($\geq$4 positions); grey splines indicate stable ranks. Significance stars: *** $p<0.001$, ** $p<0.01$, * $p<0.05$.}
     \label{fig:imu_correlation}
 \end{figure}
 
@@ -330,22 +320,8 @@ To establish whether the multi-feature Random Forest provides genuine predictive
 
 \begin{figure}[htbp]
     \centering
-    \begin{subfigure}[b]{0.48\textwidth}
-        \centering
-        % TODO [USER]: Insert the filename for the NEW Rotating Cage model comparison plot here.
-        % \includegraphics[width=\textwidth]{plots/NEW_rotating_cage_model_comparison.png}
-        \caption{Rotating Cage.}
-        \label{fig:rf_huber_rotating}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}[b]{0.48\textwidth}
-        \centering
-        % TODO [USER]: Insert the filename for the NEW Fixed Cage model comparison plot here.
-        % \includegraphics[width=\textwidth]{plots/NEW_fixed_cage_model_comparison.png}
-        \caption{Fixed Cage.}
-        \label{fig:rf_huber_fixed}
-    \end{subfigure}
-    \caption{Model comparison: Random Forest vs.\ Huber linear baseline. Rotating Cage (left) and Fixed Cage (right). Bar charts show $R^2$ with $\pm1\sigma$ error bars across folds, with identical vertical axis limits for direct comparison.}
+    \includegraphics[width=0.85\textwidth]{plots/consolidated_model_comparison.png}
+    \caption{Model comparison: Random Forest vs.\ Huber linear baseline for Rotating Cage (left) and Fixed Cage (right). Bar charts show $R^2$ with $\pm1\sigma$ error bars across folds, with identical vertical axis limits for direct comparison.}
     \label{fig:rf_huber_consolidated}
 \end{figure}
 
@@ -378,6 +354,13 @@ The transfer results are informative about the underlying mechanical divergence.
 \subsubsection{Feature Importance: Which IMU Channels Carry the Signal?}
 
 To understand which physical signatures the models rely on, the permutation-based feature importance was examined for both configurations. Permutation importance measures the drop in $R^2$ when a single feature's values are randomly shuffled, breaking its association with the target while preserving its marginal distribution. A larger drop indicates a more critical feature.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{plots/consolidated_parallel_coordinates.png}
+    \caption{Parallel coordinates visualisation of the top IMU features against impact angle for Rotating Cage (top) and Fixed Cage (bottom). Features are ordered left-to-right by descending |Pearson~$r$| (computed on Rotating Cage data). Each polyline represents one flight, coloured by angle bin. The overlapping trajectories demonstrate the multivariate, non-linear nature of the IMU-to-angle relationship that motivates the Random Forest approach.}
+    \label{fig:consolidated_parallel_coordinates}
+\end{figure}
 
 Across both configurations, vibration-derived features in the gyroscope domain dominate the importance rankings, consistent with the physical expectation that angular rate perturbations carry richer information about the impact direction than linear accelerations alone. The precise ordering differs between cage types, reflecting the mechanical redistribution of collision energy described in the Discussion chapter.
 \endinput
