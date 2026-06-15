@@ -19,6 +19,7 @@
 \usepackage[numbers,sort&compress]{natbib}
 \usepackage{graphicx}
 \usepackage{pdflscape}
+\usepackage{qrcode}
 \graphicspath{ {./Figures/} {./diagrams/} {./plots/} } % Sets asset lookup paths
 
 
@@ -75,7 +76,7 @@
 % --- set footer and header ---
 \renewcommand{\headrulewidth}{1pt}
 \renewcommand{\footrulewidth}{1pt}
-\title{Title}
+\title{The Deflective Advantage: Reducing Impact Shock and Vibration in Confined-Space Drone Operations}
 \pagestyle{fancy}
 \fancyhf{}
 
@@ -124,6 +125,9 @@
         \Large{\textbf{Co-supervised by:} \COSUPERVISOR} \\
         \Large{\textbf{Date:} \today}
     \end{flushleft}
+    \begin{center}
+        \small{\textit{This document is a pre-submission draft. Minor revisions may follow; the final version will be uploaded pending any technical complications during the author's vacation period.}}
+    \end{center}
     \vspace*{1cm}
 \end{titlepage}
 
@@ -153,7 +157,11 @@
 % The placeholder text is heavily influenced by the ACM proceedings template.
 %%%%%%%%%%%%%%%%%%%%
 
+\appendix
+
 \input{Sections/Annex}
+\input{Sections/AppendixSoftware}
+\input{Sections/AppendixAIDeclaration}
 \input{Sections/Figures}
 \input{Sections/Tables}
 \input{Sections/Math}

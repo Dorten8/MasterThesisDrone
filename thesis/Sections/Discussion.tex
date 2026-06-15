@@ -9,8 +9,6 @@ The primary design rationale for the rotating cage is to deflect, rather than ab
 
 The fixed cage absorbs collision shock structurally, transmitting the full deceleration force directly into the central fuselage and flight controller. In contrast, the rotating cage's bearing mechanism allows the outer shell to spin upon contact, converting linear momentum into rotational energy and shunting a substantial portion of the shockwave away from the sensitive onboard electronics. This mechanical decoupling is the primary mechanism behind the large effect size ($d = 1.05$) observed in the deceleration data.
 
-***LLM NOTE: POSTPONE/FOR LATER — needs reading up on Structural Resonance and Stick-Slip Dynamics. The text below is provisional. Do NOT cite or lean on it until you've done the background reading.***
-
 \subsection{Structural Resonance and Stick-Slip Dynamics}
 
 The IMU vibration data reveals qualitatively distinct post-impact mechanical behaviors between the two designs. The fixed cage drags against the column surface, producing sustained high-frequency pitch and roll oscillations consistent with stick-slip resonance. In this regime, dynamic friction between the cage and the obstacle continuously catches and releases during the scraping contact, injecting broadband vibration into the airframe and keeping the IMU in an elevated noise state well beyond the initial impact event.
@@ -49,7 +47,7 @@ This asymmetry is not statistical noise; it reflects a genuine mechanical diverg
 
 The $\sim$0.10 gap between training and validation $R^2$ in the learning curves (\autoref{fig:rf_learning_consolidated}) is the clearest signal that the current model, in its present configuration, overfits. The validation score ($R^2 \approx 0.70$) confirms genuine predictive power, but the model is also memorising noise patterns unique to specific training flights. Three routes to closing this gap are available: (1) expanding the dataset, allowing the model to average out spurious flight-specific correlations; (2) introducing stricter regularisation, such as smaller maximum tree depth or larger minimum samples per leaf; or (3) reducing the feature set to remove channels that are weakly informative and contribute more noise than signal. Which route is most impactful depends on whether the limiting factor is data volume (the 67 Fixed Cage and 60 Rotating Cage flights may be insufficient to fully characterise the 14-dimensional feature space) or model complexity mismatch. Given that both the Fixed and Rotating models converged to the same hyperparameters (max\_depth=6, min\_samples\_leaf=3), the data-volume hypothesis appears more likely.
 
-\subsubsection{Why the Rotating Cage Defeats Linear Baselines}
+\subsubsection{Limitations of Linear Baselines for the Rotating Cage}
 
 The model comparison results (\autoref{fig:rf_huber_consolidated}) reveal the most pronounced cage-type asymmetry in the entire study. For the Fixed Cage, a single linear IMU channel recovers an $R^2$ of 0.348 --- weak but structurally present correlation. For the Rotating Cage, the same approach collapses to $R^2 = 0.004$ (functionally zero). Yet the Random Forest recovers an $R^2$ of 0.719 from the Rotating Cage, a gain of $\Delta R^2 = +0.714$ that is nearly double the Fixed Cage improvement.
 

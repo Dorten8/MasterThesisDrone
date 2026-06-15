@@ -71,9 +71,9 @@ The design targets a \textbf{thrust-to-weight ratio (TWR) of approximately 3.8:1
 
 \textbf{EMAX ECOII 2004 1600KV} motors were selected. The 2004 stator (20\,mm diameter, 4\,mm height) provides high torque at mid-throttle while the low 1600\,KV rating (1600\,RPM per volt) is matched to a \textbf{6S LiPo battery} (22.2\,V nominal). On this voltage, the motors deliver approximately 860\,g static thrust each under 4-inch GF4023 propellers---a combined 3,440\,g.\cite{drone24hoursTMotorF20041700KV, oscarHowChooseFPV2024} The 6S voltage also places the practical RPM ($\sim$24,000--28,000 under load) within the 4-inch propeller's efficient range, avoiding excessive tip speeds.
 
-\paragraph{Efficiency Advantage of 6S over 4S}
+\paragraph{Efficiency Advantages of the 6S Architecture}
 
-The choice of a 6-cell battery over a 4-cell alternative is driven by efficiency. At a given thrust level, higher voltage draws proportionally lower current, reducing resistive ($I^2R$) losses in the battery, ESCs, and motor windings. Empirically, 6S systems exhibit superior efficiency up to approximately 45\% throttle.\cite{recursionlabsRecursionLabs6s2021}
+The choice of a 6-cell battery over a 4-cell alternative is driven by efficiency. Theoretical foundations of brushless DC (BLDC) motor dynamics demonstrate that higher-voltage architectures (such as 6S) are significantly more efficient than lower-voltage alternatives (such as 4S) for equivalent power outputs. Because electrical power is proportional to voltage multiplied by current ($P = VI$), increasing the system voltage proportionally reduces the current required to generate the same mechanical thrust. This reduction in current quadratically decreases the resistive copper losses ($P_{\text{loss}} = I^2R$) within the motor windings and electronic speed controllers, thereby reducing thermal dissipation and extending overall flight endurance.\cite{hughes2013electric}
 
 \textbf{Voltage sag}---the temporary voltage drop under high-current discharge, caused by battery internal resistance ($V_{\text{drop}} = I \times R_{\text{internal}}$)---is proportionally less severe at higher baseline voltages. Under an equivalent current spike, a 4S pack may sag by over 30\% of its nominal voltage, whereas an equivalent-quality 6S pack sees a smaller relative drop.\cite{oscarUsingLiPoBatteries2025} For autonomous flight, where the controller expects a predictable motor response, excessive sag introduces a latency between commanded and actual thrust that degrades control stability during rapid maneuvers. Higher baseline voltage provides a larger operating margin against this effect. The detailed derivation is given in the \hyperref[sec:annex_hardware]{Annex}.
 
@@ -103,11 +103,11 @@ The protective cage design draws on established geometries from the collision-re
 
 The development process began with CAD modelling of the frame and cage assembly in Fusion 360, iterating through several revisions to balance structural rigidity, weight, and propeller clearance. The frame plates were designed as a stack-up sandwich: a bottom plate for the power distribution board and ESCs, a middle deck for the Pixhawk 6C flight controller, and a top plate for the Raspberry Pi 5 companion computer. Each layer is separated by vibration-dampening standoffs to mechanically isolate the IMU from high-frequency motor vibrations.
 
-\todo{[USER ACTION - CAD Drawings: Insert CAD design drawings of the frame assembly and cage structure here.]}
+% TODO [USER]: Insert CAD design drawings of the frame assembly and cage structure here.
 
 The cage itself is a PETG-printed spherical shell of 35.8\,cm diameter, mounted on a bearing assembly that allows the outer shell to spin freely upon contact with an obstacle. The bearing is integrated into the frame's structural core: the inner race is fixed to the frame plates, while the outer race carries the PETG shell. This mechanical decoupling converts linear collision momentum into rotational energy, shunting impact shock away from the central fuselage and flight controller.
 
-\todo{[USER ACTION - Hardware Photos: Insert photographs of the individual assembled frame parts, bearing assembly, and completed drone with cage here.]}
+% TODO [USER]: Insert photographs of the individual assembled frame parts, bearing assembly, and completed drone with cage here.
 
 The fixed-cage control configuration uses identical geometry but rigidly mounts the outer shell to the frame, eliminating the bearing's rotational degree of freedom. All other parameters (mass, diameter, material, propeller clearance) are held constant between the two configurations, isolating the effect of the bearing mechanism as the single experimental independent variable.
 

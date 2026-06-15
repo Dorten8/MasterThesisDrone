@@ -1,0 +1,160 @@
+\clearpage
+\begin{center}
+    \vspace*{4cm}
+    {\LARGE\textbf{Software Implementation Overview}} \\[2em]
+    \qrcode[height=4cm]{https://github.com/Dorten8/MasterThesisDrone} \\[1em]
+    {\small\url{https://github.com/Dorten8/MasterThesisDrone}} \\[2em]
+    \large{Repository structure, system architecture, and operational notes for the autonomous quadcopter platform. The full source code, hardware BOM, configuration files, and data analysis pipeline accompany this document.}
+    \vfill
+\end{center}
+\clearpage
+
+\subsection{System Architecture}
+\label{sec:appendix_architecture}
+
+The autonomous flight stack is organised into four computational layers that communicate over separate channels, as illustrated in the thesis \autoref{fig:architecture}.
+
+\paragraph{Workstation (laptop).} Remote development via VS Code Remote-SSH over Wi-Fi. Telemetry visualisation through Foxglove Studio and Rviz2. PX4 parameter configuration and firmware flashing via QGroundControl.
+
+\paragraph{Pi~5 companion computer.} Runs Ubuntu~24.04 LTS natively. All flight software executes inside a Docker container providing Ubuntu~22.04 with ROS~2 Humble. The container hosts:
+\begin{itemize}
+    \item The \texttt{flight\_director.py} state machine (mission executor, publishes \texttt{TrajectorySetpoint})
+    \item The \texttt{flight\_recorder.py} telemetry logger (segmented MCAP output)
+    \item The \texttt{motion\_capture\_tracking\_node} (OptiTrack NatNet client, receives 120~Hz poses)
+    \item The \texttt{mocap\_px4\_bridge} (ENU $\to$ NED coordinate frame transformation)
+    \item The \texttt{MicroXRCEAgent} serial bridge (921600~baud, connects ROS~2 to PX4 uORB)
+\end{itemize}
+
+\paragraph{Pixhawk~6C flight controller.} Runs PX4 v1.16.1rc firmware. The EKF2 estimator fuses onboard 250~Hz IMU data with external vision odometry from the MoCap system. The position and attitude controllers compute motor commands sent as PWM signals to the ESCs.
+
+\paragraph{ESCs and motors.} Tekko32~F4 4-in-1 (AM32 firmware) driving four EMAX ECOII 2004 1600KV motors with Gemfan GF4023 propellers.
+
+\subsection{Repository Structure}
+
+The repository root contains the following key directories and files:
+
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none]
+.
++-- .devcontainer/            # Dockerfile + devcontainer.json
++-- config/                   # PX4 parameters, mavlink-router config
++-- drone_control/            # Python flight control nodes
+|   +-- flight_director.py    # Primary mission executor (state machine)
+|   +-- flight_missions.py    # Collision sweep routines
+|   +-- ghost_flight.py       # Alternative trajectory generation
+|   +-- flight_recorder.py    # Telemetry logger (MCAP, one file per loop)
++-- dev_logs/
+|   +-- flights/              # Raw .mcap telemetry recordings
+|   +-- analysis/             # Python analysis pipeline + Jupyter notebooks
+|   |   +-- database/         # SQLite ingestion, event segmenter
+|   |   +-- eda/              # EDA notebooks (angle inference, correlations)
+|   |   +-- models/           # Random Forest, Huber regression, feature importance
+|   +-- session_journals/     # Daily development log
++-- src/                      # ROS 2 packages (Git submodules)
+|   +-- mocap/                # OptiTrack NatNet client (C++)
+|   +-- mocap_px4_bridge/     # ENU -> NED coordinate transformer (C++)
+|   +-- px4_msgs/             # PX4 uORB -> ROS 2 message definitions
++-- startup-sequence.sh       # One-command flight startup
++-- shutdown-sequence.sh      # Graceful cleanup
++-- thesis/                   # LaTeX source for this document
+\end{lstlisting}
+
+\subsection{How the Drone Flies}
+
+The autonomous flight loop follows a six-step data path:
+
+\begin{enumerate}
+    \item The OptiTrack MoCap system broadcasts rigid-body poses at 120~Hz over Wi-Fi (NatNet protocol).
+    \item The \texttt{motion\_capture\_tracking\_node} receives the stream and publishes poses in the ENU frame on the \texttt{/poses} topic.
+    \item The \texttt{mocap\_px4\_bridge} applies the static rotation $X_{\mathrm{NED}} = Y_{\mathrm{ENU}},\; Y_{\mathrm{NED}} = X_{\mathrm{ENU}},\; Z_{\mathrm{NED}} = -Z_{\mathrm{ENU}}$ and publishes to \texttt{/fmu/in/vehicle\_visual\_odometry}.
+    \item The PX4 EKF2 estimator fuses the external vision with the onboard 250~Hz IMU (gyroscope and accelerometer), producing a continuous state estimate that bridges transient MoCap dropouts during collisions via inertial propagation.
+    \item The \texttt{flight\_director.py} state machine publishes \texttt{TrajectorySetpoint} commands to \texttt{/fmu/in/trajectory\_setpoint}, driving the drone through the waypoint pattern illustrated in \autoref{fig:flight_director_state_machine}.
+    \item The PX4 position and attitude controllers convert the setpoint errors into motor mixing commands, sent as PWM signals to the ESCs.
+\end{enumerate}
+
+Throughout the flight, \texttt{flight\_recorder.py} logs all ROS~2 topics to segmented \texttt{.mcap} files --- one per collision loop iteration --- at native publish rates (approximately 100~Hz).
+
+\subsection{Software Components}
+
+\begin{table}[htbp]
+\centering
+\caption{ROS~2 packages and their roles in the autonomous pipeline.}
+\label{tab:software_components}
+\begin{tabular}{lcp{7cm}}
+\toprule
+\textbf{Package} & \textbf{Language} & \textbf{Purpose} \\
+\midrule
+\texttt{drone\_control} & Python & Flight control nodes: state machine, collision missions, telemetry recorder \\
+\texttt{mocap\_px4\_bridge} & C++ & ENU $\to$ NED coordinate transformation; publishes \texttt{vehicle\_visual\_odometry} \\
+\texttt{motion\_capture\_tracking} & C++ & OptiTrack NatNet client; receives 120~Hz MoCap poses \\
+\texttt{px4\_msgs} & ROS~2 msg & Message definitions mirroring PX4 uORB topics \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Communication between the flight controller and the companion computer uses \textbf{uXRCE-DDS} exclusively during flight operations. The MicroXRCEAgent running on the Pi~5 bridges ROS~2 topics to PX4's internal uORB bus over a UART serial link (TELEM2, 921600~baud). A secondary MAVLink stream can be enabled on the same port for ground-station debugging, but the two protocols are not used simultaneously during active data collection.
+
+\subsection{Data Analysis Pipeline}
+
+Raw telemetry from the \texttt{.mcap} files is processed through a custom Python pipeline. The \texttt{db\_mcap\_event\_segmenter.py} script slices each MCAP recording at waypoint-id timestamp markers, producing one segment per collision pass. The \texttt{db\_pipeline.py} script ingests these segments into an SQLite database (\texttt{experiments\_summary.db}), computing derived quantities such as:
+
+\begin{itemize}
+    \item Impact angle from the velocity vector at the collision instant
+    \item Closest obstacle clearance: $\mathrm{clearance} = d_{\mathrm{centre}} - r_{\mathrm{column}} - r_{\mathrm{cage}}$
+    \item Path spread (RMSLD): $\sqrt{\frac{1}{N}\sum_i \mathrm{perp\_dist}_i^2}$
+    \item Spatial Integral of Absolute Error (SIAE) for the recovery phase
+    \item Per-axis IMU variance over the post-impact stabilisation window
+\end{itemize}
+
+Analysis notebooks under \texttt{dev\_logs/analysis/} consume the database to produce the figures and statistical tests presented in the Results chapter. The Random Forest and Huber regression models for angle prediction live under \texttt{dev\_logs/analysis/models/}.
+
+\subsection{Network Reference}
+
+The Pi~5 drone is reachable at \texttt{pi5drone.local} via mDNS. If this does not resolve, the subnet may be scanned to discover the device:
+
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none]
+sudo nmap -sn 192.168.74.0/23   # adjust CIDR to match your network
+\end{lstlisting}
+
+\begin{table}[htbp]
+\centering
+\caption{Network interface MAC addresses for all devices in the experimental setup.}
+\label{tab:mac_addresses}
+\begin{tabular}{lll}
+\toprule
+\textbf{Device} & \textbf{Interface} & \textbf{MAC Address} \\
+\midrule
+Pi~5 drone & Ethernet (eth0) & \texttt{88:a2:9e:65:43:b4} \\
+Pi~5 drone & Wi-Fi (wlan0)  & \texttt{88:a2:9e:65:43:b5} \\
+Pi~5 drone & Docker bridge   & \texttt{36:b5:a7:3c:10:02} \\
+OptiTrack PC & Wi-Fi          & \texttt{70:cd:0d:b1:67:c3} \\
+Ubuntu laptop & Wi-Fi         & \texttt{c8:94:02:5b:f0:d9} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Critical Operational Notes}
+
+The following list summarises hard-won lessons from the development process that are essential for reproducing or extending this work. Detailed treatment of each point is given in the repository \texttt{README.md}.
+
+\begin{enumerate}
+    \item \textbf{Magnetometer must be disabled indoors.} Set \texttt{EKF2\_MAG\_TYPE = 5} (None). Indoor magnetic fields from building steel and power cabling compete with the MoCap yaw signal, producing yaw drift that destabilises the controller.
+
+    \item \textbf{Velocity feedforward requires the heartbeat flag.} The offboard heartbeat must set \texttt{hb.velocity = True}. Without it, PX4 ignores the velocity vector in \texttt{TrajectorySetpoint} and falls back to a laggy P-only position controller.
+
+    \item \textbf{Geofence boundaries must account for cage radius.} The PETG cage has a 17.9~cm radius. If a waypoint is placed at the coordinate limit, the cage edge will breach the geofence and trigger motor shutdown. Always subtract the cage radius from the boundary.
+
+    \item \textbf{Battery voltage sag limits flight time to approximately three minutes.} Measured consumption is approximately 20\% per minute under load. Set a failsafe at 40\% battery to avoid cell damage.
+
+    \item \textbf{NatNet up-axis must be Z-axis (not Y-axis).} In Motive: Settings $\to$ Streaming $\to$ NatNet $\to$ Up Axis = Z-Axis. The default Y-Up convention will cause the bridge to misinterpret altitude.
+
+    \item \textbf{The bridge uses a specific rotation convention.} The \texttt{mocap\_px4\_bridge} hardcodes $X_{\mathrm{ned}} = X_{\mathrm{mocap}},\; Y_{\mathrm{ned}} = -Y_{\mathrm{mocap}}$. Any Python offboard controller must apply exactly this convention.
+
+    \item \textbf{QoS durability must match the publisher.} Publish to \texttt{/fmu/in/} topics with \texttt{TRANSIENT\_LOCAL} durability. Subscribe to \texttt{/poses} with \texttt{VOLATILE} to avoid stale cached poses.
+
+    \item \textbf{EKF2 external-vision delay must be calibrated.} The MoCap pipeline introduces 20--60~ms of latency. Cross-correlate the onboard gyroscope yaw rate against the delayed visual odometry yaw rate from a flight recording to find the true \texttt{EKF2\_EV\_DELAY}.
+
+    \item \textbf{Only one process can own the serial port.} Stop \texttt{mavlink-routerd} before starting \texttt{MicroXRCEAgent}, or vice versa. Use \texttt{sudo fuser -v /dev/ttyAMA0} to check ownership.
+
+    \item \textbf{uXRCE-DDS client may require a flight-controller power cycle.} After setting \texttt{UXRCE\_DDS\_CFG = 102} (TELEM2), the PX4 uXRCE client sometimes starts only after a full power cycle via QGroundControl.
+\end{enumerate}
+\endinput
