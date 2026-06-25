@@ -237,7 +237,8 @@ def select_features(df, corr_threshold=0.3, redundancy_threshold=0.85):
 #  2.  Main RF Pipeline
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=True):
+def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=True,
+                    df_impacts=None, df_train=None, df_transfer=None):
     """
     Full Random Forest pipeline:
       1. Load & select features
@@ -257,6 +258,11 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
         If True, save figures to GRAPHICS_DIR.
     show_plots : bool
         If True, call plt.show() for inline notebook display.
+    df_impacts : pd.DataFrame or None
+        Universal impact-only dataframe from the notebook.
+        Must contain columns: condition, impact_angle, flight_name, excluded,
+        plus all IMU_COLS.  If None, calls load_data() which queries the DB
+        directly (backward-compatible fallback).
 
     Returns
     -------
@@ -271,7 +277,21 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
     print("=" * 72)
 
     # ── 1. Load data & select features ─────────────────────────────────────
-    df_fixed, df_rot = load_data()
+    if df_impacts is not None:
+        # Use the universal dataframe from the notebook
+        df = df_impacts.query("excluded == 0").copy()
+        df_fixed = df.query("condition == 'Fixed Cage'").copy()
+        df_rot = df.query("condition == 'Rotating Cage'").copy()
+        print(f"📊 Using universal dataframe: {len(df_fixed)} Fixed Cage + "
+              f"{len(df_rot)} Rotating Cage impact flights.")
+    elif df_train is not None and df_transfer is not None:
+        # Two separate dataframes passed (e.g., from notebook's load_impact_data)
+        df_fixed = df_train if train_condition == 'Fixed Cage' else df_transfer
+        df_rot = df_transfer if train_condition == 'Fixed Cage' else df_train
+        print(f"📊 Using pre-loaded dataframes: {len(df_fixed)} Fixed Cage + "
+              f"{len(df_rot)} Rotating Cage impact flights.")
+    else:
+        df_fixed, df_rot = load_data()
 
     # Select train/transfer data based on condition
     df_train = df_fixed if train_condition == 'Fixed Cage' else df_rot

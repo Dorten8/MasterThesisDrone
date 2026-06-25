@@ -57,6 +57,8 @@ class RepresentativeFlightFinder:
         impact_angle_range=None,
         extra_query=None,
         feature_columns=None,
+        impact_only=True,
+        df_impacts=None,
     ):
         if db_path is None:
             current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -67,9 +69,14 @@ class RepresentativeFlightFinder:
         self.impact_angle_range = impact_angle_range
         self.extra_query = extra_query
         self.feature_columns = feature_columns or DEFAULT_FEATURES
+        self.impact_only = impact_only
 
         # ── Load & filter ──
-        self._df_all = self._load()
+        if df_impacts is not None:
+            # Use the universal dataframe from the notebook (preferred)
+            self._df_all = df_impacts
+        else:
+            self._df_all = self._load()
         self._df_cat = self._apply_filters()
         self._df_ranked = None   # populated by find_representative()
 
@@ -86,6 +93,11 @@ class RepresentativeFlightFinder:
 
     def _apply_filters(self):
         df = self._df_all.copy()
+
+        # Filter to impact-only by default — all DEFAULT_FEATURES are
+        # impact metrics that are meaningless for near-miss/non-impact passes.
+        if self.impact_only:
+            df = df.query("impact_detected == 1")
 
         if self.condition is not None:
             df = df.query("condition == @self.condition")

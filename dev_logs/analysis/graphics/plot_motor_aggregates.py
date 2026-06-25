@@ -9,25 +9,41 @@ import numpy as np
 DB_PATH = "/home/dorten/MasterThesisDrone/dev_logs/analysis/experiments_summary.db"
 OUTPUT_DIR = "/home/dorten/MasterThesisDrone/dev_logs/analysis/graphics"
 
-def plot_motor_aggregates():
-    if not os.path.exists(DB_PATH):
-        print(f"[ERROR] Database not found at {DB_PATH}")
-        return
-
-    # Connect and query
-    conn = sqlite3.connect(DB_PATH)
-    query = """
-        SELECT condition, motor_avg_before, motor_avg_after, motor_thrust_surge, motor_imbalance_after 
-        FROM flights_summary 
-        WHERE impact_detected = 1 
-          AND motor_avg_before IS NOT NULL 
-          AND motor_avg_after IS NOT NULL
+def plot_motor_aggregates(df_impacts=None):
     """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
+    Aggregated Motor Performance Analysis boxplot: Fixed vs. Rotating Cage.
+
+    Parameters
+    ----------
+    df_impacts : pd.DataFrame or None
+        Must contain columns: condition, motor_avg_before, motor_avg_after,
+        motor_thrust_surge, motor_imbalance_after.
+        If None, queries experiments_summary.db directly (CLI fallback).
+    """
+    if df_impacts is not None:
+        required = ['condition', 'motor_avg_before', 'motor_avg_after',
+                    'motor_thrust_surge', 'motor_imbalance_after']
+        missing = [c for c in required if c not in df_impacts.columns]
+        if missing:
+            raise KeyError(f"df_impacts missing required columns: {missing}")
+        df = df_impacts[required].dropna(subset=['motor_avg_before', 'motor_avg_after'])
+    else:
+        if not os.path.exists(DB_PATH):
+            print(f"[ERROR] Database not found at {DB_PATH}")
+            return
+        conn = sqlite3.connect(DB_PATH)
+        query = """
+            SELECT condition, motor_avg_before, motor_avg_after, motor_thrust_surge, motor_imbalance_after
+            FROM flights_summary
+            WHERE impact_detected = 1
+              AND motor_avg_before IS NOT NULL
+              AND motor_avg_after IS NOT NULL
+        """
+        df = pd.read_sql_query(query, conn)
+        conn.close()
 
     if df.empty:
-        print("[WARN] No valid motor data found in database for impact flights.")
+        print("[WARN] No valid motor data found for impact flights.")
         return
 
     print(f"📊 Loaded {len(df)} passes with valid motor telemetry.")

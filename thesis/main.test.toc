@@ -1,0 +1,63 @@
+\contentsline {section}{\numberline {1}Introduction}{1}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Research Questions}{2}{subsection.1.1}%
+\contentsline {section}{\numberline {2}Related Work}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}The Autonomy Bottleneck and Navigation by Contact}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Collision-Resilient Designs: Compliance vs.\ Deflection}{3}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Tactile Sensing and the IMU Noise Problem}{4}{subsection.2.3}%
+\contentsline {section}{\numberline {3}Methodology}{6}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Design and Development}{6}{subsection.3.1}%
+\contentsline {subsubsection}{\numberline {3.1.1}Flight Type}{6}{subsubsection.3.1.1}%
+\contentsline {subsubsection}{\numberline {3.1.2}Constraints and Design Objectives}{6}{subsubsection.3.1.2}%
+\contentsline {subsubsection}{\numberline {3.1.3}Platform Sizing: The 4-Inch Tradeoff}{7}{subsubsection.3.1.3}%
+\contentsline {paragraph}{Platform Selection: PX4 and Pixhawk 6C}{9}{section*.4}%
+\contentsline {paragraph}{Thrust-to-Weight and Efficiency Rationale}{10}{section*.5}%
+\contentsline {paragraph}{Motor and Battery Selection}{10}{section*.6}%
+\contentsline {paragraph}{Efficiency Advantages of the 6S Architecture}{10}{section*.7}%
+\contentsline {subsection}{\numberline {3.2}System Architecture}{11}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {3.2.1}Frame and Cage Design}{11}{subsubsection.3.2.1}%
+\contentsline {subsubsection}{\numberline {3.2.2}Hardware Platform}{14}{subsubsection.3.2.2}%
+\contentsline {subsubsection}{\numberline {3.2.3}Flight Controller}{15}{subsubsection.3.2.3}%
+\contentsline {subsubsection}{\numberline {3.2.4}Motion Capture Integration}{15}{subsubsection.3.2.4}%
+\contentsline {paragraph}{Coordinate Frame Transformations}{15}{section*.10}%
+\contentsline {subsubsection}{\numberline {3.2.5}Communication Middleware Between Flight Controller and Pi\nobreakspace {}5}{16}{subsubsection.3.2.5}%
+\contentsline {subsubsection}{\numberline {3.2.6}Software Framework}{16}{subsubsection.3.2.6}%
+\contentsline {paragraph}{Source Submodules}{16}{section*.13}%
+\contentsline {paragraph}{The Flight Director}{17}{section*.14}%
+\contentsline {paragraph}{Safety Enforcement}{18}{section*.16}%
+\contentsline {section}{\numberline {4}Experiments and Results}{21}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Experimental Setup}{22}{subsection.4.1}%
+\contentsline {subsubsection}{\numberline {4.1.1}Experiment Environment and Collision Target}{22}{subsubsection.4.1.1}%
+\contentsline {subsubsection}{\numberline {4.1.2}Experiment Control and Data Collection}{22}{subsubsection.4.1.2}%
+\contentsline {subsubsection}{\numberline {4.1.3}Data Processing for Collision Analysis}{23}{subsubsection.4.1.3}%
+\contentsline {subsubsection}{\numberline {4.1.4}Pre-Computed Path and Waypoint Configuration}{23}{subsubsection.4.1.4}%
+\contentsline {subsection}{\numberline {4.2}Experimental Kinematics and Spatial Recovery}{24}{subsection.4.2}%
+\contentsline {subsubsection}{\numberline {4.2.1}Trajectory Visualisation and Mission Outcomes}{26}{subsubsection.4.2.1}%
+\contentsline {subsubsection}{\numberline {4.2.2}Collision Geometry and Path Spread}{27}{subsubsection.4.2.2}%
+\contentsline {subsubsection}{\numberline {4.2.3}Post-Collision Trajectory and Recovery}{28}{subsubsection.4.2.3}%
+\contentsline {subsection}{\numberline {4.3}Impact Acceleration and Vibrations}{29}{subsection.4.3}%
+\contentsline {paragraph}{IMU Time-Series: Individual and Aggregated Signatures}{31}{section*.25}%
+\contentsline {paragraph}{Axis-Resolved IMU Component Analysis}{31}{section*.27}%
+\contentsline {paragraph}{EKF State Estimation Fidelity}{35}{section*.30}%
+\contentsline {subsection}{\numberline {4.4}Sensor-Based Impact Angle Inference}{38}{subsection.4.4}%
+\contentsline {subsubsection}{\numberline {4.4.1}Angle Prediction via Random Forest}{38}{subsubsection.4.4.1}%
+\contentsline {subsubsection}{\numberline {4.4.2}Five-Fold Cross-Validation: Predicted vs.\ Actual Impact Angle}{41}{subsubsection.4.4.2}%
+\contentsline {subsubsection}{\numberline {4.4.3}Learning Curves and Overfitting}{43}{subsubsection.4.4.3}%
+\contentsline {subsubsection}{\numberline {4.4.4}Model Comparison Against Linear Baseline}{44}{subsubsection.4.4.4}%
+\contentsline {subsubsection}{\numberline {4.4.5}Cross-Condition Transfer: Are the Dynamics Transferable?}{46}{subsubsection.4.4.5}%
+\contentsline {subsubsection}{\numberline {4.4.6}Feature Importance: Which IMU Channels Carry the Signal?}{48}{subsubsection.4.4.6}%
+\contentsline {section}{\numberline {5}Discussion}{50}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Impact Force Deflection}{50}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Structural Resonances}{50}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Trajectory Recovery as a Design Trade-off}{51}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Limitations}{51}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.5}Onboard Tactical Awareness: Interpreting the Random Forest Results}{52}{subsection.5.5}%
+\contentsline {subsubsection}{\numberline {5.5.1}Non-Linearity in the IMU-to-Angle Mapping}{52}{subsubsection.5.5.1}%
+\contentsline {subsubsection}{\numberline {5.5.2}When Training and Deployment Diverge: Cross-Condition Transfer Failure}{52}{subsubsection.5.5.2}%
+\contentsline {subsubsection}{\numberline {5.5.3}Overfitting and the Path to Deployment}{53}{subsubsection.5.5.3}%
+\contentsline {subsubsection}{\numberline {5.5.4}Limitations of Linear Baselines for the Rotating Cage}{54}{subsubsection.5.5.4}%
+\contentsline {section}{\numberline {6}Figures}{55}{section.6}%
+\contentsline {section}{\numberline {7}Tables}{56}{section.7}%
+\contentsline {section}{\numberline {8}Mathematics}{56}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Coordinate Frames}{56}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Drone Dynamics}{57}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Collision Kinematics}{57}{subsection.8.3}%

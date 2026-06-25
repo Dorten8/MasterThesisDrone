@@ -970,7 +970,59 @@ def render_comparison_table_html(df_all):
 # ║  7.  Sunburst Impact Distribution  (Cell 27 → replaces _sunburst_cell)     ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 
-# Hardcoded aggregated percentages (as of 2026-06-09)
+def _build_sunburst_data(df_all):
+    """Compute sunburst aggregation from the universal notebook dataframe.
+
+    Parameters
+    ----------
+    df_all : pd.DataFrame
+        Full flights_summary with columns: condition, flight_name, impact_detected,
+        impact_angle.
+
+    Returns
+    -------
+    dict  Same structure as _SUNBURST_DATA, computed from live data.
+    """
+    df = df_all.copy()
+    df['mission_type'] = df['flight_name'].apply(
+        lambda x: '45°' if '45°' in x else ('75°' if '75°' in x else 'Other'))
+
+    data = {}
+    for cage in ['Rotating Cage', 'Fixed Cage']:
+        sub = df[df['condition'] == cage]
+        total_n = len(sub)
+        n_impact = int((sub['impact_detected'] == 1).sum())
+        n_no_impact = total_n - n_impact
+        total_pct_impact = round(n_impact / total_n * 100, 1) if total_n > 0 else 0.0
+        total_pct_no = round(n_no_impact / total_n * 100, 1) if total_n > 0 else 0.0
+
+        def _angle_pcts(mtype):
+            ms = sub[(sub['mission_type'] == mtype)]
+            n_ms = len(ms)
+            ms_impact = ms[ms['impact_detected'] == 1]
+            bins = {
+                '<30°':   int(((ms_impact['impact_angle'] >= 0) & (ms_impact['impact_angle'] < 30)).sum()),
+                '30-40°': int(((ms_impact['impact_angle'] >= 30) & (ms_impact['impact_angle'] < 40)).sum()),
+                '40-50°': int(((ms_impact['impact_angle'] >= 40) & (ms_impact['impact_angle'] < 50)).sum()),
+                '50-60°': int(((ms_impact['impact_angle'] >= 50) & (ms_impact['impact_angle'] < 60)).sum()),
+                '60-90°': int(((ms_impact['impact_angle'] >= 60) & (ms_impact['impact_angle'] <= 90)).sum()),
+            }
+            pcts = {k: round(v / n_ms * 100, 1) if n_ms > 0 else 0.0 for k, v in bins.items()}
+            pcts['No Impact'] = round((n_ms - len(ms_impact)) / n_ms * 100, 1) if n_ms > 0 else 0.0
+            pcts['n'] = n_ms
+            return pcts
+
+        data[cage] = {
+            'total_n': total_n,
+            'total': {'Impact Detected': total_pct_impact, 'No Impact': total_pct_no},
+            '45°': _angle_pcts('45°'),
+            '75°': _angle_pcts('75°'),
+        }
+    return data
+
+
+# Hardcoded aggregated percentages — fallback when df_all not provided.
+# Regenerate when flights_summary changes significantly.
 _SUNBURST_DATA = {
     'Rotating Cage': {
         'total_n': 81,
@@ -994,14 +1046,23 @@ _SUNBURST_BIN_MIDPOINTS = {'<30°': 15, '30-40°': 35, '40-50°': 45,
                            '50-60°': 55, '60-90°': 75}
 
 
-def plot_sunburst_impact_distribution(output_path=None, show_plot=True):
+def plot_sunburst_impact_distribution(df_all=None, output_path=None, show_plot=True):
     """Nested radial (sunburst) chart: one panel per cage condition.
 
-    Uses hardcoded aggregated percentage data.  Regenerate when DB is updated.
+    Parameters
+    ----------
+    df_all : pd.DataFrame or None
+        Full flights_summary from the notebook.  Must contain columns: condition,
+        flight_name, impact_detected, impact_angle.
+        If None, uses hardcoded _SUNBURST_DATA (backward-compatible fallback).
     """
     import matplotlib.patches as mpatches
 
-    data = _SUNBURST_DATA
+    if df_all is not None:
+        # Build sunburst data from the universal dataframe
+        data = _build_sunburst_data(df_all)
+    else:
+        data = _SUNBURST_DATA
     angle_cmap = plt.cm.RdYlGn
     angle_norm = plt.Normalize(0, 90)
 

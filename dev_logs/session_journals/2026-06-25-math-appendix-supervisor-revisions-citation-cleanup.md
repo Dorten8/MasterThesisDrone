@@ -92,3 +92,39 @@ Two major work blocks: (1) comprehensive codebase refactoring with mathematical 
 - **Documentation (6):** copilot-instructions.md, angle_prediction.md, experiments_analysis_skill.md, walkthrough_experiments.md, experiments_analysis_summary.ipynb, experiments_analysis.ipynb
 - **Session journals (2):** patched earlier entries for renamed functions
 - **Binary/DB (2):** main.pdf, experiments_summary.db
+
+### Block 4: Results Section Structural & Statistical Fixes
+
+#### Hardcoded Figure/Table Labels Removed
+- Removed 6 hardcoded "Figure 10:"–"Figure 15:" prefixes from `\caption{}` — LaTeX auto-numbers these, causing "Figure 12: Figure 10:" double-labels
+- Removed 3 hardcoded "Table 3:"–"Table 5:" prefixes from `\caption{}`
+
+#### Redundancy & Ordering
+- Deleted duplicate paragraph about 168/127 pass counts (was stated in both 4.2.4 and 4.3 intro)
+- Moved Table 1 (dataset baseline) from 4.2.4 into 4.3 where it belongs
+- Moved Table 2 (mission outcomes) after 4.3.1 text instead of floating in 4.2.4
+- Changed `[htbp]` → `[h!]` on mission geometry figure, 2D visualization figure, Table 1, Table 2 to anchor in reading order
+
+#### Placeholder & Claim Fixes
+- Replaced "Figure X" placeholder → `Figure~\ref{fig:ekf_validation}` in EKF fidelity paragraph
+- Replaced unsupported "95% confidence corridor" → "visually narrower spread of linear acceleration peaks" (the aggregated figure shows overlaid traces, not a computed CI)
+
+#### Deceleration Equations — Inline Math → Display Equations
+- Broke dense inline percentage calculations into two proper `\[` equation blocks:
+  - **Relative Increase** (rotating cage baseline): `(1.64 - 1.03) / 1.03 ≈ 0.592` → 59.2%
+  - **Relative Reduction** (fixed cage baseline): `(1.64 - 1.03) / 1.64 ≈ 0.372` → 37.2%
+- Added explicit variable notation (`D_rot = 1.03`, `D_fix = 1.64`) for readability
+
+#### Universal DataFrame Audit (Block 5 — from previous session)
+- Fixed 5 functions that independently queried DB instead of using notebook's SSoT dataframes:
+  - `plot_imu_spread(df_impacts=None)`, `plot_motor_aggregates(df_impacts=None)`, `plot_sunburst_impact_distribution(df_all=None)`, `RepresentativeFlightFinder(df_impacts=None)`, `run_rf_pipeline(df_impacts=None)`
+- Added `impact_only=True` filter to RepresentativeFlightFinder (was including near-miss transits)
+
+#### EKF Validation Section (added to Motion Capture Setup)
+- Two new figures: MoCap dropout during impact (Figure A) + EKF validation during clean flight (Figure B)
+- Justifies EKF telemetry as primary kinematic source
+
+## Renders
+- Final: **99 pages**, cross-references resolved
+- Only undefined: `RL_manipulation_placeholder` (intentional TODO)
+- Float-too-large warnings: expected with `[h!]` on large figures (LaTeX relaxes to `[!ht]`)

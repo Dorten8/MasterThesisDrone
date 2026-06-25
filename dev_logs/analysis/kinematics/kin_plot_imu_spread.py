@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def plot_imu_spread():
+def plot_imu_spread(df_impacts=None):
     """
     Generate a grouped boxplot comparing IMU acceleration spread (standard deviation
     of high-frequency accelerometer readings) between the impact window and regular
@@ -25,32 +25,43 @@ def plot_imu_spread():
       By comparing these two windows per axis (X, Y, Z) and per cage condition, we can
       quantify how much the collision shakes the drone and whether the Rotating Cage
       attenuates or amplifies the shock relative to the Fixed Cage.
+
+    Parameters
+    ----------
+    df_impacts : pd.DataFrame or None
+        Must contain columns: condition, imu_ax_spread_impact, imu_ay_spread_impact,
+        imu_az_spread_impact, imu_ax_spread_regular, imu_ay_spread_regular,
+        imu_az_spread_regular.  If None, queries experiments_summary.db directly
+        (backward-compatible fallback for CLI usage).
     """
-    db_path = 'dev_logs/analysis/experiments_summary.db'
-    if not os.path.exists(db_path):
-        print(f"Database not found at {db_path}")
-        return
+    if df_impacts is not None:
+        # Use the universal dataframe from the notebook
+        required = ['condition',
+                    'imu_ax_spread_impact', 'imu_ay_spread_impact', 'imu_az_spread_impact',
+                    'imu_ax_spread_regular', 'imu_ay_spread_regular', 'imu_az_spread_regular']
+        missing = [c for c in required if c not in df_impacts.columns]
+        if missing:
+            raise KeyError(f"df_impacts missing required columns: {missing}")
+        df = df_impacts[required].copy()
+        # Ensure impact_detected filter is already applied by caller
+    else:
+        # Fallback: query DB directly (CLI / legacy usage)
+        db_path = 'dev_logs/analysis/experiments_summary.db'
+        if not os.path.exists(db_path):
+            print(f"Database not found at {db_path}")
+            return
 
-    conn = sqlite3.connect(db_path)
-
-    # ---- Database query ----
-    # We retrieve per-flight IMU spread values that were precomputed during the data
-    # processing pipeline (kin_calculator.py §§10.4.5). Only flights with a detected
-    # structural impact (impact_detected=1) are included because the impact-vs-regular
-    # comparison is meaningless for flights that never collided. The six columns
-    # capture spread in g for each of the three axes (X, Y, Z) in both the impact
-    # and regular windows.
-    query = """
-    SELECT
-        condition,
-        imu_ax_spread_impact, imu_ay_spread_impact, imu_az_spread_impact,
-        imu_ax_spread_regular, imu_ay_spread_regular, imu_az_spread_regular
-    FROM flights_summary
-    WHERE impact_detected = 1
-    """
-
-    df = pd.read_sql_query(query, conn)
-    conn.close()
+        conn = sqlite3.connect(db_path)
+        query = """
+        SELECT
+            condition,
+            imu_ax_spread_impact, imu_ay_spread_impact, imu_az_spread_impact,
+            imu_ax_spread_regular, imu_ay_spread_regular, imu_az_spread_regular
+        FROM flights_summary
+        WHERE impact_detected = 1
+        """
+        df = pd.read_sql_query(query, conn)
+        conn.close()
 
     if df.empty:
         print("No IMU spread data found in the database.")
