@@ -36,7 +36,7 @@ if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 from dev_logs.analysis.database.db_loader import load_drone_metadata, load_mcap, build_dataframes
-from dev_logs.analysis.kinematics.kin_calculator import compute_velocity, find_waypoint_events
+from dev_logs.analysis.kinematics.kin_calculator import compute_mocap_kinematics, find_waypoint_events
 from dev_logs.analysis.database.db_manager import APPROVED_CUTOFF, is_approved_flight
 
 # ── Approved flight cutoff ────────────────────────────────────────────────────
@@ -334,7 +334,7 @@ def segment_flight_mcap(flight_path, mode="auto", padding_sec=2.0):
             print("❌ [ERROR] MoCap dataframe is empty. Cannot segment legacy passes.")
             return
 
-        df_mocap = compute_velocity(df_mocap)
+        df_mocap = compute_mocap_kinematics(df_mocap)
 
         takeoff_mask = df_mocap['z'] > 0.15
         takeoff_time = df_mocap.loc[takeoff_mask, 't'].iloc[0] if takeoff_mask.any() else arming_time + 2.0

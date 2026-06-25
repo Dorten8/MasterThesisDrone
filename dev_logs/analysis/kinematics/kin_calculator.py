@@ -131,35 +131,53 @@ def resample_and_interpolate_mocap(df_mocap, target_freq=100.0, filter_half_wind
     df_resampled = df_resampled.ffill().bfill()
     return df_resampled
 
-def compute_velocity(df_mocap, window=19, polyorder=3, resample=True, prefilter_position_fc=None):
-    """Computes velocity and acceleration derivatives from position signals.
+def compute_mocap_kinematics(df_mocap, window=19, polyorder=3, resample=True, prefilter_position_fc=None):
+    r"""Differentiate MoCap positions → velocity → acceleration (Savitzky-Golay pipeline).
 
-    Pipeline overview:
-    1. Resample raw MoCap positions onto a uniform 100 Hz grid via
-       resample_and_interpolate_mocap().
-    2. SG-differentiate position to velocity (deriv=1, window=19, polyorder=3).
-    3. For Fixed Cage (high-jitter): apply a 2nd-order Butterworth low-pass at
-       4 Hz cutoff to suppress dropout-kink amplification.
-    4. SG-differentiate velocity to acceleration (same SG parameters).
+    **Standard method: Savitzky-Golay (SG) differentiation.**
+
+    The SG filter fits a polynomial of order *polyorder* over a sliding window
+    of *window* samples via linear least squares, then evaluates the analytical
+    derivative of that polynomial at the window centre. This is equivalent to
+    convolution with pre-computed coefficients — O(N) and numerically stable.
+
+    **Pipeline:**
+
+    1. Resample MoCap positions to a uniform 100 Hz grid via
+       `resample_and_interpolate_mocap()`.
+
+    2. SG-differentiate position → velocity:
+         v(t) = SG_deriv1( x(t), window=19, polyorder=3 ) / Δt_median      [m/s]
+
+    3. For Fixed Cage (high-jitter): apply 2nd-order Butterworth low-pass,
+       fc = 4 Hz, zero-phase (filtfilt) to suppress dropout-kink amplification.
+
+    4. SG-differentiate velocity → acceleration:
+         a(t) = SG_deriv1( v(t), window=19, polyorder=3 ) / Δt_median      [m/s²]
+
     5. Surgically remove ringing artifacts at dropout boundaries by linearly
-       interpolating over the ringing mask built in step 1.
+       interpolating over the ringing mask from step 1.
 
-    Key parameter choices:
-    - window=19, polyorder=3: ~190 ms window at 100 Hz. Wide enough to smooth
-      quantization noise from the MoCap mm-level discretization, narrow enough
-      to preserve genuine drone dynamics (maneuvers < 5 Hz). polyorder=3 is
-      standard for smooth physical trajectories -- a cubic local fit captures
-      parabolic acceleration without over-fitting.
-    - deriv=1 with division by median_dt: SG returns a polynomial derivative
-      in units of [position / sample]. To convert to [position / second], we
-      divide by the actual sampling interval. Using median_dt (not mean)
-      makes the conversion robust to any remaining outlier gaps.
-    - Butterworth 2nd order, 4 Hz cutoff: Applied ONLY in the Fixed Cage
-      high-jitter case. The SG-differentiated velocity from gapped data
-      contains broadband noise centered near the dropout gap frequency
-      (~10 Hz). A 4 Hz low-pass retains rigid-body drone dynamics (<< 4 Hz)
-      while attenuating the gap-noise floor. 2nd order = 12 dB/octave rolloff,
-      zero-phase via filtfilt to avoid group delay distorting impact timing.
+    **Speed magnitude:**
+      s(t) = √( vx(t)² + vy(t)² + vz(t)² )                                 [m/s]
+
+    **Acceleration scalar magnitude:**
+      a_s(t) = SG_deriv1( s(t) ) / Δt_median                                [m/s²]
+
+    **Key parameters:**
+    - window=19, polyorder=3 (≈190 ms at 100 Hz): Wide enough to smooth mm-level
+      MoCap quantisation noise, narrow enough to preserve drone dynamics.
+    - Δt_median: Uses median (not mean) dt — robust to remaining outlier gaps.
+
+    **Butterworth post-filter** (Fixed Cage only):
+      H(f) = 1 / √(1 + (f / fc)^(2n)),  n=2, fc=4 Hz,  zero-phase via filtfilt.
+      Attenuates dropout-frequency noise (~10 Hz) while preserving rigid-body
+      drone translation (≪ 4 Hz).
+
+    **Interaction:** Called by `db_pipeline.py` and `flight_loader.py` to produce
+    kinematic DataFrames. The velocity/acceleration columns feed into
+    `compute_flight_metrics()`. Legacy MoCap path; since 2026-06-10 the default
+    is EKF velocity via `compute_ekf_kinematics()`.
 
     Parameters
     ----------
@@ -365,16 +383,16 @@ def compute_ekf_kinematics(df_odom, df_mocap, target_freq=100.0, window=19, poly
     dropouts, while MoCap provides absolute position fixes that prevent IMU
     integration drift. The result is a velocity estimate that is smooth even
     through Fixed Cage occlusions -- the core advantage over the pure MoCap
-    pipeline in compute_velocity().
+    pipeline in compute_mocap_kinematics().
 
     This function:
     1. Applies NED->ENU coordinate alignment (same convention as db_loader.py).
        PX4 uses NED (x=North, y=East, z=Down). Our ENU convention is
        x=East, y=North, z=Up. For velocity: vx stays, vy flips sign, vz flips sign.
     2. Resamples EKF velocity onto a uniform 100 Hz grid matching the MoCap pipeline,
-       enabling direct column-wise replacement in calculate_metrics().
+       enabling direct column-wise replacement in compute_flight_metrics().
     3. Differentiates EKF velocity to acceleration using the same SG parameters
-       (window=19, polyorder=3, deriv=1) as compute_velocity() for consistency.
+       (window=19, polyorder=3, deriv=1) as compute_mocap_kinematics() for consistency.
 
     Parameters
     ----------
@@ -430,7 +448,7 @@ def compute_ekf_kinematics(df_odom, df_mocap, target_freq=100.0, window=19, poly
     # on sensor fusion health). We resample onto the same 100 Hz uniform
     # grid used by the MoCap pipeline so that EKF and MoCap data share
     # identical time coordinates -- this enables direct column-wise
-    # replacement in calculate_metrics().
+    # replacement in compute_flight_metrics().
     # ==================================================================
     t_start = df_vel['t'].min()
     t_end = df_vel['t'].max()
@@ -473,7 +491,7 @@ def compute_ekf_kinematics(df_odom, df_mocap, target_freq=100.0, window=19, poly
     # clean acceleration without needing the Butterworth filter or ringing
     # removal steps required by the MoCap pipeline. We use the same SG
     # parameters (window=19, polyorder=3, deriv=1) for methodological
-    # consistency with compute_velocity().
+    # consistency with compute_mocap_kinematics().
     # ==================================================================
     median_dt = np.median(np.diff(t_uniform))
     if median_dt is None or np.isnan(median_dt) or median_dt == 0:
@@ -1018,81 +1036,169 @@ def build_events_log(df_mocap, df_bat, arming_time, takeoff_time, disarming_time
     return events_log
 
 def perpendicular_distance(p, p1, p2):
-    """Calculates perpendicular distance from point p to line segment (p1 -> p2).
+    """Perpendicular distance from a point to the infinite line through p1, p2.
 
-    Uses the standard point-to-line distance formula in 2D:
-        distance = |(y2-y1)*x0 - (x2-x1)*y0 + x2*y1 - y2*x1| / sqrt((y2-y1)^2 + (x2-x1)^2)
+    **Formula (Point-to-Line Distance, 2D):**
 
-    This is derived from the determinant form of the 2D cross product:
-    the numerator is |(p2 - p1) x (p - p1)| = |cross product of segment vector
-    and vector from segment start to point|. The denominator is the segment
-    length, normalizing the result to a perpendicular distance.
+      Given point p = (x₀, y₀) and line defined by p₁ = (x₁, y₁), p₂ = (x₂, y₂):
 
-    Note: This computes distance to the infinite LINE through p1 and p2, not
-    the finite segment. Points beyond the segment endpoints return the
-    perpendicular distance to the extended line. For our use case (WP2->WP3
-    sweep path), the drone is always within the segment's longitudinal extent,
-    so the distinction is irrelevant.
+        d = |(y₂ − y₁)·x₀ − (x₂ − x₁)·y₀ + x₂·y₁ − y₂·x₁| / √((y₂ − y₁)² + (x₂ − x₁)²)
+
+    **Derivation:** The numerator is the magnitude of the 2D cross product
+    |(p₂ − p₁) × (p − p₁)| = |(x₂−x₁)(y₀−y₁) − (y₂−y₁)(x₀−x₁)|. The denominator is
+    the segment length ‖p₂ − p₁‖, normalizing to a perpendicular distance.
+
+    **Standard name:** Point-to-line distance (determinant form).
+
+    **Interaction:** Called by `compute_flight_metrics()` for every MoCap sample in the
+    WP2→WP3 transit window. The resulting dᵢ values feed into:
+      - `max_tracking_error`    = max(dᵢ)
+      - `mean_tracking_error`   = mean(dᵢ)
+      - `path_spread_rmsld`     = √(mean(dᵢ²))     [RMSLD]
+      - `recovery_area`         = ∫ d(s) ds         [SIAE, trapezoidal]
+
+    Note: This computes distance to the *infinite* line, not the finite segment.
+    For this experiment, the drone always lies within the WP2→WP3 longitudinal
+    extent, so the distinction is irrelevant.
     """
     x0, y0 = p
     x1, y1 = p1
     x2, y2 = p2
-    # Numerator: 2D cross product magnitude = |(p2-p1) x (p-p1)|
+    # Numerator: 2D cross product magnitude = |(p2−p1) × (p−p1)|
     num = abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1)
-    # Denominator: length of the line segment
+    # Denominator: Euclidean length of the line segment
     den = np.sqrt((y2 - y1)**2 + (x2 - x1)**2)
     return num / den if den > 0 else 0.0
 
-def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, cage_radius, df_imu=None, df_ekf_kin=None):
-    """Computes all key collision and trajectory performance metrics for a single flight.
+def compute_flight_metrics(df_mocap, wp_events, column_x, column_y, column_radius, cage_radius, df_imu=None, df_ekf_kin=None):
+    r"""Computes all key collision and trajectory performance metrics for one flight.
 
-    Metric categories:
-    ==================
+    This is the master metrics aggregation function for the entire experimental
+    pipeline. It is called by `db_pipeline.py` once per flight and its output
+    dict is inserted directly into the SQLite `flights_summary` table by
+    `db_manager.insert_or_replace_flight()`.
 
-    1. GEOMETRIC CLEARANCE (always from MoCap position):
-       - min_dist_center: minimum 2D Euclidean distance from drone to column center
-       - closest_clearance: min_dist_center - column_radius - cage_radius
-         (negative = physical overlap / collision)
+    ────────────────────────────────────────────────────────────────────────────
+    CATEGORY 1 — GEOMETRIC CLEARANCE (always from MoCap position)
+    ────────────────────────────────────────────────────────────────────────────
 
-    2. KINEMATIC (velocity/acceleration, source depends on df_ekf_kin):
-       - avg_speed_wp2_wp3: mean speed during WP2->WP3 transit
-       - impact_speed: speed at closest approach
-       - impact_accel: scalar acceleration at closest approach
-       - before_impact_accel: mean acceleration 200-400ms before closest approach
-         (baseline pre-impact deceleration, isolated from collision impulse)
-       - achieved_impact_angle: angle between collision normal and velocity vector,
-         computed as arccos(dot(r, v) / (|r| * |v|)). Folded to [0, 90] degrees.
+    **Collision distance:**
+      d_centre(t) = √((x(t) − x_col)² + (y(t) − y_col)²)
 
-    3. PATH TRACKING (perpendicular deviation from ideal WP2->WP3 line):
-       - max_tracking_error: maximum perpendicular distance to the ideal path
-       - mean_tracking_error: mean perpendicular distance
-       - path_spread_sdld: standard deviation of lateral deviation (mm)
-         (SDLD = Standard Deviation of Lateral Displacement)
-       - avg_dev_after, max_dev_after: post-impact deviation statistics
-       - recovery_area: trapezoidal integration of deviation vs. along-path
-         distance s (units: mm*m). Sorted by s before integration to ensure
-         monotonic travel direction.
+      d_min  = min_t d_centre(t)                                     [metres]
 
-    4. IMU KINEMATICS (structural response, from df_imu):
-       - Peak: max absolute acceleration/gyro over 400ms contact window
-         [t_impact - 0.05, t_impact + 0.35]
-       - Energy: trapezoidal integration of |accel| and |gyro| over contact window
-         (proxy for total impulse delivered to the airframe)
-       - Settling time: elapsed time from impact until the last sample where
-         accel deviation >= 1.5 m/s^2 or gyro magnitude >= 0.5 rad/s
-       - Vibration spread: standard deviation of IMU axes over post-impact
-         window [t_impact + 0.2, t_impact + 3.0] (first 200ms skipped to
-         isolate the vibration tail from the initial shock spike)
-       - Impact/Regular spread: acceleration std dev over contact window vs.
-         a 1-second pre-impact baseline, normalized by g (9.81 m/s^2)
+    **Obstacle clearance:**
+      c = d_min − r_column − r_cage                                  [metres]
+
+      c < 0  →  physical contact occurred (drone centre entered the
+                sum-of-radii boundary).
+      c > 0  →  near miss (drone passed without touching the column).
+
+    ────────────────────────────────────────────────────────────────────────────
+    CATEGORY 2 — KINEMATICS (velocity/acceleration)
+    ────────────────────────────────────────────────────────────────────────────
+
+    Source: EKF vehicle_odometry when `df_ekf_kin` is provided (default since
+    2026-06-10); MoCap SG-differentiated velocity otherwise (legacy path).
+
+    **Impact speed:**
+      v_impact = ‖v(t_closest)‖ = √(vx² + vy² + vz²)                [m/s]
+
+    **Impact deceleration:**
+      a_impact = a(t_closest)                                        [m/s²]
+      (scalar acceleration at the instant of minimum column clearance)
+
+    **Pre-impact deceleration baseline:**
+      a_before = mean( a(t) )  for t ∈ [t_closest−0.4, t_closest−0.2]   [m/s²]
+
+    **Impact angle** (achieved_impact_angle):
+      Let r = vector from drone to column centre: (x_col − x, y_col − y).
+      Let v = drone velocity vector at reference time: (vx, vy).
+
+        θ = arccos( (r·v) / (‖r‖·‖v‖) )                             [radians]
+        θ_deg = θ × 180/π,  then folded to [0°, 90°]:
+          if θ_deg > 90 → θ_deg ← 180 − θ_deg
+
+      Reference time: `Column Impact` event if detected, otherwise `closest_t`.
+      Physical meaning: 0° = drone flies directly toward column centre (head-on);
+      90° = drone flies tangent to column surface (grazing).
+
+    ────────────────────────────────────────────────────────────────────────────
+    CATEGORY 3 — PATH TRACKING (perpendicular deviation from WP2→WP3 line)
+    ────────────────────────────────────────────────────────────────────────────
+
+    For each MoCap sample in the WP2→WP3 transit window, the perpendicular
+    distance d_i to the commanded straight-line path is computed via
+    `perpendicular_distance()` (point-to-line distance, determinant form).
+
+    **Maximum trajectory deviation:**
+      d_max = max_i d_i                                               [metres]
+      (reported in mm for the master comparison table)
+
+    **Mean trajectory deviation:**
+      d_mean = (1/N) Σ d_i                                            [metres]
+
+    **Path spread — RMSLD (Root Mean Square of Lateral Displacement):**
+      RMSLD = √( (1/N) Σ d_i² )                                       [metres]
+      RMSLD_mm = RMSLD × 1000                                         [mm]
+
+    **Recovery area — SIAE (Spatial Integral of Absolute Error):**
+      Let s = along-path distance parameter: s = (p − WP2)·û
+      where û = (WP3 − WP2) / ‖WP3 − WP2‖ is the unit direction vector.
+
+        SIAE = ∫_{s_start}^{s_end} |d(s)| ds                         [m²]
+
+      Computed by trapezoidal integration (np.trapz) over the recovery
+      segment [t_collision, t_WP3], sorted by s for monotonic integration.
+      Reported in mm·m (×1000). Units reduce to metres after normalisation
+      to waypoint segment length.
+
+    ────────────────────────────────────────────────────────────────────────────
+    CATEGORY 4 — IMU STRUCTURAL RESPONSE
+    ────────────────────────────────────────────────────────────────────────────
+
+    **Contact window:** [t_impact − 0.05, t_impact + 0.35]  (400 ms total)
+
+    **Peak values** (per-axis, over contact window):
+      Accel:  peak_accel_c = max |a_c(t)|                            [m/s²]
+      Gyro:   peak_gyro_c  = max |ω_c(t)|                            [rad/s]
+      for c ∈ {x, y, z}.
+      Z-acceleration has +g (9.81 m/s²) added back to remove gravity
+      compensation, giving total upward acceleration in ENU frame.
+
+    **Integrated energy** (per-axis, over contact window):
+      Energy_accel_c = ∫ |a_c(t)| dt                                  [m/s]
+      Energy_gyro_c  = ∫ |ω_c(t)| dt                                  [rad]
+      using trapezoidal integration (np.trapz). The |·| absolute value
+      prevents positive/negative oscillation from cancelling in the
+      integral, giving total impulse magnitude per channel.
+
+    **Post-impact standard deviation** (imu_std_*):
+      σ_c = std( a_c(t) )  for t ∈ [t_impact+0.2, t_impact+3.0]      [m/s²]
+      σ_gc = std( ω_c(t) ) for t ∈ [t_impact+0.2, t_impact+3.0]      [rad/s]
+      The first 200 ms are skipped to isolate the vibration tail from
+      the initial shock spike. Lower σ values indicate faster vibrational
+      settling after impact.
+
+    **Impact/Regular spread** (per-axis, normalised by g):
+      σ_impact,c  = std( a_c(t) ) / g   over [t_impact−0.05, t_impact+0.35]
+      σ_regular,c = std( a_c(t) ) / g   over [t_impact−1.05, t_impact−0.05]
+      The regular window is a 1 s pre-impact baseline representing normal
+      flight vibration. The ratio σ_impact/σ_regular indicates how many
+      times normal vibration the collision produced.
+
+    **Settling time:**
+      t_settle = max{ t : |a_dev(t)| ≥ 1.5 m/s²  ∨  |ω_mag(t)| ≥ 0.5 rad/s }
+      Elapsed time from impact until the *last* sample exceeding either
+      threshold — the point at which post-impact vibration returns to the
+      nominal flight noise floor.
 
     Parameters
     ----------
     df_ekf_kin : pd.DataFrame or None
         EKF kinematics DataFrame from compute_ekf_kinematics(). When provided,
-        velocity/acceleration values are read from EKF instead of MoCap-derived columns.
-        This eliminates Fixed Cage dropout kinks in velocity and acceleration metrics.
-        Default None = use MoCap-derived velocity (original pipeline behavior).
+        velocity/acceleration columns are replaced with EKF values via np.interp
+        onto the MoCap time grid. Default since 2026-06-10.
     """
     if df_mocap.empty:
         return {
@@ -1146,7 +1252,7 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         if df_sweep.empty:
             df_sweep = df_mocap
     # === RETIRED: MoCap-derived velocity (used when df_ekf_kin=None) ===
-    # Original pipeline: compute_velocity() SG-differentiates MoCap positions.
+    # Original pipeline: compute_mocap_kinematics() SG-differentiates MoCap positions.
     # Works well for Rotating Cage (clean 120 Hz MoCap) but produces
     # dropout kinks for Fixed Cage (as low as ~10 Hz).
 
@@ -1187,20 +1293,31 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
     # ==================================================================
     # PATH TRACKING: Perpendicular deviation from ideal WP2->WP3 line
     # ==================================================================
-    # For each MoCap sample in the WP2->WP3 segment, compute the
-    # perpendicular distance to the ideal straight-line path.
-    # SDLD (Standard Deviation of Lateral Displacement) in mm quantifies
-    # how tightly the drone tracks the commanded trajectory.
+    # For each MoCap sample (x_i, y_i) in the WP2→WP3 transit segment,
+    # compute the perpendicular distance d_i from the point to the
+    # infinite line through WP2 and WP3:
+    #
+    #   d_i = |cross(P2P3_vector, (x_i - x_wp2, y_i - y_wp2))| / |P2P3_vector|
+    #
+    #   RMSLD (Root Mean Square of Lateral Displacement):
+    #     RMSLD = sqrt( (1/N) * Σ(d_i²) )          [metres]
+    #
+    #   Converted to mm for reporting:  RMSLD_mm = RMSLD × 1000
+    #
+    # Unlike maximum deviation (which captures a single extreme point),
+    # RMSLD quantifies how tightly the drone tracks the commanded
+    # straight-line trajectory over the ENTIRE obstacle passage.
     # ==================================================================
     if not df_wp2_wp3.empty:
-        errors = [perpendicular_distance((row['x'], row['y']), wp2_pos, wp3_pos) for _, row in df_wp2_wp3.iterrows()]
-        mean_err = np.mean(errors)
-        max_err = np.max(errors)
-        sdld = np.std(errors) * 1000.0  # mm
+        errors = np.array([perpendicular_distance((row['x'], row['y']), wp2_pos, wp3_pos) for _, row in df_wp2_wp3.iterrows()])
+        mean_err = float(np.mean(errors))
+        max_err = float(np.max(errors))
+        # Root Mean Square of Lateral Displacement (mm)
+        rmsld = float(np.sqrt(np.mean(errors**2)) * 1000.0)
     else:
         mean_err = 0.0
         max_err = 0.0
-        sdld = 0.0
+        rmsld = 0.0
 
     # Calculate speed, accel, and before_impact_accel at closest approach (always available)
     achieved_angle = None
@@ -1439,28 +1556,28 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
             # Minimum 5 samples required for a meaningful std dev estimate.
             df_vib = df_imu[(df_imu['t'] >= t_impact + 0.2) & (df_imu['t'] <= t_impact + 3.0)]
             if not df_vib.empty and len(df_vib) >= 5:
-                imu_metrics['imu_vib_ax'] = float(df_vib['ax'].std())
-                imu_metrics['imu_vib_ay'] = float(df_vib['ay'].std())
-                imu_metrics['imu_vib_az'] = float((df_vib['az'] + 9.81).std())
-                imu_metrics['imu_vib_gx'] = float(df_vib['gx'].std())
-                imu_metrics['imu_vib_gy'] = float(df_vib['gy'].std())
-                imu_metrics['imu_vib_gz'] = float(df_vib['gz'].std())
+                imu_metrics['imu_std_ax'] = float(df_vib['ax'].std())
+                imu_metrics['imu_std_ay'] = float(df_vib['ay'].std())
+                imu_metrics['imu_std_az'] = float((df_vib['az'] + 9.81).std())
+                imu_metrics['imu_std_gx'] = float(df_vib['gx'].std())
+                imu_metrics['imu_std_gy'] = float(df_vib['gy'].std())
+                imu_metrics['imu_std_gz'] = float(df_vib['gz'].std())
             else:
-                imu_metrics['imu_vib_ax'] = 0.0
-                imu_metrics['imu_vib_ay'] = 0.0
-                imu_metrics['imu_vib_az'] = 0.0
-                imu_metrics['imu_vib_gx'] = 0.0
-                imu_metrics['imu_vib_gy'] = 0.0
-                imu_metrics['imu_vib_gz'] = 0.0
+                imu_metrics['imu_std_ax'] = 0.0
+                imu_metrics['imu_std_ay'] = 0.0
+                imu_metrics['imu_std_az'] = 0.0
+                imu_metrics['imu_std_gx'] = 0.0
+                imu_metrics['imu_std_gy'] = 0.0
+                imu_metrics['imu_std_gz'] = 0.0
         else:
             imu_metrics['imu_accel_settling'] = 0.0
             imu_metrics['imu_gyro_settling'] = 0.0
-            imu_metrics['imu_vib_ax'] = 0.0
-            imu_metrics['imu_vib_ay'] = 0.0
-            imu_metrics['imu_vib_az'] = 0.0
-            imu_metrics['imu_vib_gx'] = 0.0
-            imu_metrics['imu_vib_gy'] = 0.0
-            imu_metrics['imu_vib_gz'] = 0.0
+            imu_metrics['imu_std_ax'] = 0.0
+            imu_metrics['imu_std_ay'] = 0.0
+            imu_metrics['imu_std_az'] = 0.0
+            imu_metrics['imu_std_gx'] = 0.0
+            imu_metrics['imu_std_gy'] = 0.0
+            imu_metrics['imu_std_gz'] = 0.0
 
     return {
         'closest_t': closest_t,
@@ -1470,7 +1587,7 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         'max_tracking_error': max_err,
         'mean_tracking_error': mean_err,
         'max_lateral_displacement': max_err,
-        'path_spread_sdld': sdld,
+        'path_spread_rmsld': rmsld,
         'achieved_impact_angle': achieved_angle,
         'impact_speed': impact_speed,
         'impact_accel': impact_accel,
@@ -1498,12 +1615,12 @@ def calculate_metrics(df_mocap, wp_events, column_x, column_y, column_radius, ca
         'imu_gyro_energy_z': imu_metrics['imu_gyro_energy_z'],
         'imu_accel_settling': imu_metrics['imu_accel_settling'],
         'imu_gyro_settling': imu_metrics['imu_gyro_settling'],
-        'imu_vib_ax': imu_metrics.get('imu_vib_ax', 0.0),
-        'imu_vib_ay': imu_metrics.get('imu_vib_ay', 0.0),
-        'imu_vib_az': imu_metrics.get('imu_vib_az', 0.0),
-        'imu_vib_gx': imu_metrics.get('imu_vib_gx', 0.0),
-        'imu_vib_gy': imu_metrics.get('imu_vib_gy', 0.0),
-        'imu_vib_gz': imu_metrics.get('imu_vib_gz', 0.0),
+        'imu_std_ax': imu_metrics.get('imu_std_ax', 0.0),
+        'imu_std_ay': imu_metrics.get('imu_std_ay', 0.0),
+        'imu_std_az': imu_metrics.get('imu_std_az', 0.0),
+        'imu_std_gx': imu_metrics.get('imu_std_gx', 0.0),
+        'imu_std_gy': imu_metrics.get('imu_std_gy', 0.0),
+        'imu_std_gz': imu_metrics.get('imu_std_gz', 0.0),
         
         # New IMU acceleration spread metrics
         'imu_ax_spread_impact': imu_metrics.get('imu_ax_spread_impact'),

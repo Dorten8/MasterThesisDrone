@@ -13,7 +13,7 @@ We are finalizing the post-flight experimental telemetry analysis pipeline. With
 * **How it compares**: Unifies the legend styling across all Chapter 6 scatter charts to ensure cohesive reader parsing.
 
 ### 2. Time-Domain Post-Impact Vibration Spread Metrics
-* **What**: Added 6 new columns to the database schema (`imu_vib_ax/y/z` and `imu_vib_gx/y/z`) to calculate the Standard Deviation of linear acceleration and angular rates over the post-impact window `[t_impact + 0.2, t_impact + 3.0]`.
+* **What**: Added 6 new columns to the database schema (`imu_std_ax/y/z` and `imu_std_gx/y/z`) to calculate the Standard Deviation of linear acceleration and angular rates over the post-impact window `[t_impact + 0.2, t_impact + 3.0]`.
 * **Why**: The Fixed Cage configuration experiences significant stick-slip resonance and mechanical force feedback oscillations while rubbing against the column surface (evidenced by massive Y-axis pitch oscillations). The Rotating Cage decouples these forces, rolling smoothly and returning to a steady flight state immediately. Measuring the standard deviation over the post-impact tail isolates and quantifies this vibration.
 * **How it compares**: Demonstrates a massive, quantifiable vibrational dampening advantage for the Rotating Cage configuration.
 * **Hurdle**: Skipped the first `0.2s` of the impact segment to completely isolate the post-impact structural oscillation tail from the initial massive collision shock peak itself, ensuring we do not skew the vibration spread standard deviation.
@@ -23,9 +23,9 @@ We are finalizing the post-flight experimental telemetry analysis pipeline. With
 ## Technical Overview of Changes
 
 ### 1. Database Schema & Calculations
-* **[db_manager.py](file:///home/dorten/MasterThesisDrone/dev_logs/analysis/database/db_manager.py)**: Added `imu_vib_ax/y/z` and `imu_vib_gx/y/z` to the table creation schema, migration list, and SQLite insertions.
-* **[kin_calculator.py](file:///home/dorten/MasterThesisDrone/dev_logs/analysis/kinematics/kin_calculator.py)**: Added time-domain post-impact standard deviation calculations in `calculate_metrics()`.
-* **[db_pipeline.py](file:///home/dorten/MasterThesisDrone/dev_logs/analysis/database/db_pipeline.py)**: Added `imu_vib_ay` to the cache validation columns list to enable seamless backfilling. Reprocessed and backfilled 170+ flight passes successfully.
+* **[db_manager.py](file:///home/dorten/MasterThesisDrone/dev_logs/analysis/database/db_manager.py)**: Added `imu_std_ax/y/z` and `imu_std_gx/y/z` to the table creation schema, migration list, and SQLite insertions.
+* **[kin_calculator.py](file:///home/dorten/MasterThesisDrone/dev_logs/analysis/kinematics/kin_calculator.py)**: Added time-domain post-impact standard deviation calculations in `compute_flight_metrics()`.
+* **[db_pipeline.py](file:///home/dorten/MasterThesisDrone/dev_logs/analysis/database/db_pipeline.py)**: Added `imu_std_ay` to the cache validation columns list to enable seamless backfilling. Reprocessed and backfilled 170+ flight passes successfully.
 
 ---
 

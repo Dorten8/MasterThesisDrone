@@ -126,8 +126,8 @@ PK: `flight_name` (`flight_YYYYMMDD-HHMM_XXdeg_column_collision_loop_<condition>
 |---|---|---|
 | `imu_accel_settling` | REAL | Time to return to accel baseline after impact (s) |
 | `imu_gyro_settling` | REAL | Time to return to gyro baseline after impact (s) |
-| `imu_vib_ax/ay/az` | REAL | Pre-impact accel std dev (g) |
-| `imu_vib_gx/gy/gz` | REAL | Pre-impact angular velocity std dev (rad/s) |
+| `imu_std_ax/ay/az` | REAL | Pre-impact accel std dev (g) |
+| `imu_std_gx/gy/gz` | REAL | Pre-impact angular velocity std dev (rad/s) |
 
 #### IMU — Acceleration Spread
 | Column | Type | Meaning |
@@ -163,7 +163,7 @@ PK: `flight_name` (`flight_YYYYMMDD-HHMM_XXdeg_column_collision_loop_<condition>
 | `active_flight_time_sec` | REAL | Takeoff→disarm duration (s) |
 | `voltage_drop_rate_v_per_min` | REAL | Flight-level V/min |
 | `capacity_drain_rate_pct_per_min` | REAL | Flight-level %/min |
-| `path_spread_sdld` | REAL | Std dev of lateral displacement (mm) |
+| `path_spread_rmsld` | REAL | Std dev of lateral displacement (mm) |
 
 #### Experiment Timing (2026-06-10)
 | Column | Type | Source | Meaning |
@@ -512,7 +512,7 @@ This section documents every mathematical technique, algorithm, and signal-proce
 - **Resample to 100 Hz** via `interp1d(kind='linear')` onto MoCap-aligned time grid
 - **Speed:** `sqrt(vx² + vy² + vz²)`
 - **Acceleration:** SG `deriv=1` on velocity (same window=19, polyorder=3 as MoCap pipeline), fallback `np.gradient`
-- **Override in metrics:** When `df_ekf_kin` is provided to `calculate_metrics()`, all velocity/accel columns in `df_mocap` are replaced with EKF values via `np.interp` onto MoCap time grid before metric extraction
+- **Override in metrics:** When `df_ekf_kin` is provided to `compute_flight_metrics()`, all velocity/accel columns in `df_mocap` are replaced with EKF values via `np.interp` onto MoCap time grid before metric extraction
 
 ### 9.2 Waypoint Detection & Column Impact Timing
 
@@ -572,7 +572,7 @@ This section documents every mathematical technique, algorithm, and signal-proce
 **How:**
 - Point-to-line distance formula: `|(y₂−y₁)x₀ − (x₂−x₁)y₀ + x₂y₁ − y₂x₁| / √((y₂−y₁)² + (x₂−x₁)²)`
 - Applied to every MoCap sample in the sweep window
-- **Metrics:** Mean error (accuracy), Max error (worst excursion), Std Dev × 1000 = `path_spread_sdld` (mm)
+- **Metrics:** Mean error (accuracy), Max error (worst excursion), Std Dev × 1000 = `path_spread_rmsld` (mm)
 
 #### 9.3.3 Recovery Area (`kin_calculator.py:846–875`)
 **What:** Integrated spatial error envelope after collision, measuring how much the drone deviates from the nominal path.
@@ -803,7 +803,7 @@ This section documents every mathematical technique, algorithm, and signal-proce
 **§4 table** updated: velocity 0–0.85, accel ±8. **§5 item 10** updated. **§5 item 11** marked retired in notebook. **§8 table** updated.*
 
 ### EKF Pipeline Integration Verified & Complete
-*[2026-06-11] Audit confirmed EKF fully wired: `db_pipeline.py` → `compute_ekf_kinematics()` → `calculate_metrics()` with column override. Database repopulated 2026-06-10. DB columns `impact_speed`, `impact_accel`, `before_impact_accel` are EKF-derived. Status flag in copilot-instructions.md updated from "not yet in pipeline" to "fully integrated ✅".
+*[2026-06-11] Audit confirmed EKF fully wired: `db_pipeline.py` → `compute_ekf_kinematics()` → `compute_flight_metrics()` with column override. Database repopulated 2026-06-10. DB columns `impact_speed`, `impact_accel`, `before_impact_accel` are EKF-derived. Status flag in copilot-instructions.md updated from "not yet in pipeline" to "fully integrated ✅".
 **Copilot-instructions.md:** stale "not yet in pipeline" text replaced.
 **Skill file §4, §5.4:** Already correct — EKF listed as active standard.
 **Walkthrough:** M3-M5 marked done.
@@ -834,14 +834,14 @@ This section documents every mathematical technique, algorithm, and signal-proce
 **Pipeline stages:** Raw MoCap (irregular 10–120 Hz) → linear interpolation to 100 Hz (creates C⁰ kinks) → SG deriv=1 (amplifies kinks) → 4 Hz Butterworth (blurs collision) → surgical ringing removal (creates new boundary kinks).
 **Remaining on disk:** `prefilter_position_fc=None` parameter (harmless, defaults off), commented-out pre-filter block, `_prefilter_fc` column (=0.0), notebook reverted to Rotating example, filter info box reverted.
 **Unimplemented approaches:** Time-domain dropout detection, Kalman smoother with constant-acceleration model, Total Variation Regularization (L1 on acceleration changes).
-**Where:** `kin_calculator.py` `compute_velocity()`, interactive notebook cell, `kin_plot_kinematics.py` filter info box.*
+**Where:** `kin_calculator.py` `compute_mocap_kinematics()`, interactive notebook cell, `kin_plot_kinematics.py` filter info box.*
 
 ### EKF Velocity & Battery Truncation
 *[2026-06-09] Two changes:*
-**Change 1 — EKF Velocity:** Added `compute_ekf_kinematics(df_odom, df_mocap)` to `kin_calculator.py` (100 Hz resample, NED→ENU, speed + SG accel). Modified `calculate_metrics()` with optional `df_ekf_kin` param. Wired into both pipeline sections. Old MoCap path commented with `=== RETIRED: MoCap Velocity ===`.
+**Change 1 — EKF Velocity:** Added `compute_ekf_kinematics(df_odom, df_mocap)` to `kin_calculator.py` (100 Hz resample, NED→ENU, speed + SG accel). Modified `compute_flight_metrics()` with optional `df_ekf_kin` param. Wired into both pipeline sections. Old MoCap path commented with `=== RETIRED: MoCap Velocity ===`.
 **Change 2 — Battery Window:** Changed window from `arming→disarming` to `takeoff→disarming` in both pipeline sections. Old code commented with `=== RETIRED: arming_time window ===`. Fixes artificially low drain rates from ground idle.
 **Verify:** Pipeline output shows EKF kinematics sample count. EKF `impact_accel` lower for Fixed Cage. Battery drain rates higher for flights with long ground idle.
-**Where:** `kin_calculator.py` (new `compute_ekf_kinematics()`, modified `calculate_metrics()`), `db_pipeline.py`.*
+**Where:** `kin_calculator.py` (new `compute_ekf_kinematics()`, modified `compute_flight_metrics()`), `db_pipeline.py`.*
 
 ### Battery, Deceleration & Structural Dynamics
 *[2026-06-08] Added `set_ylim(0,6)` / `set_yticks(range(0,7))` to both deceleration plots — Cell 23 (split, shared Y) and Cell 24 (global). Suppresses ~9.8 outlier.

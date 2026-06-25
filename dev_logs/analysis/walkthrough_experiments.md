@@ -105,7 +105,7 @@ DONE
 <details>
 <summary><code>- [x] **Filter Out Below 30 Hz Data Points for Velocity and Tangential Accel**</code></summary>
 
-  * **Location:** `kin_calculator.py` → `compute_velocity` + `resample_and_interpolate_mocap`
+  * **Location:** `kin_calculator.py` → `compute_mocap_kinematics` + `resample_and_interpolate_mocap`
   * **Action:** Eliminate derivative spikes caused by MoCap dropouts in the splined kinematic profiles while keeping curves fully connected.
   * *_Log of Attempts:_*
     * *Attempt 1 — Linear Repair (Reverted): Linearly connected positions across gaps → SG filter produced severe ringing spikes at corners.*
@@ -197,7 +197,7 @@ This section mirrors the aggregate notebook cells, starting from theoretical gui
     * *The straight-line repair code was written under `if not resample`, meaning it only ran for the raw MoCap profile. The splined profile (`<Rotating Cage (Splined)>`) skipped it and used the default `np.interp` (linear interpolation).*
     * *Why linear interpolation still causes derivative spikes: Even though the positions across the dropout are a straight line, the boundaries where the real flight path meets the straight line form "corners" (discontinuities in the first derivative/velocity). The Savitzky-Golay filter (window size 19, or ~190ms) fits a polynomial to this corner, causing it to "ring" and overshoot. This ringing leaks into the healthy data up to 10 samples (~100ms) before and after the gap.*
     * *Proposed Implementation:*
-      1. *Apply the repair to BOTH paths (inside `compute_velocity` and `resample_and_interpolate_mocap`).*
+      1. *Apply the repair to BOTH paths (inside `compute_mocap_kinematics` and `resample_and_interpolate_mocap`).*
       2. *Instead of linear interpolation (`np.interp`), we will use a shape-preserving Hermite spline (PCHIP) or Cubic Spline to interpolate the dropout gaps. This guarantees that the velocity is smooth ($C^1$ continuous) at the boundary points, preventing the Savitzky-Golay filter from ringing.*
       3. *When masking the dropout region with NaNs, we will expand the mask window by 10 points (half the Savitzky-Golay window size) on each side to completely hide any numerical edge artifacts from the plots.*
 
@@ -438,9 +438,9 @@ This section mirrors the aggregate notebook cells, starting from theoretical gui
 
 ## 🔧 EKF Velocity Integration — Replace MoCap-Derived Velocity with PX4 EKF Velocity
 
-The EKF velocity (`/fmu/out/vehicle_odometry.velocity[]`) was validated on 2026-06-08 as inherently smooth even during Fixed Cage MoCap dropouts. The goal is to integrate it as a plug-in replacement for MoCap-derived velocity/acceleration in `calculate_metrics()`.
+The EKF velocity (`/fmu/out/vehicle_odometry.velocity[]`) was validated on 2026-06-08 as inherently smooth even during Fixed Cage MoCap dropouts. The goal is to integrate it as a plug-in replacement for MoCap-derived velocity/acceleration in `compute_flight_metrics()`.
 
-> **2026-06-11 AUDIT:** The code IS fully wired: `db_pipeline.py` calls `compute_ekf_kinematics()`, passes `df_ekf_kin` to `calculate_metrics()`, which overrides MoCap velocity/accel columns with EKF data. The database was **re-populated with EKF-derived metrics** on 2026-06-10 (17:48-18:31). The `impact_speed`, `impact_accel`, `before_impact_accel` columns in `flights_summary` ARE EKF-derived.
+> **2026-06-11 AUDIT:** The code IS fully wired: `db_pipeline.py` calls `compute_ekf_kinematics()`, passes `df_ekf_kin` to `compute_flight_metrics()`, which overrides MoCap velocity/accel columns with EKF data. The database was **re-populated with EKF-derived metrics** on 2026-06-10 (17:48-18:31). The `impact_speed`, `impact_accel`, `before_impact_accel` columns in `flights_summary` ARE EKF-derived.
 >
 > **What's NOT done:** The summary notebook (`experiments_analysis_summary.ipynb`) hasn't been re-run since the EKF repopulation. All comparative plots still show old MoCap data. The copilot-instructions.md status section is stale on this point.
 
@@ -450,14 +450,14 @@ The EKF velocity (`/fmu/out/vehicle_odometry.velocity[]`) was validated on 2026-
 * ✅ Implemented and wired into `db_pipeline.py` on 2026-06-08.
 * EKF velocity from `/fmu/out/vehicle_odometry.velocity[]` is inherently smooth even during Fixed Cage MoCap dropouts.
 * Coordinate alignment applied: `vx_ekf = vx_ekf_raw`, `vy_ekf = -vy_ekf_raw`, `vz_ekf = -vz_ekf_raw`.
-* `calculate_metrics()` accepts optional `df_ekf_kin=None` parameter — fully backward compatible.
+* `compute_flight_metrics()` accepts optional `df_ekf_kin=None` parameter — fully backward compatible.
 
 </details>
 
 <details>
 <summary><code>- [x] **Wire EKF kinematics into `db_pipeline.py`**</code></summary>
 
-* ✅ Done. Both pipeline paths pass `df_ekf_kin=df_ekf_kin` to `calculate_metrics()`.
+* ✅ Done. Both pipeline paths pass `df_ekf_kin=df_ekf_kin` to `compute_flight_metrics()`.
 
 </details>
 
@@ -657,7 +657,7 @@ Expected: all 4 columns present, `timestamp_db` and `e_sp_timestamp_PX4` fully p
 <summary><code>- [ ] **Investigate 2000 RPM command speed outliers**</code> — diagnosed (2026-06-09)</summary>
 
 * **Investigation:** The outliers at 2000 RPM (idle speed) in `IMU Peak Acceleration Z vs Commanded Motor Speed` likely come from collision detection picking up pre-takeoff or post-landing states where motors are at idle but no actual flight/impact occurred.
-* **Likely cause:** `impact_detected = 1` is triggered by `closest_clearance < 0.0` (column proximity detection in `calculate_metrics()`). If the drone is on the ground near the column during pre-flight checks, this can fire with idle motors.
+* **Likely cause:** `impact_detected = 1` is triggered by `closest_clearance < 0.0` (column proximity detection in `compute_flight_metrics()`). If the drone is on the ground near the column during pre-flight checks, this can fire with idle motors.
 * **Suggested fix (in notebook/data loading):** Filter `flights_summary` with `WHERE motor_avg_before > 5000` or `WHERE active_flight_time_sec > 5` to exclude ground-idle false positives. This can be done in the notebook cell without modifying the pipeline.
 * **Location in notebook:** `experiments_analysis_summary.ipynb` → `IMU Peak Acceleration Z vs Commanded Motor Speed (RPM)` (Line 1927)
 
@@ -720,7 +720,7 @@ PCA would create principal components that are linear combinations of features, 
 
 **Excluded from defaults:**
 - Motor metrics (`motor_thrust_surge`, etc.) — secondary to the core impact/recovery/IMU story
-- `path_spread_sdld` — trajectory spread is more about flight-to-flight consistency than individual flight character
+- `path_spread_rmsld` — trajectory spread is more about flight-to-flight consistency than individual flight character
 - `imu_peak_gyro` — redundant with `imu_gyro_energy` (energy already captures rotational shock magnitude)
 - Battery columns — only 118/157 rows populated (many NULLs), would shrink usable categories
 - Per-axis IMU components — magnitudes capture the signal; X/Y/Z breakdown is redundant

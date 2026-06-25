@@ -13,7 +13,7 @@ if analysis_dir not in sys.path:
 
 from graphics import generate_trajectory_tikz
 from dev_logs.analysis.database.db_loader import load_drone_metadata, load_mcap, build_dataframes
-from dev_logs.analysis.kinematics.kin_calculator import compute_velocity, find_waypoint_events, calculate_metrics
+from dev_logs.analysis.kinematics.kin_calculator import compute_mocap_kinematics, find_waypoint_events, compute_flight_metrics
 
 # Define which experiment and flight path you want to build the LaTeX figure for
 TIKZ_FLIGHT_NAME = "flight_20260526-0931_75°_column_collision_loop_rotating_cage"
@@ -36,7 +36,7 @@ column_radius = column_diameter / 2.0
 
 topic_data, bag_start_ns = load_mcap(tikz_flight_path)
 dfs = build_dataframes(topic_data, drone_tracker_name, bag_start_ns)
-df_mocap = compute_velocity(dfs['mocap'])
+df_mocap = compute_mocap_kinematics(dfs['mocap'])
 
 takeoff_mask = df_mocap['z'] > 0.15
 takeoff_time = df_mocap.loc[takeoff_mask, 't'].iloc[0] if takeoff_mask.any() else dfs['arming_time'] + 2.0
@@ -49,7 +49,7 @@ wp_events = find_waypoint_events(
     return_all=True, dynamic_waypoints=dynamic_waypoints
 )[0]
 
-metrics = calculate_metrics(df_mocap, wp_events, 0.408, 0.358, column_radius, cage_radius)
+metrics = compute_flight_metrics(df_mocap, wp_events, 0.408, 0.358, column_radius, cage_radius)
 
 # Extract sweep segment
 t_start = wp_events.get('WP1', df_mocap['t'].iloc[0])

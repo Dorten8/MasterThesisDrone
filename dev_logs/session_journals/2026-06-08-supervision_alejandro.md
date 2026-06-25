@@ -117,7 +117,7 @@ The headline deceleration metric (24.1% improvement) depends on MoCap accelerati
 
 ### ⏳ Not Done Yet
 - EKF velocity is **not yet integrated** into the main comparison pipeline (only viewable in the new notebook cells)
-- `calculate_metrics()` still uses MoCap-derived `speed` and `accel` — EKF could replace these
+- `compute_flight_metrics()` still uses MoCap-derived `speed` and `accel` — EKF could replace these
 - The dual EKF comparison plot is candidate thesis figure material for the "Methodology" or "Data Quality" section
 - Deceleration-vs-battery plots still use MoCap-derived `impact_accel`
 
@@ -130,7 +130,7 @@ The headline deceleration metric (24.1% improvement) depends on MoCap accelerati
 
 ## Next Steps
 
-1. (Optional) Integrate EKF velocity into the main pipeline — replace MoCap-derived `speed` and `accel` in `calculate_metrics()` with EKF equivalents, or provide a configurable switch
+1. (Optional) Integrate EKF velocity into the main pipeline — replace MoCap-derived `speed` and `accel` in `compute_flight_metrics()` with EKF equivalents, or provide a configurable switch
 2. Generate the dual EKF comparison figure as a thesis-ready graphic for the methodology section
 3. Re-run the deceleration-vs-battery plots using EKF-based acceleration to see if the 24.1% improvement changes (likely strengthens)
 4. Update the [experiments_analysis_skill.md](dev_logs/analysis/experiments_analysis_skill.md) with the EKF velocity solution for posterity

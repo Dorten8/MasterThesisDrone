@@ -39,7 +39,7 @@ from dev_logs.analysis.database.db_loader import (
     load_drone_metadata,
 )
 from dev_logs.analysis.kinematics.kin_calculator import (
-    compute_velocity,
+    compute_mocap_kinematics,
     find_waypoint_events,
     build_events_log,
 )
@@ -87,7 +87,7 @@ def load_flight_data(flight_folder, pass_name, project_root=None,
     project_root : str or None
         Auto-resolved from this file's location if None.
     window, polyorder : int
-        Savitzky-Golay parameters passed to :func:`compute_velocity`.
+        Savitzky-Golay parameters passed to :func:`compute_mocap_kinematics`.
 
     Returns
     -------
@@ -136,9 +136,9 @@ def load_flight_data(flight_folder, pass_name, project_root=None,
 
     # ── Velocity ──
     print(f"⚙️  Computing kinematics (window={window}, polyorder={polyorder}) …")
-    df_mocap_raw     = compute_velocity(df_mocap.copy(), window=window,
+    df_mocap_raw     = compute_mocap_kinematics(df_mocap.copy(), window=window,
                                         polyorder=polyorder, resample=False)
-    df_mocap_splined = compute_velocity(df_mocap,         window=window,
+    df_mocap_splined = compute_mocap_kinematics(df_mocap,         window=window,
                                         polyorder=polyorder, resample=True)
 
     # ── Column position (dynamic or fallback) ──

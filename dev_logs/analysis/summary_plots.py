@@ -1502,12 +1502,12 @@ def plot_2d_path_overlay(cache_path=None, output_path=None, show_plot=True):
 
 def plot_attitude_shock_phase_portrait(df_impacts, output_path=None,
                                         show_plot=True):
-    """1×2: (A) Phase portrait, (B) Boxplot imu_vib_ay.
+    """1×2: (A) Phase portrait, (B) Boxplot imu_std_ay.
 
     Parameters
     ----------
     df_impacts : pd.DataFrame
-        Needs: condition, imu_peak_accel, imu_gyro_energy, imu_vib_ay.
+        Needs: condition, imu_peak_accel, imu_gyro_energy, imu_std_ay.
     """
     colors = [C_ROT, C_FIX]
     fig = plt.figure(figsize=(14, 5.5), dpi=150)
@@ -1526,7 +1526,7 @@ def plot_attitude_shock_phase_portrait(df_impacts, output_path=None,
 
     # Panel B
     ax2 = fig.add_subplot(122)
-    bd = [df_impacts[df_impacts['condition'] == n]['imu_vib_ay'].dropna()
+    bd = [df_impacts[df_impacts['condition'] == n]['imu_std_ay'].dropna()
           for n in ['Rotating Cage', 'Fixed Cage']]
     bp = ax2.boxplot(bd, tick_labels=['Rotating Cage', 'Fixed Cage'],
                      patch_artist=True, widths=0.4)

@@ -1,19 +1,25 @@
 \clearpage
 \section{Related Work}
 
-\subsection{The Autonomy Bottleneck and Navigation by Contact}
+\subsection{Commercial Drone Inspection}
+
+The demand for confined-space inspection has driven commercial development, most notably the Flyability Elios series~\cite{briod2014collision}. These platforms utilize a decoupled, freely rotating protective cage that allows the vehicle to safely roll along walls. While highly effective operationally, peer-reviewed empirical data quantifying the exact vibration and kinematic advantages of this specific rotating mechanism over a rigid cage remains sparse in the open literature.
+
+\subsection{Navigation by Contact and Tactile SLAM}
 
 In highly cluttered or signal-denied environments, traditional collision-avoidance algorithms demand significant computational overhead and rely on heavy optical or LiDAR sensors that frequently fail in feature-poor spaces. While Simultaneous Localization and Mapping (SLAM) remains an active research frontier, reliably deploying it on small, payload-constrained drones in unstructured environments remains an open challenge~\cite{macariorojas2021}. Even state-of-the-art autonomous ground vehicles equipped with expensive sensors and substantial compute have not fully solved reliable real-time navigation in arbitrary environments; the task is substantially harder for a small aerial vehicle.
 
 The constraint of navigating these spaces safely motivates a fundamentally different approach. Mulgaonkar et al.~\cite{mulgaonkarRobustAerialRobot2018} demonstrated that swarms of 25\,g micro-drones could navigate blind environments by intentionally colliding with obstacles and recovering from the impact, rather than detecting and avoiding them. This inverts the traditional SLAM paradigm: instead of building a map to avoid obstacles, the environment is explored through physical contact.
 
-\subsection{Collision-Resilient Designs: Compliance vs.\ Deflection}
+Furthermore, the ability to estimate contact state and impact forces using onboard odometry is increasingly relevant in the domain of aerial physical interaction and manipulation, where Reinforcement Learning (RL) policies require accurate force-feedback estimates to apply deliberate pressure to surfaces~\cite{RL_manipulation_placeholder}. % TODO: User to insert RL manipulation citation
+
+\subsection{Collision-Resilient Drone Designs}
 
 Scaling this collision-resilience concept from 25\,g disposable swarms to a platform capable of carrying inspection sensors and a companion computer introduces a size-dependent penalty. At the 4-inch propeller class, the ratio of inertia to structural strength decreases, and obstacles that a micro-drone's simple tube cage could deflect become proportionally larger relative to the airframe. The protective cage must shield the propellers and fuselage from corners, shelves, and continuous piping---geometries that a minimal cage cannot deflect.
 
 To manage this kinetic penalty, a significant portion of the literature has focused on energy absorption through structural compliance, utilising tensegrity structures~\cite{zhaDesignControlCollisionresilient2023}, arthropod-inspired elastic exoskeletons~\cite{azambujaWhenBeingSoft2022}, and shape-memory origami guards~\cite{parkOrigamiKirigamiStructure2023}. However, these compliant designs often introduce aerodynamic instability or scale poorly to standard industrial inspection platforms.
 
-A more mechanically straightforward approach involves rigid, protective cages that physically decouple the drone's attitude from the collision surface. Mahmud~\cite{mahmudDevelopmentCollisionResilient2021} evaluated different rigid geometries for cluttered environments, specifically comparing a freely rotating spherical gimbal against a mono-monostatic (G\"omb\"oc) shell~\cite{Gomboc2026}. The G\"omb\"oc (turtle-like) shape is stably upright in only one orientation; when inverted, its elevated center of gravity makes it unstable, allowing it to passively self-right on the ground. Mahmud concluded this form was superior for post-crash recovery, noting a complementary use case for inspecting stainless steel tanks where a drone could leverage its low center of gravity to self-stabilise through narrow manhole exits.
+A more mechanically straightforward approach involves rigid, protective cages that physically decouple the drone's attitude from the collision surface. Mahmud~\cite{mahmudDevelopmentCollisionResilient2021} evaluated different rigid geometries for cluttered environments, specifically comparing a freely rotating spherical gimbal against a mono-monostatic (G\"omb\"oc) shell~\cite{domokos2006gomboc}. The G\"omb\"oc (turtle-like) shape is stably upright in only one orientation; when inverted, its elevated center of gravity makes it unstable, allowing it to passively self-right on the ground. Mahmud concluded this form was superior for post-crash recovery, noting a complementary use case for inspecting stainless steel tanks where a drone could leverage its low center of gravity to self-stabilise through narrow manhole exits.
 
 However, freely rotating spherical cages provide a distinct kinematic advantage during the \emph{airborne} impact itself: they convert linear collision momentum into rotational energy. This mechanism allows the cage to roll along a surface rather than scrape, mitigating the aggressive stick-slip friction dynamics that typically destabilise a drone's flight controller during sustained contact. This principle of kinetic impact deflection forms the mechanical baseline investigated in this thesis.
 

@@ -89,8 +89,8 @@ def extract_and_cache_imu():
             col_x, col_y = (df_column['x'].head(50).mean(), df_column['y'].head(50).mean()) \
                 if (not df_column.empty) else (0.408, 0.358)
 
-            from dev_logs.analysis.kinematics.kin_calculator import find_waypoint_events, compute_velocity
-            df_mocap = compute_velocity(df_mocap, resample=True)
+            from dev_logs.analysis.kinematics.kin_calculator import find_waypoint_events, compute_mocap_kinematics
+            df_mocap = compute_mocap_kinematics(df_mocap, resample=True)
             
             wp_events_list = find_waypoint_events(
                 df_mocap, df_setpoint, takeoff_time, label=pass_name,

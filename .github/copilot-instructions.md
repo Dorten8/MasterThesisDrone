@@ -107,9 +107,18 @@ These links represent the different dimensions of the project. Reference them wh
 - **Coordinate Frames**: PX4 strictly requires NED (+X physical front, +Z physical down). The Motive Rigid Body pivot must be manually aligned so its internal X-axis points out the physical nose of the drone.
 - **Visualization:** Foxglove bridge runs on Pi port 8765 for real-time browser viewing on laptop.
 
-## Current Session Status (Last Update: 2026-06-10 ~20:45 Local Time)
+## Current Session Status (Last Update: 2026-06-25 ~22:00 Local Time)
 
-### 🎯 Mission Status
+### 🎯 Mission Status — **THESIS HAND-IN IMMINENT**
+- **Comprehensive codebase refactor:** ✅ DONE (2026-06-25).
+  - `compute_velocity()` → `compute_mocap_kinematics()` — now clearly distinct from `compute_ekf_kinematics()`.
+  - `calculate_metrics()` → `compute_flight_metrics()` — renamed for clarity.
+  - `imu_vib_*` → `imu_std_*` — cols renamed to reflect they store σ (standard deviation), not "vibration".
+  - **RMSLD bug fixed:** `path_spread_sdld` (was `np.std(errors)`) → `path_spread_rmsld` (now `np.sqrt(np.mean(errors²))`), matching the thesis equation.
+  - All docstrings rewritten with formal mathetical notation, standard names, and file:function references.
+  - DB migration added for column renames (no data loss).
+  - **Math appendix** (`thesis/Sections/Math.tex`) written — every formula catalogued with file paths.
+- **Thesis manuscript:** 88 pages, compiles. ~20 overfull hboxes + 4 float-too-large warnings remain.
 - **Diagram pipeline transitioned to vector PDFs:** ✅ DONE.
   - `.mmd` is now the standard diagram source format (pure Mermaid syntax, no markdown fences).
   - `plot_diagrams.sh` rewritten as a universal `*.mmd` → `../Figures/*.pdf` batch renderer.
@@ -165,7 +174,7 @@ These links represent the different dimensions of the project. Reference them wh
 - **Bagfile size checks:** Flight bags should be sanity checked after recording to avoid MCAP indexing/header corruption.
 - **Heavy drone inertia:** The heavy 1.2kg 4-inch quadcopter has high linear inertia; keeping transit speeds at `0.30 m/s - 0.35 m/s` near geofence boundaries is mandatory.
 - **MicroXRCEAgent Stale Connection:** Do not kill the agent once it connects; doing so freezes the Flight Controller and requires a battery reboot.
-- **EKF velocity fully integrated** ✅ — `db_pipeline.py` calls `compute_ekf_kinematics()`, pipes EKF data into `calculate_metrics()`, which overrides MoCap columns. Database was repopulated with EKF-derived metrics on 2026-06-10 (179 passes). `impact_speed`, `impact_accel`, `before_impact_accel` in `flights_summary` are all EKF-based. Summary notebook re-run pending to refresh comparative plots.
+- **EKF velocity fully integrated** ✅ — `db_pipeline.py` calls `compute_ekf_kinematics()`, pipes EKF data into `compute_flight_metrics()`, which overrides MoCap columns. Database was repopulated with EKF-derived metrics on 2026-06-10 (179 passes). `impact_speed`, `impact_accel`, `before_impact_accel` in `flights_summary` are all EKF-based. Summary notebook re-run pending to refresh comparative plots.
 - **IMU-Angle EDA discovery (NEW)**: Peak Gyro Y correlates with `impact_angle` at r = −0.84 (Fixed Cage, N=70). All top-10 features are negative. This is thesis-worthy material and ML modeling is next.
 
 ### ✅ Completed This Session (2026-06-04)
@@ -193,15 +202,11 @@ These links represent the different dimensions of the project. Reference them wh
 - **Hurdle solved**: Used `importlib` to import `db_manager.py` directly and bypass the MCAP-heavy `database/__init__.py` dependency chain
 - **User reaction**: "OMG this is some seriously fucking good data"
 
-### 📋 Next Priority Order
-0. **[HIGHEST] EKF velocity integration into main pipeline** — Replace MoCap-derived `speed`/`accel` in `calculate_metrics()` with EKF equivalents, re-run deceleration-vs-battery plots, generate thesis-ready dual EKF comparison figure.
-1. **[HIGHEST] ML Modeling for Angle Prediction** — Build Huber linear regression model on top-10 IMU features predicting `impact_angle`. Use Fixed Cage data (70 flights). Cross-validate with leave-one-flight-out. Check multicollinearity first.
-2. **[NEXT] Rotating Cage EDA comparison** — Repeat correlation analysis on Rotating Cage data; compare coefficient signs/magnitudes vs Fixed Cage findings.
-3. **Investigate Control Allocator Saturation**: Resolve why `allocator_saturation_duration_sec` is empty/zero for 177 flights. Verify active motor limit hits and alternate instances of `actuator_outputs` or `actuator_motors`.
-4. **Phase 6 - Motor Analysis**: Generate Plot 1, Plot 2, Plot 17, and Plot 18 comparative figures.
-5. **Phase 2 & 3 - Plot Polish**: Resolve Plot 16 Y-axis name, convert Plot 12 to 2-panels with mathematical descriptions, and implement the nominal vs. actual polar wedge geometry visualization.
-6. **Phase 4 - Trajectory Path Spread**: Implement SDLD calculations to quantify path spread.
-7. **Manuscript Sync**: Push updated figures and tables to the Overleaf thesis document.
+### 📋 Next Priority Order (Thesis Hand-in — 2026-06-25)
+0. **[URGENT] Fix LaTeX compilation warnings** — 4 float-too-large, ~20 overfull hboxes, headheight warning
+1. **[URGENT] Final thesis polish** — cross-ref check, figure caption consistency, acronym audit
+2. **[URGENT] Fix the bowden2001friction citation** — still a TODO marker in Discussion.tex (line 15)
+3. **Render final PDF and hand in**
 
 
 ## Tutoring Mode: Socratic Learning Style (Default)

@@ -82,9 +82,9 @@ IMU_COLS = [
     # Integrated gyro energy (per-axis)
     'imu_gyro_energy_x', 'imu_gyro_energy_y', 'imu_gyro_energy_z',
     # Vibration amplitude (accel axes)
-    'imu_vib_ax', 'imu_vib_ay', 'imu_vib_az',
+    'imu_std_ax', 'imu_std_ay', 'imu_std_az',
     # Vibration amplitude (gyro axes)
-    'imu_vib_gx', 'imu_vib_gy', 'imu_vib_gz',
+    'imu_std_gx', 'imu_std_gy', 'imu_std_gz',
     # Settling times
     'imu_accel_settling', 'imu_gyro_settling',
     # Vibration spread during impact window
@@ -107,12 +107,12 @@ DISPLAY_NAMES = {
     'imu_gyro_energy_x': 'Gyro Energy X',
     'imu_gyro_energy_y': 'Gyro Energy Y',
     'imu_gyro_energy_z': 'Gyro Energy Z',
-    'imu_vib_ax': 'Vibration Accel X',
-    'imu_vib_ay': 'Vibration Accel Y',
-    'imu_vib_az': 'Vibration Accel Z',
-    'imu_vib_gx': 'Vibration Gyro X',
-    'imu_vib_gy': 'Vibration Gyro Y',
-    'imu_vib_gz': 'Vibration Gyro Z',
+    'imu_std_ax': 'Std Dev Accel X',
+    'imu_std_ay': 'Std Dev Accel Y',
+    'imu_std_az': 'Std Dev Accel Z',
+    'imu_std_gx': 'Std Dev Gyro X',
+    'imu_std_gy': 'Std Dev Gyro Y',
+    'imu_std_gz': 'Std Dev Gyro Z',
     'imu_accel_settling': 'Accel Settling Time',
     'imu_gyro_settling': 'Gyro Settling Time',
     'imu_ax_spread_impact': 'Accel Spread (Impact) X',
@@ -123,14 +123,14 @@ DISPLAY_NAMES = {
     'imu_az_spread_regular': 'Accel Spread (Regular) Z',
 }
 
-# Which group each feature belongs to (for heatmap coloring)
+# Which group each feature belongs to (for heatmap sidebar coloring)
 FEATURE_GROUPS = {
     'imu_peak_accel_x': 'Peak Accel', 'imu_peak_accel_y': 'Peak Accel', 'imu_peak_accel_z': 'Peak Accel',
     'imu_peak_gyro_x': 'Peak Gyro', 'imu_peak_gyro_y': 'Peak Gyro', 'imu_peak_gyro_z': 'Peak Gyro',
     'imu_accel_energy_x': 'Accel Energy', 'imu_accel_energy_y': 'Accel Energy', 'imu_accel_energy_z': 'Accel Energy',
     'imu_gyro_energy_x': 'Gyro Energy', 'imu_gyro_energy_y': 'Gyro Energy', 'imu_gyro_energy_z': 'Gyro Energy',
-    'imu_vib_ax': 'Vibration Accel', 'imu_vib_ay': 'Vibration Accel', 'imu_vib_az': 'Vibration Accel',
-    'imu_vib_gx': 'Vibration Gyro', 'imu_vib_gy': 'Vibration Gyro', 'imu_vib_gz': 'Vibration Gyro',
+    'imu_std_ax': 'Post-Impact Std Dev', 'imu_std_ay': 'Post-Impact Std Dev', 'imu_std_az': 'Post-Impact Std Dev',
+    'imu_std_gx': 'Post-Impact Std Dev', 'imu_std_gy': 'Post-Impact Std Dev', 'imu_std_gz': 'Post-Impact Std Dev',
     'imu_accel_settling': 'Settling', 'imu_gyro_settling': 'Settling',
     'imu_ax_spread_impact': 'Spread Impact', 'imu_ay_spread_impact': 'Spread Impact', 'imu_az_spread_impact': 'Spread Impact',
     'imu_ax_spread_regular': 'Spread Regular', 'imu_ay_spread_regular': 'Spread Regular', 'imu_az_spread_regular': 'Spread Regular',
@@ -142,8 +142,7 @@ GROUP_COLORS = {
     'Peak Gyro': '#FF7F0E',
     'Accel Energy': '#2CA02C',
     'Gyro Energy': '#D62728',
-    'Vibration Accel': '#9467BD',
-    'Vibration Gyro': '#8C564B',
+    'Post-Impact Std Dev': '#9467BD',
     'Settling': '#E377C2',
     'Spread Impact': '#7F7F7F',
     'Spread Regular': '#BCBD22',
@@ -1127,9 +1126,9 @@ def plot_consolidated_top_features(df_fix, df_rot, save_path=None, show=True):
         'imu_peak_accel_x':     ((0, 20),  4.0),
         'imu_peak_accel_y':     ((0, 20),  4.0),
         'imu_peak_accel_z':     ((0, 20),  4.0),
-        'imu_vib_gy':           ((0, 0.30), 0.06),
-        'imu_vib_gx':           ((0, 0.30), 0.06),
-        'imu_vib_gz':           ((0, 0.30), 0.06),
+        'imu_std_gy':           ((0, 0.30), 0.06),
+        'imu_std_gx':           ((0, 0.30), 0.06),
+        'imu_std_gz':           ((0, 0.30), 0.06),
         'imu_ax_spread_regular': ((0, 0.6), 0.1),
     }
 

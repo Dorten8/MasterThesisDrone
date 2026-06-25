@@ -1,39 +1,457 @@
-\section{Mathematics}
+\clearpage
+\section{Mathematical Appendix}
+\label{sec:math_appendix}
 
-This thesis uses standard mathematical notation for rigid-body dynamics and
-control theory. Key symbols and conventions are defined here for reference.
+This appendix catalogues every mathematical formula used in the data analysis pipeline, organised by computational category. Each entry provides the formula, its implementation location (file path and function name in \texttt{monospace}), and the standard mathematical name where applicable.
 
-\subsection{Coordinate Frames}
+% ======================================================================
+\subsection{Coordinate Frame Transformations}
+% ======================================================================
 
-The drone's pose is expressed in two coordinate frames:
-\begin{itemize}
-    \item \textbf{World frame (ENU):} $X$ east, $Y$ north, $Z$ up.
-    \item \textbf{Body frame:} $x_b$ forward, $y_b$ right, $z_b$ down
-    (NED convention per PX4 firmware).
-\end{itemize}
+\paragraph{NED $\to$ ENU Conversion.}
+PX4 publishes odometry in the North-East-Down (NED) frame. The analysis pipeline converts to East-North-Up (ENU) for consistency with the OptiTrack MoCap coordinate system:
+\begin{align}
+    x_{\text{ENU}} &=  y_{\text{NED}} \qquad\text{(East)}  \\
+    y_{\text{ENU}} &=  x_{\text{NED}} \qquad\text{(North)} \\
+    z_{\text{ENU}} &= -z_{\text{NED}} \qquad\text{(Up)}    \\
+    v_{x,\text{ENU}} &=  v_{x,\text{NED}},\quad
+    v_{y,\text{ENU}} = -v_{y,\text{NED}},\quad
+    v_{z,\text{ENU}} = -v_{z,\text{NED}} \nonumber
+\end{align}
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_ekf\_kinematics()}\\
+\texttt{\small dev\_logs/analysis/database/db\_unsliced\_flights\_bat\_analyser.py:\ \_stream\_load\_for\_battery()}
 
-Position is denoted $\mathbf{p} = [x, y, z]^\mathsf{T}$,
-velocity $\mathbf{v} = [v_x, v_y, v_z]^\mathsf{T}$, and
-acceleration $\mathbf{a} = [a_x, a_y, a_z]^\mathsf{T}$.
+\medskip
+\paragraph{EKF--MoCap Spatial Alignment Offset.}
+The EKF and MoCap coordinate frames have a systematic origin offset. The median $\Delta x$, $\Delta y$ is computed via \texttt{pd.merge\_asof} (nearest-neighbour time alignment), then applied as a translation:
+\begin{align}
+    \Delta x &= \mathrm{median}\bigl(x_{\text{EKF}}(t) - x_{\text{MoCap}}(t)\bigr) \\
+    \Delta y &= \mathrm{median}\bigl(y_{\text{EKF}}(t) - y_{\text{MoCap}}(t)\bigr) \nonumber
+\end{align}
+\texttt{\small dev\_logs/analysis/database/db\_unsliced\_flights\_bat\_analyser.py:\ \_stream\_load\_for\_battery()}
 
-\subsection{Drone Dynamics}
-
-The quadcopter's rotational dynamics are governed by the Euler equations:
-
+\medskip
+\paragraph{Motors Clock Synchronisation (ULog $\leftrightarrow$ MCAP).}
+Two-tier strategy for aligning PX4 ULog timestamps ($\mu$s from FC boot) with MCAP ROS bag timestamps (ns from Unix epoch):
+\begin{align}
+    t_{\text{rel}} &= t_{\text{ULog},\mu\text{s}} \times 10^{-6} + \Delta_{\text{offset}} - t_{\text{bag\_start,ns}} \times 10^{-9} \\
+    \Delta_{\text{offset}} &=
+        \begin{cases}
+            -\delta_{\text{observed}} \times 10^{-6}, & \text{timesync\_status available (Tier 1)} \\
+            t_{\text{MCAP,ROS}} - t_{\text{ULog,NN}},   & \text{velocity correlation (Tier 2)}
+        \end{cases} \nonumber
+\end{align}
+where Tier 1 uses PX4's internal timesync protocol ($\delta_{\text{observed}}$ in $\mu$s), and Tier 2 finds the ULog sample with minimum Euclidean distance between velocity vectors:
 \begin{equation}
-    \mathbf{I} \dot{\boldsymbol{\omega}} + \boldsymbol{\omega} \times (\mathbf{I} \boldsymbol{\omega}) = \boldsymbol{\tau}
+    \min_{\,i}\ \bigl\|(v_{x,i}^{\text{ULog}} - v_x^{\text{MCAP}},\; v_{y,i}^{\text{ULog}} - v_y^{\text{MCAP}},\; v_{z,i}^{\text{ULog}} - v_z^{\text{MCAP}})\bigr\|^2
+\end{equation}
+\texttt{\small dev\_logs/analysis/database/db\_pipeline.py:\ get\_ulog\_motor\_metrics()}
+
+% ======================================================================
+\subsection{Signal Differentiation \& Filtering}
+% ======================================================================
+
+\paragraph{Savitzky--Golay (SG) Differentiation.}
+Velocity and acceleration are obtained by applying the Savitzky--Golay filter with \texttt{deriv=1}. The filter fits a polynomial $p(t)$ of order $m = 3$ over a sliding window of $w = 19$ samples via linear least squares, then evaluates the analytical derivative at the window centre. This is equivalent to convolution with pre-computed coefficients:
+\begin{align}
+    \mathbf{v} &= \frac{\mathrm{SG}_{\text{deriv}=1}(\mathbf{x},\; w=19,\; m=3)}{\Delta t_{\text{median}}} \qquad [\mathrm{m\,s^{-1}}] \\
+    \mathbf{a} &= \frac{\mathrm{SG}_{\text{deriv}=1}(\mathbf{v},\; w=19,\; m=3)}{\Delta t_{\text{median}}} \qquad [\mathrm{m\,s^{-2}}] \\
+    \Delta t_{\text{median}} &= \mathrm{median}\bigl(t_{i+1} - t_i\bigr) \nonumber
+\end{align}
+Using $\Delta t_{\text{median}}$ (not mean) makes the conversion robust to outlier gaps in the resampled timeline.
+
+\textbf{Standard name:} Savitzky--Golay smoothing filter (analytical derivative mode).\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_mocap\_kinematics()}
+
+\medskip
+\paragraph{Speed and Acceleration Magnitude.}
+\begin{align}
+    s(t) &= \sqrt{v_x(t)^2 + v_y(t)^2 + v_z(t)^2}
+\end{align}
+\begin{align}
+    a_s(t) &= \mathrm{SG}_{\text{deriv}=1}\bigl(s(t)\bigr) \;/\; \Delta t_{\text{median}} \nonumber
+\end{align}
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_mocap\_kinematics()}
+
+\medskip
+\paragraph{Butterworth Low-Pass Filter.}
+Applied to SG-differentiated velocity in the Fixed Cage regime (high-jitter MoCap) to suppress dropout-kink amplification:
+\begin{equation}
+    H(f) = \frac{1}{\sqrt{1 + \bigl(f / f_c\bigr)^{2n}}},\qquad n = 2,\; f_c = 4\,\mathrm{Hz}
+\end{equation}
+Implemented as a zero-phase filter via \texttt{filtfilt} (forward--backward application), yielding zero group delay --- critical for preserving impact timing.
+
+\textbf{Standard name:} Butterworth low-pass filter (2nd order, zero-phase).\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_mocap\_kinematics()}
+
+\medskip
+\paragraph{Linear Interpolation (MoCap Resampling).}
+Raw MoCap positions are resampled onto a uniform 100~Hz grid:
+\begin{equation}
+    \hat{x}(t) = x(t_1) + \frac{x(t_2) - x(t_1)}{t_2 - t_1}\,(t - t_1),\qquad t_1 \le t \le t_2
+\end{equation}
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ resample\_and\_interpolate\_mocap()}
+
+\medskip
+\paragraph{Dropout Detection.}
+A ``strict dropout'' is defined as any inter-sample interval exceeding 1/30~s ($\approx 33$~ms) at 120~Hz native MoCap. Fixed Cage flights ($>$20 strict drops per 15~s window) use a coarser structural-gap threshold of 100~ms with a 2-sample margin to avoid marking $>$50\% of the timeline as contaminated.
+
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ resample\_and\_interpolate\_mocap()}
+
+% ======================================================================
+\subsection{Geometric Metrics}
+% ======================================================================
+
+\paragraph{Collision Distance.}
+Minimum 2-D Euclidean distance from drone centre $(x_i, y_i)$ to column centre $(x_c, y_c)$ during the sweep transit (WP1$\to$WP4):
+\begin{equation}
+    d_{\min} = \min_{i}\ \sqrt{(x_i - x_c)^2 + (y_i - y_c)^2}
+\end{equation}
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
+\paragraph{Obstacle Clearance.}
+\begin{equation}
+    c = d_{\min} - r_{\text{column}} - r_{\text{cage}}
+\end{equation}
+$c < 0 \implies$ physical contact occurred. Column radius $r_{\text{column}} = 0.045$~m, cage radius $r_{\text{cage}} = 0.179$~m.\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
+\paragraph{Impact Angle.}
+Let $\mathbf{r}$ be the vector from the drone to the column centre, and $\mathbf{v}$ be the drone's horizontal velocity at the reference instant (Column Impact event, or closest approach if undetected):
+\begin{align}
+    \mathbf{r} &= (x_c - x,\; y_c - y) \\
+    \theta &= \arccos\!\left(\frac{\mathbf{r} \cdot \mathbf{v}}{\|\mathbf{r}\|\;\|\mathbf{v}\|}\right) \qquad [\text{radians}] \\
+    \theta_{\text{deg}} &= \theta \times 180 / \pi \nonumber \\
+    \theta_{\text{folded}} &= \begin{cases}
+        \theta_{\text{deg}},       & \theta_{\text{deg}} \le 90^\circ \\
+        180^\circ - \theta_{\text{deg}}, & \theta_{\text{deg}} > 90^\circ
+    \end{cases} \nonumber
+\end{align}
+Folding to $[0^\circ, 90^\circ]$ ensures that $75^\circ$ and $105^\circ$ collisions are treated as physically equivalent (both are $15^\circ$ from perpendicular).\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
+\paragraph{Perpendicular Distance (Point-to-Line).}
+For each MoCap sample $\mathbf{p}_i = (x_i, y_i)$ during the WP2$\to$WP3 transit, the perpendicular distance to the ideal straight-line path defined by $\mathbf{p}_{\text{WP2}}, \mathbf{p}_{\text{WP3}}$:
+\begin{align}
+    d_i &= \frac{\bigl\|(\mathbf{p}_{\text{WP3}} - \mathbf{p}_{\text{WP2}}) \times (\mathbf{p}_i - \mathbf{p}_{\text{WP2}})\bigr\|}
+                {\|\mathbf{p}_{\text{WP3}} - \mathbf{p}_{\text{WP2}}\|} \\
+        &= \frac{|(y_3 - y_2)\,x_i - (x_3 - x_2)\,y_i + x_3 y_2 - y_3 x_2|}
+                {\sqrt{(y_3 - y_2)^2 + (x_3 - x_2)^2}} \nonumber
+\end{align}
+\textbf{Standard name:} Point-to-line distance (determinant form of the 2-D cross product).\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ perpendicular\_distance()}
+
+\medskip
+\paragraph{Maximum Trajectory Deviation.}
+\begin{equation}
+    d_{\max} = \max_i\, d_i
+\end{equation}
+Reported in mm.\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
+\paragraph{Path Spread --- RMSLD (Root Mean Square of Lateral Displacement).}
+\begin{equation}
+    \mathrm{RMSLD} = \sqrt{\frac{1}{N}\sum_{i=1}^{N} d_i^{\,2}} \qquad [\mathrm{m}]
+\end{equation}
+Reported as $\mathrm{RMSLD}_{\text{mm}} = \mathrm{RMSLD} \times 1000$ (mm). Unlike maximum deviation, RMSLD reflects trajectory consistency over the entire obstacle passage.\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
+\paragraph{Recovery Area --- SIAE (Spatial Integral of Absolute Error).}
+Let $\hat{\mathbf{u}}$ be the unit direction vector from WP2 to WP3:
+\begin{equation}
+    \hat{\mathbf{u}} = \frac{\mathbf{p}_{\text{WP3}} - \mathbf{p}_{\text{WP2}}}{\|\mathbf{p}_{\text{WP3}} - \mathbf{p}_{\text{WP2}}\|}
+\end{equation}
+The along-path distance parameter $s_i$ projects each recovery point onto the nominal line:
+\begin{align}
+    s_i &= (\mathbf{p}_i - \mathbf{p}_{\text{WP2}}) \cdot \hat{\mathbf{u}} \\
+    \mathrm{SIAE} &= \int_{s_{\text{start}}}^{s_{\text{end}}} |d(s)| \; ds
+\end{align}
+Computed by trapezoidal integration (\texttt{np.trapz}) over the recovery segment $[t_{\text{collision}},\, t_{\text{WP3}}]$, sorted by $s_i$ to ensure monotonic travel direction. Reported in $\mathrm{mm \cdot m}$ ($\times 1000$).\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+% ======================================================================
+\subsection{IMU Structural Response Metrics}
+% ======================================================================
+
+\textbf{Contact window:} $[t_{\text{impact}} - 0.05,\; t_{\text{impact}} + 0.35]$ s (400~ms total). The 50~ms pre-impact padding captures the very start of the impulse; the 350~ms post-impact captures the full structural response.\\
+\textbf{Regular flight window:} $[t_{\text{impact}} - 1.05,\; t_{\text{impact}} - 0.05]$ s (1~s pre-impact baseline).
+
+\medskip
+\paragraph{Peak IMU Values (per-axis).}
+\begin{align}
+    \mathrm{PeakAccel}_c &= \max_{t \in \text{window}} |a_c(t)| \qquad c \in \{x, y, z\} \;\;[\mathrm{m\,s^{-2}}] \\
+    \mathrm{PeakGyro}_c  &= \max_{t \in \text{window}} |\omega_c(t)| \qquad c \in \{x, y, z\} \;\;[\mathrm{rad\,s^{-1}}]
+\end{align}
+$Z$-axis acceleration has $+g = 9.81$~m/s$^2$ added back to remove gravity compensation.\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
+\paragraph{Integrated IMU Energy (per-axis).}
+\begin{align}
+    E_{\text{accel},c} &= \int_{t_{\text{impact}}-0.05}^{t_{\text{impact}}+0.35} |a_c(t)| \; dt \qquad [\mathrm{m\,s^{-1}}] \\
+    E_{\text{gyro},c}  &= \int_{t_{\text{impact}}-0.05}^{t_{\text{impact}}+0.35} |\omega_c(t)| \; dt \qquad [\mathrm{rad}]
+\end{align}
+Trapezoidal integration of the absolute signal; prevents positive/negative oscillation from cancelling in the integral, giving total impulse magnitude per channel.\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
+\paragraph{Post-Impact Standard Deviation.}
+\begin{align}
+    \sigma_{\text{accel},c} &= \operatorname{std}\bigl(a_c(t)\bigr),\quad t \in [t_{\text{impact}} + 0.2,\; t_{\text{impact}} + 3.0] \;\;[\mathrm{m\,s^{-2}}] \\
+    \sigma_{\text{gyro},c}  &= \operatorname{std}\bigl(\omega_c(t)\bigr),\quad t \in [t_{\text{impact}} + 0.2,\; t_{\text{impact}} + 3.0] \;\;[\mathrm{rad\,s^{-1}}]
+\end{align}
+The first 200~ms are excluded to isolate the vibration tail from the initial shock spike.\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
+\paragraph{Impact/Regular Acceleration Spread (per-axis).}
+\begin{align}
+    \sigma_{\text{impact},c} &= \frac{\operatorname{std}\bigl(a_c(t)\bigr)}{g},\quad t \in [t_{\text{impact}} - 0.05,\; t_{\text{impact}} + 0.35] \\
+    \sigma_{\text{regular},c} &= \frac{\operatorname{std}\bigl(a_c(t)\bigr)}{g},\quad t \in [t_{\text{impact}} - 1.05,\; t_{\text{impact}} - 0.05]
+\end{align}
+Normalised by $g = 9.81$~m/s$^{2}$ for dimensionless comparison across flights. The ratio $\sigma_{\text{impact}} / \sigma_{\text{regular}}$ indicates the collision-vibration amplification factor relative to steady flight.\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
+\paragraph{IMU Settling Time.}
+\begin{equation}
+    t_{\text{settle}} = \max\Bigl\{ t : |a_{\text{dev}}(t)| \ge 1.5\,\mathrm{m/s^2} \;\lor\; \|\boldsymbol{\omega}(t)\| \ge 0.5\,\mathrm{rad/s} \Bigr\}
+\end{equation}
+Elapsed time from impact until the \emph{last} sample exceeding either threshold --- the point at which post-impact vibration returns to the nominal flight noise floor.\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
+\paragraph{Accelerometer Deviation.}
+\begin{equation}
+    a_{\text{dev}}(t) = \|\mathbf{a}_{\text{raw}}(t) - \mathbf{g}\|
+\end{equation}
+Gravity-removed scalar magnitude.\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
+\paragraph{Gyroscope Magnitude.}
+\begin{equation}
+    \|\boldsymbol{\omega}(t)\| = \sqrt{\omega_x(t)^2 + \omega_y(t)^2 + \omega_z(t)^2}
+\end{equation}
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+% ======================================================================
+\subsection{Motor and Actuator Metrics}
+% ======================================================================
+
+\paragraph{Motor Average Signal.}
+\begin{equation}
+    \overline{c}(t) = \frac{1}{4}\sum_{k=0}^{3} c_k(t)
+\end{equation}
+where $c_k(t)$ are the normalised motor control commands (0--1 range).\\
+\texttt{\small dev\_logs/analysis/database/db\_pipeline.py:\ get\_ulog\_motor\_metrics()}
+
+\medskip
+\paragraph{Thrust Surge.}
+\begin{equation}
+    \Delta_{\text{thrust}} = \max_{t \in [0,1]\text{s}}\ \overline{c}(t_{\text{impact}} + t) \;-\; \underset{t \in [-1,0]\text{s}}{\mathrm{mean}}\ \overline{c}(t_{\text{impact}} + t)
+\end{equation}
+Net throttle spike commanded in response to the impact --- the control system's effort to arrest the post-collision altitude drop.\\
+\texttt{\small dev\_logs/analysis/database/db\_pipeline.py:\ get\_ulog\_motor\_metrics()}
+
+\medskip
+\paragraph{Motor Imbalance (post-impact).}
+For each timestamp $t_i$ in the 400~ms post-impact window:
+\begin{equation}
+    \sigma_{\text{motors}}(t_i) = \operatorname{std}\bigl(c_0(t_i),\, c_1(t_i),\, c_2(t_i),\, c_3(t_i)\bigr)
+\end{equation}
+\begin{equation}
+    \mathrm{Imbalance} = \frac{1}{N}\sum_{i} \sigma_{\text{motors}}(t_i)
+\end{equation}
+A proxy for the magnitude of the disturbance torque the rate controller must counter with differential thrust.\\
+\texttt{\small dev\_logs/analysis/database/db\_pipeline.py:\ get\_ulog\_motor\_metrics()}
+
+\medskip
+\paragraph{Actuator Output (PWM $\to$ \%).}
+\begin{equation}
+    p_{\max} = \frac{\mathrm{PWM}_{\max} - 1000}{10}\qquad [\%]
+\end{equation}
+Standard PX4 PWM range: $1000\,\mu\text{s} = 0\%$ (motor off), $1500\,\mu\text{s} = 50\%$ (hover), $2000\,\mu\text{s} = 100\%$ (full throttle).\\
+\texttt{\small dev\_logs/analysis/database/db\_pipeline.py:\ get\_ulog\_motor\_metrics()}
+
+\medskip
+\paragraph{Allocator Saturation Duration.}
+Time-weighted sum over all samples in the 1~s post-impact window where any motor reaches the upper or lower control rail:
+\begin{equation}
+    T_{\text{sat}} = \sum_{i} \Delta t_i \cdot \mathbf{1}\bigl[\exists\, k : c_k(t_i) \ge 0.999 \;\lor\; c_k(t_i) \le 0.001\bigr]
+\end{equation}
+where $\Delta t_i = t_{i+1} - t_i$, with the last sample's $\Delta t$ replicated. Three-tier fallback strategy (actuator\_motors $\to$ actuator\_outputs $\to$ control\_allocator\_status) based on ULog topic availability.\\
+\texttt{\small dev\_logs/analysis/database/db\_pipeline.py:\ get\_ulog\_motor\_metrics()}
+
+% ======================================================================
+\subsection{Battery Efficiency Metrics}
+% ======================================================================
+
+\paragraph{Takeoff/Landing Detection.}
+\begin{align}
+    t_{\text{takeoff}} &= \min\, \{ t \ge t_{\text{arm}} : z_{\text{MoCap}}(t) > 0.15\,\mathrm{m} \} \\
+    t_{\text{landing}}  &= \max\, \{ t \le t_{\text{disarm}} : z_{\text{MoCap}}(t) > 0.15\,\mathrm{m} \}
+\end{align}
+Fallback: $t_{\text{takeoff}} = t_{\text{arm}} + 2.0$~s, $t_{\text{landing}} = t_{\text{disarm}} - 2.0$~s when MoCap data is unavailable.
+
+\medskip
+\paragraph{Flying Time.}
+\begin{equation}
+    T_{\text{flying}} = t_{\text{landing}} - t_{\text{takeoff}} \qquad [\mathrm{s}]
 \end{equation}
 
-where $\mathbf{I}$ is the inertia tensor, $\boldsymbol{\omega}$ the angular velocity,
-and $\boldsymbol{\tau}$ the applied torque from motor thrust differentials.
-
-\subsection{Collision Kinematics}
-
-Impact deceleration is measured as the peak magnitude of the IMU acceleration vector
-during the collision window:
-
+\medskip
+\paragraph{Capacity Drain Rate (Flying Window).}
 \begin{equation}
-    \|\mathbf{a}_{\text{peak}}\| = \max_{t \in T_{\text{collision}}} \sqrt{a_x(t)^2 + a_y(t)^2 + a_z(t)^2}
+    r_{\text{capacity}} = \frac{\mathrm{rem}_{\text{takeoff}} - \mathrm{rem}_{\text{landing}}}{T_{\text{flying}} / 60} \qquad [\%\, \mathrm{min}^{-1}]
 \end{equation}
+Clamped to $\ge 0$. ``rem'' is the battery remaining capacity from PX4 battery\_status in \%.\\
+\texttt{\small dev\_logs/analysis/database/db\_unsliced\_flights\_bat\_analyser.py:\ main()}
 
-This is reported in multiples of standard gravity $g = 9.81\ \text{m}\,\text{s}^{-2}$.
+\medskip
+\paragraph{Voltage Drop Rate (Flying Window).}
+\begin{equation}
+    r_{\text{voltage}} = \frac{V_{\text{takeoff}} - V_{\text{landing}}}{T_{\text{flying}} / 60} \qquad [\mathrm{V\,min}^{-1}]
+\end{equation}
+Clamped to $\ge 0$.\\
+\texttt{\small dev\_logs/analysis/database/db\_unsliced\_flights\_bat\_analyser.py:\ main()}
+
+\medskip
+\paragraph{Minimum and Average Flight Voltage.}
+\begin{align}
+    V_{\min} &= \min\, \{ V(t) : t \in [t_{\text{takeoff}}, t_{\text{landing}}] \} \\
+    V_{\text{avg}} &= \operatorname{mean}\, \{ V(t) : t \in [t_{\text{takeoff}}, t_{\text{landing}}] \}
+\end{align}
+\texttt{\small dev\_logs/analysis/database/db\_unsliced\_flights\_bat\_analyser.py:\ main()}
+
+% ======================================================================
+\subsection{Random Forest \& Machine Learning}
+% ======================================================================
+
+\paragraph{Pearson Correlation Coefficient.}
+\begin{equation}
+    r = \frac{\operatorname{cov}(X, Y)}{\sigma_X\,\sigma_Y}
+    = \frac{\sum_{i=1}^{n}(x_i - \bar{x})(y_i - \bar{y})}
+           {\sqrt{\sum_{i=1}^{n}(x_i - \bar{x})^2}\;\sqrt{\sum_{i=1}^{n}(y_i - \bar{y})^2}}
+\end{equation}
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ select\_features()}
+
+\medskip
+\paragraph{Spearman Rank Correlation.}
+\begin{equation}
+    \rho = r\bigl(\operatorname{rank}(X),\; \operatorname{rank}(Y)\bigr)
+\end{equation}
+Pearson $r$ computed on ranks; robust to outliers and captures monotonic (non-linear) associations.\\
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ select\_features()}
+
+\medskip
+\paragraph{Feature Selection Criteria.}
+A feature passes the correlation filter if either:
+\begin{equation}
+    |r_{\text{Pearson}}| > 0.3 \quad\lor\quad |\rho_{\text{Spearman}}| > 0.3
+\end{equation}
+Redundant feature pairs (inter-feature $|r| > 0.85$) are reduced to the single feature with stronger correlation to the target.\\
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ select\_features()}
+
+\medskip
+\paragraph{Stratified K-Fold Cross-Validation.}
+Impact angles are partitioned into $q = 5$ equal-frequency bins (quintiles) via \texttt{pd.qcut}. StratifiedKFold ensures each fold contains approximately the same proportion of flights from each angle bin:
+\begin{equation}
+    \text{bin}_i = \operatorname{qcut}(y_i, q=5),\qquad \text{fold}_k \sim \text{StratifiedKFold}(K=5)
+\end{equation}
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ run\_rf\_pipeline()}
+
+\medskip
+\paragraph{Random Forest Regressor Configuration.}
+Ensemble of $T = 200$ decision trees, each trained on a bootstrap sample with $\sqrt{p}$ features considered per split:
+\begin{align}
+    \hat{y} &= \frac{1}{T}\sum_{t=1}^{T} h_t(\mathbf{x}) \qquad \text{(mean prediction)} \\
+    \text{Hyperparameters:}&\quad \mathtt{max\_depth} \in [3,4,5,6],\;\; \mathtt{min\_samples\_leaf} \in [3,5,7]
+\end{align}
+Selected via nested grid search over 5-fold stratified outer CV.\\
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ run\_rf\_pipeline()}
+
+\medskip
+\paragraph{Coefficient of Determination ($R^2$).}
+\begin{equation}
+    R^2 = 1 - \frac{\sum_{i=1}^{n}(y_i - \hat{y}_i)^2}
+                    {\sum_{i=1}^{n}(y_i - \bar{y})^2}
+\end{equation}
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ run\_rf\_pipeline()}
+
+\medskip
+\paragraph{Mean Absolute Error (MAE).}
+\begin{equation}
+    \mathrm{MAE} = \frac{1}{n}\sum_{i=1}^{n} |y_i - \hat{y}_i| \qquad [^\circ]
+\end{equation}
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ run\_rf\_pipeline()}
+
+\medskip
+\paragraph{Root Mean Square Error (RMSE).}
+\begin{equation}
+    \mathrm{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n} (y_i - \hat{y}_i)^2} \qquad [^\circ]
+\end{equation}
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ run\_rf\_pipeline()}
+
+\medskip
+\paragraph{Out-of-Bag (OOB) Score.}
+Each tree $t$ is trained on a bootstrap sample containing approximately 63.2\% of the data. The remaining $\sim$36.8\% of samples (out-of-bag) are used as a free unbiased test set:
+\begin{equation}
+    \mathrm{OOB}_i = \frac{1}{|\mathcal{T}_i|}\sum_{t \in \mathcal{T}_i} h_t(\mathbf{x}_i),\qquad \mathcal{T}_i = \{t : i \notin \text{bootstrap}_t\}
+\end{equation}
+\begin{equation}
+    R^2_{\text{OOB}} = 1 - \frac{\sum_{i} (y_i - \mathrm{OOB}_i)^2}{\sum_i (y_i - \bar{y})^2}
+\end{equation}
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ run\_rf\_pipeline()}
+
+\medskip
+\paragraph{Permutation Feature Importance.}
+For each feature $j$, the drop in $R^2$ is measured when its values are randomly shuffled across samples (breaking the association with the target while preserving the marginal distribution):
+\begin{equation}
+    \Delta R^2_j = R^2_{\text{original}} - R^2_{\text{shuffled},j}
+\end{equation}
+Reported as mean $\pm 1\sigma$ over 30 permutation repetitions.\\
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ plot\_consolidated\_feature\_importance()}
+
+\medskip
+\paragraph{Learning Curve.}
+Training and validation $R^2$ computed at increasing training-set fractions using stratified 5-fold CV:
+\begin{equation}
+    \mathcal{L} = \{(s, R^2_{\text{train}}(s), R^2_{\text{val}}(s)) : s \in [0.1, 0.2, \ldots, 1.0]\}
+\end{equation}
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ plot\_consolidated\_learning\_curves()}
+
+\medskip
+\paragraph{Huber Robust Regression (IRLS).}
+Huber M-estimator minimising:
+\begin{equation}
+    \hat{\beta} = \arg\min_{\beta} \sum_{i=1}^{n} \rho_{\delta}\!\left(\frac{y_i - \mathbf{x}_i^\top\beta}{\hat{\sigma}}\right),\qquad
+    \rho_{\delta}(u) = \begin{cases}
+        \frac{1}{2}u^2, & |u| \le \delta \\[4pt]
+        \delta|u| - \frac{1}{2}\delta^2, & |u| > \delta
+    \end{cases}
+\end{equation}
+with $\delta = 1.345$ (95\% asymptotic efficiency under normality). Solved via Iteratively Reweighted Least Squares (IRLS):
+\begin{align}
+    \mathbf{W}^{(k)} &= \operatorname{diag}\bigl(w(u_i^{(k)})\bigr),\qquad
+    w(u) = \begin{cases} 1.0, & |u| \le \delta \\ \delta/|u|, & |u| > \delta \end{cases} \\
+    \hat{\beta}^{(k+1)} &= (\mathbf{X}^\top \mathbf{W}^{(k)} \mathbf{X})^{-1} \mathbf{X}^\top \mathbf{W}^{(k)} \mathbf{y}
+\end{align}
+Scale estimate $\hat{\sigma} = \operatorname{MAD} / 0.6745$, where MAD (Median Absolute Deviation) is calibrated to be consistent with $\sigma$ under normality.\\
+\textbf{Standard name:} Huber M-estimator with IRLS.\\
+\texttt{\small dev\_logs/analysis/eda/eda\_angle\_prediction.py:\ huber\_regressor()}
+
+\medskip
+\paragraph{Cross-Condition Transfer.}
+Model trained on condition $A$ (e.g., Fixed Cage) is evaluated on condition $B$ (e.g., Rotating Cage) without retraining:
+\begin{equation}
+    R^2_{A \to B} = R^2(y_B,\, \hat{y}_{A \to B}),\qquad \hat{y}_{A \to B} = f_A(\mathbf{X}_B)
+\end{equation}
+\texttt{\small dev\_logs/analysis/models/rf\_angle\_prediction.py:\ run\_rf\_pipeline()}
+
+\endinput

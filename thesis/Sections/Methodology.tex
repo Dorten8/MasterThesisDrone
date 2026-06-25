@@ -43,7 +43,7 @@ The drone's physical dimensions are governed by a narrow three-way tradeoff, ill
 
 \textbf{Lower bound: payload minimum.} The Raspberry~Pi~5 companion computer ($\sim$60\,g plus peripherals) and the PETG (polyethylene terephthalate glycol, a 3D-printing filament) protective cage (35.8\,cm diameter, bearing assembly) together require a minimum thrust budget that class-3-inch and below platforms cannot provide. A typical 3-inch build lacks both the stator diameter and the propeller disc area to lift these components while maintaining a safe TWR (thrust-to-weight ratio) margin.
 
-\textbf{Upper bound: indoor safety ceiling.} The 4-inch propeller class is the practical upper limit for indoor flight in confined spaces.\cite{FindYourPerfect} Larger platforms (5-inch and above) produce propeller wash that destabilises the vehicle in tight enclosures and increase the kinetic energy carried into any collision, raising the barrier to physical survivability. Platforms large enough to carry heavy sensors such as a full-size LIDAR (e.g., Ouster OS0 at $\sim$450\,g) exceed the thrust budget while also exceeding safe indoor operating dimensions.
+\textbf{Upper bound: indoor safety ceiling.} The 4-inch propeller class is the practical upper limit for indoor flight in confined spaces.\footnote{As recommended by commercial test platforms: \url{https://vibms.com/what-size-fpv-drone-should-i-get/}} Larger platforms (5-inch and above) produce propeller wash that destabilises the vehicle in tight enclosures and increase the kinetic energy carried into any collision, raising the barrier to physical survivability. Platforms large enough to carry heavy sensors such as a full-size LIDAR (e.g., Ouster OS0 at $\sim$450\,g) exceed the thrust budget while also exceeding safe indoor operating dimensions.
 
 \textbf{The 4-inch sweet spot.} At this scale, 2004-stator motors paired with 4-inch GF4023 propellers on a 6S battery produce sufficient lift for the companion computer and cage while hovering at 45--50\% throttle---near the efficiency peak. The resulting TWR of $\sim$3.8:1 places the drone in the responsive research-autonomy band, with enough thrust to arrest post-collision drift and recover to the commanded setpoint.
 
@@ -51,31 +51,31 @@ The drone's physical dimensions are governed by a narrow three-way tradeoff, ill
 
 To address these objectives holistically, PX4 was selected as the autonomous platform. Two platforms currently dominate the open-source UAV ecosystem: ArduPilot and PX4. PX4 was chosen over ArduPilot for its permissive BSD licensing (which allows proprietary extensions, whereas ArduPilot's GPLv3 requires contributed code to remain open), its modular publish-subscribe architecture (uORB), and its well-developed hardware standards under the Dronecode Foundation~\cite{meierPX4NodebasedMultithreaded2015}. PX4's open-source standard is built on modular architecture using \textbf{uORB (microObject Request Broker)}---a publish-subscribe middleware layer suited for plug-and-play development. These factors promised faster integration with the ROS~2 middleware layer and reduced hardware-software troubleshooting. This modularity enables rapid research iteration: novel autonomous behaviors can be implemented as independent modules without modifying the core flight stack.
 
-The \textbf{Pixhawk 6C flight controller} was chosen as the hardware instantiation of the PX4 standard. Critically, Pixhawk is not a monolithic design but represents standardized connector specifications, sensor integration points, and reference schematics managed by the Dronecode Foundation~\cite{simpsonLatestPixhawkOpen2023}. This standardization means:
+The \textbf{Pixhawk 6C flight controller} was chosen as the hardware instantiation of the PX4 standard. Critically, Pixhawk is not a monolithic design but represents standardized connector specifications, sensor integration points, and reference schematics managed by the Dronecode Foundation~\footnote{\url{https://www.unmannedsystemstechnology.com/2023/01/latest-pixhawk-open-standards-available/}}. This standardization means:
 
 \begin{itemize}
     \item \textbf{Hardware swappability}: Sensors and peripheral electronics can be upgraded or replaced with components from different manufacturers (Holybro, ARK Electronics, CUAV) without redesigning integration.
 
-    \item \textbf{Ecosystem maturity}: Over 1 million Pixhawk-based devices are deployed across commercial, research, and hobbyist applications.\cite{simpsonLatestPixhawkOpen2023}
+    \item \textbf{Ecosystem maturity}: Over 1 million Pixhawk-based devices are deployed across commercial, research, and hobbyist applications.\footnote{\url{https://www.unmannedsystemstechnology.com/2023/01/latest-pixhawk-open-standards-available/}}
 
-    \item \textbf{Sensor integration}: The Pixhawk 6C includes integrated IMU and compass. Specifically, it features redundant inertial measurement units with onboard ICM-42688-P and BMI088 accelerometers/gyroscopes, plus an IST8310 magnetometer, with temperature-controlled operation via onboard heating resistors.\cite{TechnicalSpecificationHolybro2025, PX4Docs, Pixhawk6C6C} This eliminates the need for custom sensor fusion code---allowing focus on the research question rather than flight control tuning.
+    \item \textbf{Sensor integration}: The Pixhawk 6C includes integrated IMU and compass. Specifically, it features redundant inertial measurement units with onboard ICM-42688-P and BMI088 accelerometers/gyroscopes, plus an IST8310 magnetometer, with temperature-controlled operation via onboard heating resistors.\footnote{Software documentation available at: \url{https://docs.px4.io/main/en/flight_controller/pixhawk6c}} This eliminates the need for custom sensor fusion code---allowing focus on the research question rather than flight control tuning.
 \end{itemize}
 
-The 6C's form factor (84.8 \(\times\) 44 \(\times\) 12.4 mm) justifies the 4-inch drone design choice.\cite{TechnicalSpecificationHolybro2025} Four-inch platforms represent the upper practical limit for indoor flight while remaining large enough to carry meaningful payloads.
+The 6C's form factor (84.8 \(\times\) 44 \(\times\) 12.4 mm) justifies the 4-inch drone design choice.\footnote{\url{https://docs.holybro.com/autopilot/pixhawk-6c/technical-specification}} Four-inch platforms represent the upper practical limit for indoor flight while remaining large enough to carry meaningful payloads.
 
 \paragraph{Thrust-to-Weight and Efficiency Rationale}
 
-The design targets a \textbf{thrust-to-weight ratio (TWR) of approximately 3.8:1}, positioning the platform in the research/autonomous zone where hover occurs at roughly 45--50\% throttle. This mid-throttle hover is deliberate: motor efficiency peaks at 40--70\% throttle, and hovering at 50\% reserves substantial headroom for autonomous obstacle avoidance, gust rejection, and post-collision recovery. Hovering at or near 100\% throttle leaves zero control margin.\cite{oscarHowChooseFPV2024}
+The design targets a \textbf{thrust-to-weight ratio (TWR) of approximately 3.8:1}, positioning the platform in the research/autonomous zone where hover occurs at roughly 45--50\% throttle. This mid-throttle hover is deliberate: motor efficiency peaks at 40--70\% throttle, and hovering at 50\% reserves substantial headroom for autonomous obstacle avoidance, gust rejection, and post-collision recovery. Hovering at or near 100\% throttle leaves zero control margin.\cite{bershadsky2016propulsion}
 
 \paragraph{Motor and Battery Selection}
 
-\textbf{EMAX ECOII 2004 1600KV} motors were selected. The 2004 stator (20\,mm diameter, 4\,mm height) provides high torque at mid-throttle while the low 1600\,KV rating (1600\,RPM per volt) is matched to a \textbf{6S LiPo battery} (22.2\,V nominal). On this voltage, the motors deliver approximately 860\,g static thrust each under 4-inch GF4023 propellers---a combined 3,440\,g.\cite{drone24hoursTMotorF20041700KV, oscarHowChooseFPV2024} The 6S voltage also places the practical RPM ($\sim$24,000--28,000 under load) within the 4-inch propeller's efficient range, avoiding excessive tip speeds.
+\textbf{EMAX ECOII 2004 1600KV} motors were selected. The 2004 stator (20\,mm diameter, 4\,mm height) provides high torque at mid-throttle while the low 1600\,KV rating (1600\,RPM per volt) is matched to a \textbf{6S LiPo battery} (22.2\,V nominal). On this voltage, the motors deliver approximately 860\,g static thrust each under 4-inch GF4023 propellers---a combined 3,440\,g~\cite{bershadsky2016propulsion}\footnote{Product specifications available at: \url{https://drone24hours.com/products/t-motor-f2004-1700kv}}. The 6S voltage also places the practical RPM ($\sim$24,000--28,000 under load) within the 4-inch propeller's efficient range, avoiding excessive tip speeds.
 
 \paragraph{Efficiency Advantages of the 6S Architecture}
 
 The choice of a 6-cell battery over a 4-cell alternative is driven by efficiency. Theoretical foundations of brushless DC (BLDC) motor dynamics demonstrate that higher-voltage architectures (such as 6S) are significantly more efficient than lower-voltage alternatives (such as 4S) for equivalent power outputs. Because electrical power is proportional to voltage multiplied by current ($P = VI$), increasing the system voltage proportionally reduces the current required to generate the same mechanical thrust. This reduction in current quadratically decreases the resistive copper losses ($P_{\text{loss}} = I^2R$) within the motor windings and electronic speed controllers, thereby reducing thermal dissipation and extending overall flight endurance.\cite{hughes2013electric}
 
-\textbf{Voltage sag}---the temporary voltage drop under high-current discharge, caused by battery internal resistance ($V_{\text{drop}} = I \times R_{\text{internal}}$)---is proportionally less severe at higher baseline voltages. Under an equivalent current spike, a 4S pack may sag by over 30\% of its nominal voltage, whereas an equivalent-quality 6S pack sees a smaller relative drop.\cite{oscarUsingLiPoBatteries2025} For autonomous flight, where the controller expects a predictable motor response, excessive sag introduces a latency between commanded and actual thrust that degrades control stability during rapid maneuvers. Higher baseline voltage provides a larger operating margin against this effect. The detailed derivation is given in the \hyperref[sec:annex_hardware]{Annex}.
+\textbf{Voltage sag}---the temporary voltage drop under high-current discharge, caused by battery internal resistance ($V_{\text{drop}} = I \times R_{\text{internal}}$)---is proportionally less severe at higher baseline voltages. Under an equivalent current spike, a 4S pack may sag by over 30\% of its nominal voltage, whereas an equivalent-quality 6S pack sees a smaller relative drop.\cite{bershadsky2016propulsion} For autonomous flight, where the controller expects a predictable motor response, excessive sag introduces a latency between commanded and actual thrust that degrades control stability during rapid maneuvers. Higher baseline voltage provides a larger operating margin against this effect. The detailed derivation is given in the \hyperref[sec:annex_hardware]{Annex}.
 
 \subsection{System Architecture}
 
@@ -87,6 +87,20 @@ The autonomous flight stack is organised into five layers, illustrated in \autor
     \caption{Drone software stack architecture: PX4 flight controller (red), uXRCE-DDS middleware (green), ROS~2 environment (blue) with \texttt{px4\_msgs} flowing into \texttt{px4\_ros\_com}, high-level control nodes (teal) including the \texttt{flight\_director.py} state machine driven by Mission and User Input, and the data pipeline (grey) routing MCAP/ULog files through DB Pipeline to Experiment Summary and Jupyter Diagnostics. Motion capture (purple) enters via a Wi-Fi multicast link.}
     \label{fig:architecture}
 \end{figure}
+
+\subsubsection{Hardware Platform}
+
+The companion computer is a \textbf{Raspberry Pi 5} (8\,GB variant), selected for its substantial compute headroom over previous Pi generations: the quad-core Cortex-A76 provides roughly 2--3$\times$ the CPU throughput of the Pi~4, sufficient for concurrent MoCap data ingestion, offboard control computation, and high-bandwidth telemetry logging without frame drops. During testing, observed CPU utilization remained below 40\% and RAM below 3\,GB during concurrent MoCap ingestion, ROS~2 operation, and telemetry logging, ensuring zero computational bottlenecks.
+
+The Pi~5 runs \textbf{Ubuntu 24.04} natively on its host OS, as the Raspberry Pi~5 does not officially support older Ubuntu releases. However, the ROS~2 and PX4 development ecosystems are largely built and validated against Ubuntu~22.04 LTS with ROS~2 Humble. To bridge this compatibility gap while maintaining a clean separation of concerns, the flight software stack runs inside a \textbf{Docker container} provisioned with Ubuntu~22.04 LTS and ROS~2 Humble. This containerised approach isolates the flight-critical software from the host OS version, ensures reproducible builds, and grants the container full access to the Pi~5's hardware peripherals (UART, GPIO, networking) via Docker's device-mapping flags. All high-level autonomy---waypoint navigation, MoCap data ingestion, offboard control logic, and telemetry logging---executes within this container.
+
+The Pi~5 communicates with the flight controller over UART (TELEM2) and mounts directly above it within the 4-inch frame envelope.
+
+\subsubsection{Flight Controller}
+
+The \textbf{Pixhawk 6C} runs PX4 Autopilot firmware (\texttt{v1.16.1rc}) and is responsible for low-level attitude control, motor mixing, and sensor fusion.
+
+Its dual IMU redundancy (ICM-42688-P and BMI088) and onboard IST8310 magnetometer are fused in the EKF2 estimator alongside external vision odometry from the MoCap system. The magnetometer is disabled for indoor operation to prevent interference with MoCap yaw data. The full parameter configuration is given in the repository \texttt{README.md}.
 
 \subsubsection{Frame and Cage Design}
 
@@ -111,49 +125,14 @@ The cage itself is a PETG-printed spherical shell of 35.8\,cm diameter, mounted 
 
 The fixed-cage control configuration uses identical geometry but rigidly mounts the outer shell to the frame, eliminating the bearing's rotational degree of freedom. All other parameters (mass, diameter, material, propeller clearance) are held constant between the two configurations, isolating the effect of the bearing mechanism as the single experimental independent variable.
 
-\subsubsection{Hardware Platform}
-
-The companion computer is a \textbf{Raspberry Pi 5} (8\,GB variant), selected for its substantial compute headroom over previous Pi generations: the quad-core Cortex-A76 provides roughly 2--3$\times$ the CPU throughput of the Pi~4, sufficient for concurrent MoCap data ingestion, offboard control computation, and high-bandwidth telemetry logging without frame drops. During testing, observed CPU utilization remained below 40\% and RAM below 3\,GB during concurrent MoCap ingestion, ROS~2 operation, and telemetry logging, ensuring zero computational bottlenecks.
-
-The Pi~5 runs \textbf{Ubuntu 24.04} natively on its host OS, as the Raspberry Pi~5 does not officially support older Ubuntu releases. However, the ROS~2 and PX4 development ecosystems are largely built and validated against Ubuntu~22.04 LTS with ROS~2 Humble. To bridge this compatibility gap while maintaining a clean separation of concerns, the flight software stack runs inside a \textbf{Docker container} provisioned with Ubuntu~22.04 LTS and ROS~2 Humble. This containerised approach isolates the flight-critical software from the host OS version, ensures reproducible builds, and grants the container full access to the Pi~5's hardware peripherals (UART, GPIO, networking) via Docker's device-mapping flags. All high-level autonomy---waypoint navigation, MoCap data ingestion, offboard control logic, and telemetry logging---executes within this container.
-
-The Pi~5 communicates with the flight controller over UART (TELEM2) and mounts directly above it within the 4-inch frame envelope.
-
-\subsubsection{Flight Controller}
-
-The \textbf{Pixhawk 6C} runs PX4 Autopilot firmware (\texttt{v1.16.1rc}) and is responsible for low-level attitude control, motor mixing, and sensor fusion.
-
-Its dual IMU redundancy (ICM-42688-P and BMI088) and onboard IST8310 magnetometer are fused in the EKF2 estimator alongside external vision odometry from the MoCap system. The magnetometer is disabled for indoor operation to prevent interference with MoCap yaw data. The full parameter configuration is given in the repository \texttt{README.md}.
-
-\subsubsection{Motion Capture Integration}
-
-External state estimation is provided by a \textbf{6-camera OptiTrack Prime~22} system streaming at 120\,Hz via the Motive software platform (Mudfish network middleware). The Prime~22 offers sub-millimetre positional accuracy at short range, sufficient for the $\sim$5\,m$\times$5\,m capture volume used in these experiments.
-
-The \texttt{motion\_capture\_tracking} ROS~2 node receives the multicast stream from Motive, and the \texttt{mocap\_px4\_bridge} node transforms the poses between coordinate frames before publishing them to \texttt{/fmu/in/vehicle\_visual\_odometry}.
-
-\paragraph{Coordinate Frame Transformations}
-
-Coordinate frame conventions differ between MoCap and PX4, and this is their first explicit treatment in this thesis. ENU is a ground-fixed frame where the $X$~axis points East, $Y$~points North, and $Z$~points Up; the vehicle body frame has $X$~toward the front, $Z$~up, and $Y$~toward the left. PX4's internal state estimator operates in the \textbf{NED (North-East-Down)} frame, where $X$~points North, $Y$~points East, and $Z$~points Down; the corresponding vehicle body frame (\textbf{FRD}, Forward-Right-Down) has $X$~toward the front, $Z$~down, and $Y$~accordingly. \autoref{fig:coordinate_frames} shows both conventions side by side.\cite{PX4MotionCapture}
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{Figures/coordinate_frames_NEDvsENU.png}
-    \caption{NED (left) and ENU (right) coordinate frame conventions. Adapted from PX4 documentation~\cite{PX4MotionCapture}.}
-    \label{fig:coordinate_frames}
-\end{figure}
-
-The \texttt{mocap\_px4\_bridge} performs this transform in two steps: first, a static rotation maps ENU to NED ($X_{\text{NED}} = Y_{\text{ENU}}$, $Y_{\text{NED}} = X_{\text{ENU}}$, $Z_{\text{NED}} = -Z_{\text{ENU}}$); second, the NED pose is rotated into the FRD body frame using the vehicle's current attitude quaternion. The resulting \texttt{VehicleVisualOdometry} message is published at 120\,Hz to \texttt{/fmu/in/vehicle\_visual\_odometry}.
-
-The EKF2 estimator fuses this external vision with the onboard 250\,Hz IMU data, bridging any MoCap tracking dropouts through inertial propagation.
-
 \subsubsection{Communication Middleware Between Flight Controller and Pi~5}
 
-The flight controller and companion computer communicate over a UART serial link (TELEM2, 921\,600 baud). During experimental flights, the link uses \textbf{uXRCE-DDS} exclusively: the PX4 uXRCE-DDS client publishes internal uORB topics (\texttt{vehicle\_odometry}, \texttt{vehicle\_status}, \texttt{actuator\_motors}) to the ROS~2 node graph via \texttt{MicroXRCEAgent} running on the Pi~5 (illustrated in \autoref{fig:architecture_xrce_dds}). A secondary \textbf{MAVLink} stream can be enabled on the same port for ground-station debugging (QGroundControl), but the two protocols are not used simultaneously during active data collection.
+The communication middleware (Micro-XRCE-DDS) acts as a serial bridge, translating the flight controller's internal C++ struct messages (uORB) into standard ROS~2 network messages, allowing the companion computer to read telemetry. The flight controller and companion computer communicate over a UART serial link (TELEM2, 921\,600 baud). During experimental flights, the link uses \textbf{uXRCE-DDS} exclusively: the PX4 uXRCE-DDS client publishes internal uORB topics (\texttt{vehicle\_odometry}, \texttt{vehicle\_status}, \texttt{actuator\_motors}) to the ROS~2 node graph via \texttt{MicroXRCEAgent} running on the Pi~5 (illustrated in \autoref{fig:architecture_xrce_dds}). A secondary \textbf{MAVLink} stream can be enabled on the same port for ground-station debugging (QGroundControl), but the two protocols are not used simultaneously during active data collection.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.85\textwidth]{diagrams/architecture_xrce-dds_ros2_FROMpF4DOCS.pdf}
-    \caption{Architecture of the uXRCE-DDS communication layer bridging PX4 (uORB) and ROS~2. The MicroXRCE-DDS Client runs on the flight controller and publishes topics such as \texttt{vehicle\_odometry} and \texttt{actuator\_motors} over UART to the MicroXRCE-DDS Agent on the companion computer, where they enter the ROS~2 node graph. Adapted from PX4 documentation~\cite{PX4ROS2UserGuide}.}
+    \caption{Architecture of the uXRCE-DDS communication layer bridging PX4 (uORB) and ROS~2. The MicroXRCE-DDS Client runs on the flight controller and publishes topics such as \texttt{vehicle\_odometry} and \texttt{actuator\_motors} over UART to the MicroXRCE-DDS Agent on the companion computer, where they enter the ROS~2 node graph. Adapted from PX4 documentation.\footnote{Software documentation available at: \url{https://docs.px4.io/main/en/ros2/user_guide}}}
     \label{fig:architecture_xrce_dds}
 \end{figure}
 

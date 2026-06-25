@@ -69,7 +69,7 @@ The top-3 scatter plots color points by `battery_at_start`. No strong vertical g
 ## ML-Ready Column Set
 
 Keep for modeling (|r| > 0.5): all top-10 features + `imu_accel_energy_*` (3 cols) = **13 features**.
-Drop: `imu_accel_settling`, `imu_vib_ax` (both |r| < 0.1).
+Drop: `imu_accel_settling`, `imu_std_ax` (both |r| < 0.1).
 
 **Target**: `impact_angle` (continuous, 20°–88°)
 **Control**: `battery_at_start` (if confounding is significant)

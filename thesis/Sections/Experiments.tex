@@ -5,6 +5,27 @@ The Results chapter presents a deliberately structured progression from raw mech
 
 To evaluate the operational and protective capabilities of the drone cage and to assess what indication of impact angle might be recoverable from onboard sensors, physical collision tests were conducted. This section details the experimental setup, the software pipeline used to capture the data, and the direct mechanical results, comparing the performance of the fixed cage against the freely rotating cage.
 
+\subsection{Motion Capture Setup}
+
+External state estimation is provided by a \textbf{6-camera OptiTrack Prime~22} system streaming at 120\,Hz via the Motive software platform (Mudfish network middleware). The Prime~22 offers sub-millimetre positional accuracy at short range, sufficient for the $\sim$5\,m$\times$5\,m capture volume used in these experiments.
+
+The \texttt{motion\_capture\_tracking} ROS~2 node receives the multicast stream from Motive, and the \texttt{mocap\_px4\_bridge} node transforms the poses between coordinate frames before publishing them to \texttt{/fmu/in/vehicle\_visual\_odometry}.
+
+\paragraph{Coordinate Frame Transformations}
+
+Coordinate frame conventions differ between MoCap and PX4. ENU is a ground-fixed frame where the $X$~axis points East, $Y$~points North, and $Z$~points Up; the vehicle body frame has $X$~toward the front, $Z$~up, and $Y$~toward the left. PX4's internal state estimator operates in the \textbf{NED (North-East-Down)} frame, where $X$~points North, $Y$~points East, and $Z$~points Down; the corresponding vehicle body frame (\textbf{FRD}, Forward-Right-Down) has $X$~toward the front, $Z$~down, and $Y$~accordingly. \autoref{fig:coordinate_frames} shows both conventions side by side.\footnote{Software documentation available at: \url{https://docs.px4.io/main/en/tutorials/motion-capture}}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/coordinate_frames_NEDvsENU.png}
+    \caption{NED (left) and ENU (right) coordinate frame conventions. Adapted from PX4 documentation~\footnote{Software documentation available at: \url{https://docs.px4.io/main/en/tutorials/motion-capture}}.}
+    \label{fig:coordinate_frames}
+\end{figure}
+
+The \texttt{mocap\_px4\_bridge} performs this transform in two steps: first, a static rotation maps ENU to NED ($X_{\text{NED}} = Y_{\text{ENU}}$, $Y_{\text{NED}} = X_{\text{ENU}}$, $Z_{\text{NED}} = -Z_{\text{ENU}}$); second, the NED pose is rotated into the FRD body frame using the vehicle's current attitude quaternion. The resulting \texttt{VehicleVisualOdometry} message is published at 120\,Hz to \texttt{/fmu/in/vehicle\_visual\_odometry}.
+
+The EKF2 estimator fuses this external vision with the onboard 250\,Hz IMU data, bridging any MoCap tracking dropouts through inertial propagation.
+
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.85\textwidth]{plots/Impact Angle Distribution by Cage Configuration.png}
@@ -17,7 +38,7 @@ To evaluate the operational and protective capabilities of the drone cage and to
 The physical experiments were conducted at the REALLAB at the IT University of Copenhagen (ITU) within an OptiTrack Motion Capture (MoCap) environment. A vertically oriented cylindrical cardboard column, internally reinforced with an aluminum profile, was anchored to the floor and ceiling to serve as the static collision target. The column oscillates slightly when subjected to manual force, but no additional structural supports were added in order to prevent any occlusion of the MoCap cameras, preserving their function as the primary reference point for the drone's spatial positioning. Analysis of the MoCap data confirmed that obstacle displacement during impacts was below the system's millimetre tracking resolution. Therefore, energy absorption by the environment is considered negligible.
 
 \subsubsection{Experiment Control and Data Collection}
-The experimental platform relies on an integrated software architecture designed to bridge abstracted trajectory generation with real-time hardware constraints. The low-level flight stack utilizes PX4 Autopilot firmware on a NuttX real-time operating system (RTOS), with internal state estimation handled strictly by an Extended Kalman Filter (EKF2).\cite{PX4Docs} \textbf{L1 Node} --- the EKF2 is the primary source of velocity state data for the entire analysis pipeline, fused from the onboard IMU data logged at 250\,Hz (the rate at which the EKF2 pipeline ingests the raw accelerometer and gyroscope data) and the 120\,Hz external MoCap vision odometry stream.
+The experimental platform relies on an integrated software architecture designed to bridge abstracted trajectory generation with real-time hardware constraints. The low-level flight stack utilizes PX4 Autopilot firmware on a NuttX real-time operating system (RTOS), with internal state estimation handled strictly by an Extended Kalman Filter (EKF2).\footnote{Software documentation available at: \url{https://docs.px4.io/main/en/flight_controller/pixhawk6c}} \textbf{L1 Node} --- the EKF2 is the primary source of velocity state data for the entire analysis pipeline, fused from the onboard IMU data logged at 250\,Hz (the rate at which the EKF2 pipeline ingests the raw accelerometer and gyroscope data) and the 120\,Hz external MoCap vision odometry stream.
 
 High-level position commanding is managed within a ROS~2 abstraction layer running on an external offboard computing node. Real-time topic translation between the ROS~2 node graph and the internal PX4 uORB messaging system is handled via a micro-XRCE-DDS agent.
 
@@ -291,6 +312,8 @@ The preceding kinematic and vibrational analyses establish that the rotating cag
 
 \medskip
 The comparative data in \autoref{tab:master_comparison} reveals a nuanced picture. The Rotating Cage substantially reduces yaw-rate tracking error ($-85\%$), allocator saturation ($-96\%$), and lateral vibration spread ($-29\%$ on the $Y$-axis impact spread), confirming that the bearing mechanism attenuates the most disruptive collision dynamics. However, it exhibits slightly higher roll- and pitch-rate tracking errors post-impact, consistent with the wider but bounded trajectory deviation noted in \autoref{sec:post_collision_recovery}. The near-identical experiment durations and recovery areas between configurations reinforce that the spatial cost of the rotating mechanism is negligible relative to its vibration benefits.
+
+Notably, the rotating cage exhibits lower Y-axis variance even during steady, non-impact flight. This is attributed to a mass-damping effect: the bearing assembly concentrates additional mass at the drone's center of gravity, acting as a mechanical low-pass filter. Furthermore, the decoupled outer shell prevents aerodynamic buffeting from the propellers from translating directly into frame torsion.
 
 \clearpage
 

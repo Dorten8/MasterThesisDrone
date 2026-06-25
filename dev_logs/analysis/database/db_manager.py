@@ -210,12 +210,12 @@ def init_db():
             imu_gyro_energy_z REAL,
             imu_accel_settling REAL,
             imu_gyro_settling REAL,
-            imu_vib_ax       REAL,
-            imu_vib_ay       REAL,
-            imu_vib_az       REAL,
-            imu_vib_gx       REAL,
-            imu_vib_gy       REAL,
-            imu_vib_gz       REAL,
+            imu_std_ax       REAL,
+            imu_std_ay       REAL,
+            imu_std_az       REAL,
+            imu_std_gx       REAL,
+            imu_std_gy       REAL,
+            imu_std_gz       REAL,
             timestamp_db                   TEXT,
             "e_sp_timestamp_PX4"            INTEGER,
             "e_impact_timestamp_PX4"        INTEGER,
@@ -229,7 +229,7 @@ def init_db():
             voltage_drop_rate_v_per_min REAL,
             capacity_drain_rate_pct_per_min REAL,
             max_actuator_output REAL,
-            path_spread_sdld REAL,
+            path_spread_rmsld REAL,
             imu_ax_spread_impact REAL,
             imu_ay_spread_impact REAL,
             imu_az_spread_impact REAL,
@@ -270,6 +270,28 @@ def init_db():
             timestamp_db                    TEXT
         )
     """)
+    # ── Schema migration: RENAME old columns to new names ───────────────
+    # 2026-06-25: Refactored imu_vib_* → imu_std_*, path_spread_sdld → path_spread_rmsld.
+    # Uses PRAGMA table_info to detect old column names and ALTER TABLE RENAME COLUMN.
+    # Idempotent: if old column doesn't exist, rename is skipped; if new column
+    # already exists (fresh DB created with new schema), rename was already done.
+    column_renames = [
+        ("imu_vib_ax", "imu_std_ax"),
+        ("imu_vib_ay", "imu_std_ay"),
+        ("imu_vib_az", "imu_std_az"),
+        ("imu_vib_gx", "imu_std_gx"),
+        ("imu_vib_gy", "imu_std_gy"),
+        ("imu_vib_gz", "imu_std_gz"),
+        ("path_spread_sdld", "path_spread_rmsld"),
+    ]
+    existing_cols = {row[1] for row in cursor.execute("PRAGMA table_info(flights_summary)").fetchall()}
+    for old_name, new_name in column_renames:
+        if old_name in existing_cols and new_name not in existing_cols:
+            try:
+                cursor.execute(f'ALTER TABLE flights_summary RENAME COLUMN "{old_name}" TO "{new_name}"')
+            except sqlite3.OperationalError:
+                pass  # Already renamed in a previous run
+
     # ── Schema migration: add new columns idempotently ─────────────────
     # Each (column_name, type) pair is ALTER TABLE ADD COLUMN'd.
     # sqlite3.OperationalError is raised if the column already exists
@@ -311,12 +333,12 @@ def init_db():
         ("imu_gyro_energy_z", "REAL"),
         ("imu_accel_settling", "REAL"),
         ("imu_gyro_settling", "REAL"),
-        ("imu_vib_ax", "REAL"),
-        ("imu_vib_ay", "REAL"),
-        ("imu_vib_az", "REAL"),
-        ("imu_vib_gx", "REAL"),
-        ("imu_vib_gy", "REAL"),
-        ("imu_vib_gz", "REAL"),
+        ("imu_std_ax", "REAL"),
+        ("imu_std_ay", "REAL"),
+        ("imu_std_az", "REAL"),
+        ("imu_std_gx", "REAL"),
+        ("imu_std_gy", "REAL"),
+        ("imu_std_gz", "REAL"),
         ("motor_avg_before", "REAL"),
         ("motor_max_before", "REAL"),
         ("motor_avg_after", "REAL"),
@@ -340,7 +362,7 @@ def init_db():
         ("voltage_drop_rate_v_per_min", "REAL"),
         ("capacity_drain_rate_pct_per_min", "REAL"),
         ("max_actuator_output", "REAL"),
-        ("path_spread_sdld", "REAL"),
+        ("path_spread_rmsld", "REAL"),
         ("imu_ax_spread_impact", "REAL"),
         ("imu_ay_spread_impact", "REAL"),
         ("imu_az_spread_impact", "REAL"),
@@ -455,12 +477,12 @@ def insert_or_replace_flight(flight_name, condition, metrics):
     imu_gyro_energy_z  = metrics.get('imu_gyro_energy_z')
     imu_accel_settling = metrics.get('imu_accel_settling')
     imu_gyro_settling  = metrics.get('imu_gyro_settling')
-    imu_vib_ax         = metrics.get('imu_vib_ax')
-    imu_vib_ay         = metrics.get('imu_vib_ay')
-    imu_vib_az         = metrics.get('imu_vib_az')
-    imu_vib_gx         = metrics.get('imu_vib_gx')
-    imu_vib_gy         = metrics.get('imu_vib_gy')
-    imu_vib_gz         = metrics.get('imu_vib_gz')
+    imu_std_ax         = metrics.get('imu_std_ax')
+    imu_std_ay         = metrics.get('imu_std_ay')
+    imu_std_az         = metrics.get('imu_std_az')
+    imu_std_gx         = metrics.get('imu_std_gx')
+    imu_std_gy         = metrics.get('imu_std_gy')
+    imu_std_gz         = metrics.get('imu_std_gz')
 
     # Motor actuator metrics
     motor_avg_before   = metrics.get('motor_avg_before')
@@ -489,7 +511,7 @@ def insert_or_replace_flight(flight_name, condition, metrics):
     voltage_drop_rate_v_per_min = metrics.get('voltage_drop_rate_v_per_min')
     capacity_drain_rate_pct_per_min = metrics.get('capacity_drain_rate_pct_per_min')
     max_actuator_output = metrics.get('max_actuator_output')
-    path_spread_sdld = metrics.get('path_spread_sdld')
+    path_spread_rmsld = metrics.get('path_spread_rmsld')
     
     imu_ax_spread_impact = metrics.get('imu_ax_spread_impact')
     imu_ay_spread_impact = metrics.get('imu_ay_spread_impact')
@@ -540,8 +562,8 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         "imu_accel_energy", "imu_accel_energy_x", "imu_accel_energy_y", "imu_accel_energy_z",
         "imu_gyro_energy", "imu_gyro_energy_x", "imu_gyro_energy_y", "imu_gyro_energy_z",
         "imu_accel_settling", "imu_gyro_settling",
-        "imu_vib_ax", "imu_vib_ay", "imu_vib_az",
-        "imu_vib_gx", "imu_vib_gy", "imu_vib_gz",
+        "imu_std_ax", "imu_std_ay", "imu_std_az",
+        "imu_std_gx", "imu_std_gy", "imu_std_gz",
         "motor_avg_before", "motor_max_before", "motor_avg_after", "motor_max_after",
         "motor_thrust_surge", "motor_imbalance_after",
         "motor_m1_avg_after", "motor_m2_avg_after", "motor_m3_avg_after", "motor_m4_avg_after",
@@ -549,7 +571,7 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         "allocator_saturation_duration_sec", "max_unallocated_torque", "thrust_setpoint_achieved_pct",
         "roll_rate_error_rms", "pitch_rate_error_rms", "yaw_rate_error_rms",
         "active_flight_time_sec", "voltage_drop_rate_v_per_min", "capacity_drain_rate_pct_per_min",
-        "max_actuator_output", "path_spread_sdld",
+        "max_actuator_output", "path_spread_rmsld",
         "imu_ax_spread_impact", "imu_ay_spread_impact", "imu_az_spread_impact",
         "imu_ax_spread_regular", "imu_ay_spread_regular", "imu_az_spread_regular"
     ]
@@ -568,8 +590,8 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         imu_accel_energy, imu_accel_energy_x, imu_accel_energy_y, imu_accel_energy_z,
         imu_gyro_energy, imu_gyro_energy_x, imu_gyro_energy_y, imu_gyro_energy_z,
         imu_accel_settling, imu_gyro_settling,
-        imu_vib_ax, imu_vib_ay, imu_vib_az,
-        imu_vib_gx, imu_vib_gy, imu_vib_gz,
+        imu_std_ax, imu_std_ay, imu_std_az,
+        imu_std_gx, imu_std_gy, imu_std_gz,
         motor_avg_before, motor_max_before, motor_avg_after, motor_max_after,
         motor_thrust_surge, motor_imbalance_after,
         motor_m1_avg_after, motor_m2_avg_after, motor_m3_avg_after, motor_m4_avg_after,
@@ -577,7 +599,7 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         allocator_saturation_duration_sec, max_unallocated_torque, thrust_setpoint_achieved_pct,
         roll_rate_error_rms, pitch_rate_error_rms, yaw_rate_error_rms,
         active_flight_time_sec, voltage_drop_rate_v_per_min, capacity_drain_rate_pct_per_min,
-        max_actuator_output, path_spread_sdld,
+        max_actuator_output, path_spread_rmsld,
         imu_ax_spread_impact, imu_ay_spread_impact, imu_az_spread_impact,
         imu_ax_spread_regular, imu_ay_spread_regular, imu_az_spread_regular
     )

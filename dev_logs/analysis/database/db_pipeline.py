@@ -7,7 +7,7 @@ import pandas as pd
 from IPython.display import display, HTML
 
 from dev_logs.analysis.database.db_loader import load_drone_metadata, load_mcap, build_dataframes
-from dev_logs.analysis.kinematics.kin_calculator import compute_velocity, compute_ekf_kinematics, find_waypoint_events, build_events_log, calculate_metrics
+from dev_logs.analysis.kinematics.kin_calculator import compute_mocap_kinematics, compute_ekf_kinematics, find_waypoint_events, build_events_log, compute_flight_metrics
 from dev_logs.analysis.kinematics.kin_plot_trajectory import plot_trajectory
 from dev_logs.analysis.kinematics.kin_plot_kinematics import plot_velocity_profile, plot_battery_sag, plot_imu_dynamics, plot_imu_xyz_components, plot_ekf_kinetic_profile
 from dev_logs.analysis.kinematics.kin_plot_actuators import plot_actuators_and_status, plot_control_allocator_saturation, plot_pid_rate_tracking
@@ -791,8 +791,8 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                 # debugging MoCap dropout artefacts.
                 # Smoothed: resampled to uniform grid before S-G differentiation —
                 # produces smoother derivatives, used for waypoint detection.
-                df_mocap_raw = compute_velocity(df_mocap.copy(), resample=False)
-                df_mocap = compute_velocity(df_mocap, resample=True)
+                df_mocap_raw = compute_mocap_kinematics(df_mocap.copy(), resample=False)
+                df_mocap = compute_mocap_kinematics(df_mocap, resample=True)
 
                 # === ENABLED: EKF Kinematics (2026-06-09) ===
                 # Compute velocity/acceleration from PX4 EKF odometry (vehicle_odometry).
@@ -810,7 +810,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                 #   a kinematic model with IMU propagation, rather than a purely
                 #   geometric filter (S-G) that has no physics model.
                 #
-                #   Passed to calculate_metrics() as df_ekf_kin, which uses it for
+                #   Passed to compute_flight_metrics() as df_ekf_kin, which uses it for
                 #   impact speed, acceleration, and tangential acceleration metrics
                 #   in preference to the MoCap-derived velocities.
                 df_odom = dfs.get('odom', pd.DataFrame())
@@ -908,7 +908,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
 
                     # Calculate physical metrics with dynamic column coordinates
                     # EKF kinematics replaces MoCap-derived velocity for the metric computation
-                    metrics = calculate_metrics(df_mocap, wp_events, col_x_flight, col_y_flight, column_radius, cage_radius, df_imu=df_imu, df_ekf_kin=df_ekf_kin)
+                    metrics = compute_flight_metrics(df_mocap, wp_events, col_x_flight, col_y_flight, column_radius, cage_radius, df_imu=df_imu, df_ekf_kin=df_ekf_kin)
                     closest_clearance = metrics.get('closest_clearance')
                     metrics['impact_detected'] = 1 if (closest_clearance is not None and closest_clearance < 0.0) else 0
 
@@ -984,7 +984,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     # The check_columns list is intentionally long: every column
                     # that has been added at any point is enumerated so that
                     # schema evolution is handled automatically.
-                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'e_sp_timestamp_PX4', 'e_impact_timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_sdld', 'imu_ax_spread_impact']):
+                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_std_ay', 'motor_avg_before', 'e_sp_timestamp_PX4', 'e_impact_timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_rmsld', 'imu_ax_spread_impact']):
                         print(f"⏭️  '{pass_name}' already in database, skipping insert.")
                     else:
                         insert_or_replace_flight(pass_name, condition_label, metrics)
@@ -1478,8 +1478,8 @@ if __name__ == "__main__":
                 errors += 1
                 continue
 
-            df_mocap_raw = compute_velocity(df_mocap.copy(), resample=False)
-            df_mocap = compute_velocity(df_mocap, resample=True)
+            df_mocap_raw = compute_mocap_kinematics(df_mocap.copy(), resample=False)
+            df_mocap = compute_mocap_kinematics(df_mocap, resample=True)
 
             # EKF kinematics (same as main pipeline above)
             df_ekf_kin = compute_ekf_kinematics(df_odom, df_mocap)
@@ -1504,7 +1504,7 @@ if __name__ == "__main__":
 
             wp_events = wp_events_list[0]  # Pass file contains exactly one pass
 
-            metrics = calculate_metrics(df_mocap, wp_events, col_x, col_y, column_radius, cage_radius, df_imu=df_imu, df_ekf_kin=df_ekf_kin)
+            metrics = compute_flight_metrics(df_mocap, wp_events, col_x, col_y, column_radius, cage_radius, df_imu=df_imu, df_ekf_kin=df_ekf_kin)
             closest_clearance = metrics.get('closest_clearance')
             metrics['impact_detected'] = 1 if (closest_clearance is not None and closest_clearance < 0.0) else 0
 
@@ -1563,7 +1563,7 @@ if __name__ == "__main__":
             condition = _infer_condition(folder_name)
             
             # Skip if already cached
-            if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_vib_ay', 'motor_avg_before', 'e_sp_timestamp_PX4', 'e_impact_timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_sdld', 'imu_ax_spread_impact']):
+            if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_std_ay', 'motor_avg_before', 'e_sp_timestamp_PX4', 'e_impact_timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_rmsld', 'imu_ax_spread_impact']):
                 print(f"⏭️  '{pass_name}' already in database, skipping insert.")
             else:
                 insert_or_replace_flight(pass_name, condition, metrics)
