@@ -128,3 +128,30 @@ Two major work blocks: (1) comprehensive codebase refactoring with mathematical 
 - Final: **99 pages**, cross-references resolved
 - Only undefined: `RL_manipulation_placeholder` (intentional TODO)
 - Float-too-large warnings: expected with `[h!]` on large figures (LaTeX relaxes to `[!ht]`)
+
+### Block 5: Notebook DataFrame SSoT Enforcement (2026-06-26)
+
+#### Problem
+Four plot calls in `experiments_analysis_summary.ipynb` were calling functions without passing the notebook's canonical dataframes, causing those functions to independently query the database and produce different results:
+- `plot_sunburst_impact_distribution()` — used stale hardcoded aggregated data instead of live `df_all`
+- `plot_imu_spread()` — queried DB directly via fallback path, potentially differing from `df_impacts`
+- `RepresentativeFlightFinder(condition="Rotating Cage")` — loaded **81** flights from DB instead of canonical **60**
+- `RepresentativeFlightFinder(condition="Fixed Cage")` — loaded **87** flights from DB instead of canonical **67**
+
+#### Fixes Applied
+- `plot_sunburst_impact_distribution()` → `plot_sunburst_impact_distribution(df_all)`
+- `plot_imu_spread()` → `plot_imu_spread(df_impacts)`
+- `RepresentativeFlightFinder(condition="Rotating Cage")` → `RepresentativeFlightFinder(condition="Rotating Cage", df_impacts=df_rot)`
+- `RepresentativeFlightFinder(condition="Fixed Cage")` → `RepresentativeFlightFinder(condition="Fixed Cage", df_impacts=df_fix)`
+
+#### Skill File Update
+- Added **§5.2.0 Universal DataFrames — SSoT** section with canonical counts table:
+  - `df_impacts`: 127 (60 Rotating + 67 Fixed)
+  - `df_rot`: 60, `df_fix`: 67, `df_all`: 168
+- Updated stale function signatures in plot directory table (plots 27, 29, 30)
+- Documented which functions MUST accept dataframe parameters and which are exceptions
+
+## Renders
+- Final: **99 pages**, cross-references resolved
+- Only undefined: `RL_manipulation_placeholder` (intentional TODO)
+- Float-too-large warnings: expected with `[h!]` on large figures (LaTeX relaxes to `[!ht]`)
