@@ -395,6 +395,31 @@ All use `get_combined_timeline_limits()` (`[Column Center Passed − 1s, Column 
 
 All plot logic is offloaded to `summary_plots.py`. Notebook cells are thin one-liner calls.
 
+#### 5.2.0 Universal DataFrames — SSoT (Single Source of Truth)
+
+The notebook defines **five canonical dataframes** in cell `f08f54f8`. **Every plot function in this section MUST be passed one of these dataframes** — never query the database independently inside a plot function.
+
+| Variable | Filter | Expected N | Canonical Label |
+|---|---|---|---|
+| `df_all` | None (all 168 recorded passes) | 168 | `flights_summary (N=168)` |
+| `df_impacts` | `impact_detected == 1` | **127** | `flights_summary (N=60 Rotating, N=67 Fixed)` |
+| `df_rot` | `impact_detected == 1` + `condition == 'Rotating Cage'` | **60** | `flights_summary (N=60 Rotating)` |
+| `df_fix` | `impact_detected == 1` + `condition == 'Fixed Cage'` | **67** | `flights_summary (N=67 Fixed)` |
+| `df_eff` | Battery efficiency table (separate DB table) | varies | `flights_battery_efficiency` |
+
+**Critical invariant:** These counts (60 Rotating, 67 Fixed, 127 total impacts) are the canonical thesis numbers. Any plot function that independently queries the database instead of accepting a dataframe parameter will produce different results — this is a **data integrity bug**, not a cosmetic issue.
+
+**Plot functions that MUST accept a dataframe parameter:**
+- All `summary_plots.py` functions: `df_impacts`, `df_rot`, `df_fix`, or `df_all`
+- `kin_plot_imu_spread.plot_imu_spread(df_impacts)` — was fixed to accept `df_impacts=None`; notebook MUST pass it
+- `plot_motor_aggregates.plot_motor_aggregates(df_impacts)` — was fixed to accept `df_impacts=None`; notebook MUST pass it
+- `plot_sunburst_impact_distribution(df_all)` — was fixed to accept `df_all=None`; notebook MUST pass it
+- `RepresentativeFlightFinder(condition=..., df_impacts=...)` — was fixed to accept `df_impacts=None`; notebook MUST pass it
+
+**Exceptions (use cached data, not dataframes):**
+- `generate_aggregated_imu_plot()` — uses `imu_cache.pkl` (pre-extracted from DB)
+- `plot_2d_path_overlay()` — uses `trajectory_cache.pkl` (pre-extracted from DB)
+
 | # | Plot Name | Function(s) in `summary_plots.py` | Output File | Notes | Status |
 |---|-----------|-----------------------------------|-------------|-------|--------|
 | 19 | **Recovery Area Boxplot** | `plot_recovery_area_boxplot(df_impacts)` | `recovery_area_comparison.png` | `set_ylim(0,270)`, ticks e.50. Jittered scatter overlay. Performance improvement printout below. | ✅ |
@@ -405,10 +430,10 @@ All plot logic is offloaded to `summary_plots.py`. Notebook cells are thin one-l
 | 24 | **Peak Accel + Rotational Energy Boxplots** | `plot_peak_accel_rotational_energy(df_impacts)` | — | 1×2 boxplots: imu_peak_accel (g) + imu_gyro_energy (rad). | ✅ |
 | 25 | **Allocator Saturation (Plot 17)** | `plot_allocator_saturation(df_impacts)` | `plot_17_allocator_saturation_comparison.png` | 1×3 boxplots: saturation duration, unallocated torque, thrust achieved %. | ✅ |
 | 26 | **PID Tracking Error (Plot 18)** | `plot_pid_tracking_error(df_impacts)` | `plot_18_pid_tracking_comparison.png` | 1×3 boxplots: roll/pitch/yaw rate error RMS. | ✅ |
-| 27 | **Sunburst / Nested Pie Charts** | `plot_sunburst_impact_distribution()` | `plot_14_sunburst_revised.png` | Hardcoded aggregated data. Outer ring: Impact/No Impact in cage colour. Inner rings: RdYlGn angle distribution. Legend + source note below. | ✅ |
+| 27 | **Sunburst / Nested Pie Charts** | `plot_sunburst_impact_distribution(df_all)` | `plot_14_sunburst_revised.png` | Uses notebook's `df_all` via `_build_sunburst_data()`. Outer ring: Impact/No Impact in cage colour. Inner rings: RdYlGn angle distribution. Legend + source note below. | ✅ |
 | 28 | **Aggregated IMU Collision Dynamics** | `generate_aggregated_imu_plot()` in `plot_aggregated_imu_dynamics.py` | `plot_19_aggregated_imu_dynamics.png` | 1×2 side-by-side (Rotating left, Fixed right). Timeline [−0.5 s, +1.0 s] from Column Impact. Accel Y-labels on left panel, gyro Y-labels on right panel. Legend only left panel. Per-column source labels. | ✅ |
-| 29 | **IMU Acceleration Spread Boxplots** | `plot_imu_spread()` in `kin_plot_imu_spread.py` | `plot_16_imu_vibration_spread.png` | Impact vs Regular flight windows. Per-axis (ax/ay/az), g units. | ✅ |
-| 30 | **Motor Aggregate Comparison** | `plot_motor_aggregates()` in `plot_motor_aggregates.py` | — | Motor command metrics across conditions. | 🔧 |
+| 29 | **IMU Acceleration Spread Boxplots** | `plot_imu_spread(df_impacts)` in `kin_plot_imu_spread.py` | `plot_16_imu_vibration_spread.png` | Impact vs Regular flight windows. Per-axis (ax/ay/az), g units. | ✅ |
+| 30 | **Motor Aggregate Comparison** | `plot_motor_aggregates(df_impacts)` in `plot_motor_aggregates.py` | — | Motor command metrics across conditions. | 🔧 |
 | 31 | **Comparative Table of Averages** | `render_comparison_table_html(df_all)` | — | Grouped by angle bins × cage condition. Ratio heatmap (HSL green=better, red=worse). Raw inline HTML. | ✅ |
 | 32 | **EKF vs MoCap Comparison Figure** | Inline cell | — | Side-by-side velocity traces. Thesis §4 evidence. | ✅ |
 | — | **Battery Efficiency** | `plot_battery_efficiency_comparison(df_eff)` | `plot_10a/b/c_*.png` | 3-panel: duration boxplot, drain rate boxplot, voltage-vs-duration scatter. | ✅ |
