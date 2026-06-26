@@ -181,7 +181,29 @@ The flight director enforces a multi-layered safety regime designed to prevent t
 
 \textbf{Geofence boundary.} Before each experimental session, a geofence polygon is defined and loaded into the flight director. This boundary is deliberately drawn \emph{inside} the physical extents of the 6-camera OptiTrack Prime~22 capture volume, ensuring that the drone cannot exit the tracking area even at maximum excursion. The boundary is inflated inward by the cage radius (17.9\,cm) plus an additional safety margin, so that a geofence breach is triggered before any part of the cage can contact an external obstacle or leave the tracked volume. If the drone's MoCap position crosses this boundary at any time, the flight director immediately commands an emergency landing.
 
-\textbf{MoCap loss.} Should the OptiTrack tracking rate drop below a critical threshold---indicating marker occlusion or tracking degradation---the flight director triggers an automatic landing. This prevents the drone from flying blind in the event of a tracking failure.
+\textbf{MoCap Loss, Transient Occlusion, and EKF Validation.}
+
+\textbf{Safety failsafe.} Should the OptiTrack tracking rate drop below a critical threshold---indicating marker occlusion or tracking degradation---the flight director triggers an automatic landing. This prevents the drone from flying blind in the event of a complete tracking failure.
+
+\textbf{Transient occlusion during impact.} A distinct and more nuanced problem arises during the exact millisecond of physical impact: the protective cage and column structure physically block the infrared camera's line-of-sight to the drone's reflective markers. This transient marker occlusion causes the MoCap tracking data to glitch. When velocity and acceleration are derived from position by numerical differentiation, even a single-frame position glitch produces a massive, non-physical spike in the resulting kinematic profile. The Savitzky-Golay differentiation filter cannot remove this artefact---it amplifies any discontinuity in the underlying data. Figure~\ref{fig:mocap_dropout} illustrates this failure: the MoCap-derived velocity and acceleration traces exhibit violent, unphysical excursions at the impact instant ($t = 0$), while the EKF2 odometry remains smooth and continuous throughout the event.
+
+\textbf{EKF2 inertial bridging.} The flight controller's EKF2 does not rely solely on the external vision stream. It continuously fuses the onboard 250\,Hz IMU accelerometer and gyroscope data into its state estimate. When the MoCap feed momentarily degrades during impact, the inertial propagation bridges the gap without introducing noticeable drift. The smooth, physically plausible EKF velocity profile through the collision window---visible in Figure~\ref{fig:mocap_dropout}---confirms that the filter successfully compensates for the optical dropout.
+
+To validate that the EKF2 accurately mirrors the MoCap ground truth under normal (unoccluded) conditions, Figure~\ref{fig:ekf_validation} overlays the EKF-estimated velocity against the MoCap-derived velocity for representative flights from both cage configurations during clean, steady flight. The close alignment between the two traces confirms that the EKF2 produces velocity estimates consistent with the external reference. Based on this validation, EKF odometry is adopted as the primary source of velocity and acceleration data for all kinematic calculations through the collision window. The raw MoCap position data is retained solely for geometric reference (impact angle computation, clearance measurement, and trajectory visualisation)---calculations that do not require numerical differentiation and are therefore insensitive to transient position glitches.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{plots/Fixed Cage Kinetic Profile (Raw).png}
+    \caption{MoCap dropout during impact. The Savitzky-Golay filtered MoCap velocity (blue, top panel) and acceleration (green, bottom panel) exhibit severe non-physical spikes at $t = 0$, caused by marker occlusion at the instant of column contact. The EKF2 odometry (red) remains smooth and continuous, bridging the dropout via inertial propagation.}
+    \label{fig:mocap_dropout}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{plots/EKF Dual Comparison Fixed vs Rotating.png}
+    \caption{EKF vs.\ MoCap velocity validation during clean, unoccluded flight for representative Fixed Cage (left) and Rotating Cage (right) flights. The close alignment between the two traces confirms that the EKF2 accurately mirrors the MoCap ground truth under normal tracking conditions.}
+    \label{fig:ekf_validation}
+\end{figure}
 
 \textbf{Kill switch.} A spacebar-activated software kill switch runs in the flight director's main loop, providing the operator with an instant disarm capability independent of the geofence and MoCap monitors.
 

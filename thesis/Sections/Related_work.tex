@@ -1,10 +1,6 @@
 \clearpage
 \section{Related Work}
 
-\subsection{Commercial Drone Inspection}
-
-The demand for confined-space inspection has driven commercial development, most notably the Flyability Elios series~\cite{briod2014collision}. These platforms utilize a decoupled, freely rotating protective cage that allows the vehicle to safely roll along walls. While highly effective operationally, peer-reviewed empirical data quantifying the exact vibration and kinematic advantages of this specific rotating mechanism over a rigid cage remains sparse in the open literature.
-
 \subsection{Navigation by Contact and Tactile SLAM}
 
 In highly cluttered or signal-denied environments, traditional collision-avoidance algorithms demand significant computational overhead and rely on heavy optical or LiDAR sensors that frequently fail in feature-poor spaces. While Simultaneous Localization and Mapping (SLAM) remains an active research frontier, reliably deploying it on small, payload-constrained drones in unstructured environments remains an open challenge~\cite{macariorojas2021}. Even state-of-the-art autonomous ground vehicles equipped with expensive sensors and substantial compute have not fully solved reliable real-time navigation in arbitrary environments; the task is substantially harder for a small aerial vehicle.
@@ -21,7 +17,9 @@ To manage this kinetic penalty, a significant portion of the literature has focu
 
 A more mechanically straightforward approach involves rigid, protective cages that physically decouple the drone's attitude from the collision surface. Mahmud~\cite{mahmudDevelopmentCollisionResilient2021} evaluated different rigid geometries for cluttered environments, specifically comparing a freely rotating spherical gimbal against a mono-monostatic (G\"omb\"oc) shell~\cite{domokos2006gomboc}. The G\"omb\"oc (turtle-like) shape is stably upright in only one orientation; when inverted, its elevated center of gravity makes it unstable, allowing it to passively self-right on the ground. Mahmud concluded this form was superior for post-crash recovery, noting a complementary use case for inspecting stainless steel tanks where a drone could leverage its low center of gravity to self-stabilise through narrow manhole exits.
 
-However, freely rotating spherical cages provide a distinct kinematic advantage during the \emph{airborne} impact itself: they convert linear collision momentum into rotational energy. This mechanism allows the cage to roll along a surface rather than scrape, mitigating the aggressive stick-slip friction dynamics that typically destabilise a drone's flight controller during sustained contact. This principle of kinetic impact deflection forms the mechanical baseline investigated in this thesis.
+The rotating-cage concept has also reached commercial maturity in the Flyability Elios series~\cite{briod2014collision}, confirming the practical viability of decoupled protective cages for confined-space inspection.
+
+Freely rotating spherical cages provide a distinct kinematic advantage during the \emph{airborne} impact itself: they convert linear collision momentum into rotational energy. This mechanism allows the cage to roll along a surface rather than scrape, mitigating the aggressive stick-slip friction dynamics that typically destabilise a drone's flight controller during sustained contact. This principle of kinetic impact deflection forms the mechanical baseline investigated in this thesis.
 
 \subsection{Tactile Sensing and the IMU Noise Problem}
 

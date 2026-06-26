@@ -196,6 +196,9 @@ def init_db():
             imu_peak_accel_x REAL,
             imu_peak_accel_y REAL,
             imu_peak_accel_z REAL,
+            imu_delta_v_z   REAL,
+            imu_delta_v_x   REAL,
+            imu_delta_v_y   REAL,
             imu_peak_gyro    REAL,
             imu_peak_gyro_x  REAL,
             imu_peak_gyro_y  REAL,
@@ -319,6 +322,9 @@ def init_db():
         ("imu_peak_accel_x", "REAL"),
         ("imu_peak_accel_y", "REAL"),
         ("imu_peak_accel_z", "REAL"),
+        ("imu_delta_v_z", "REAL"),
+        ("imu_delta_v_x", "REAL"),
+        ("imu_delta_v_y", "REAL"),
         ("imu_peak_gyro", "REAL"),
         ("imu_peak_gyro_x", "REAL"),
         ("imu_peak_gyro_y", "REAL"),
@@ -463,6 +469,9 @@ def insert_or_replace_flight(flight_name, condition, metrics):
     imu_peak_accel_x   = metrics.get('imu_peak_accel_x')
     imu_peak_accel_y   = metrics.get('imu_peak_accel_y')
     imu_peak_accel_z   = metrics.get('imu_peak_accel_z')
+    imu_delta_v_z      = metrics.get('imu_delta_v_z')
+    imu_delta_v_x      = metrics.get('imu_delta_v_x')
+    imu_delta_v_y      = metrics.get('imu_delta_v_y')
     imu_peak_gyro      = metrics.get('imu_peak_gyro')
     imu_peak_gyro_x    = metrics.get('imu_peak_gyro_x')
     imu_peak_gyro_y    = metrics.get('imu_peak_gyro_y')
@@ -558,6 +567,7 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         "act_sp_x", "act_sp_y", "act_sp_z", 
         "act_ep_x", "act_ep_y", "act_ep_z",
         "imu_peak_accel", "imu_peak_accel_x", "imu_peak_accel_y", "imu_peak_accel_z",
+        "imu_delta_v_z", "imu_delta_v_x", "imu_delta_v_y",
         "imu_peak_gyro", "imu_peak_gyro_x", "imu_peak_gyro_y", "imu_peak_gyro_z",
         "imu_accel_energy", "imu_accel_energy_x", "imu_accel_energy_y", "imu_accel_energy_z",
         "imu_gyro_energy", "imu_gyro_energy_x", "imu_gyro_energy_y", "imu_gyro_energy_z",
@@ -586,6 +596,7 @@ def insert_or_replace_flight(flight_name, condition, metrics):
         act_sp[0], act_sp[1], act_sp[2], 
         act_ep[0], act_ep[1], act_ep[2],
         imu_peak_accel, imu_peak_accel_x, imu_peak_accel_y, imu_peak_accel_z,
+        imu_delta_v_z, imu_delta_v_x, imu_delta_v_y,
         imu_peak_gyro, imu_peak_gyro_x, imu_peak_gyro_y, imu_peak_gyro_z,
         imu_accel_energy, imu_accel_energy_x, imu_accel_energy_y, imu_accel_energy_z,
         imu_gyro_energy, imu_gyro_energy_x, imu_gyro_energy_y, imu_gyro_energy_z,

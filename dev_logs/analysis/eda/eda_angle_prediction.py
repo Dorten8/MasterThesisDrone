@@ -30,6 +30,7 @@ Or import from a notebook:
 
 import sys
 import os
+import shutil
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -55,6 +56,10 @@ get_database_df = _db_manager_mod.get_database_df
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 GRAPHICS_DIR = os.path.join(THIS_DIR, "..", "graphics")
 os.makedirs(GRAPHICS_DIR, exist_ok=True)
+
+THESIS_PLOTS_DIR = os.path.join(THIS_DIR, "..", "..", "..", "thesis", "plots")
+THESIS_PLOTS_DIR = os.path.abspath(THESIS_PLOTS_DIR)
+os.makedirs(THESIS_PLOTS_DIR, exist_ok=True)
 
 # ── Professional plotting style (thesis) ────────────────────────────────────
 plt.rcParams.update({
@@ -639,13 +644,10 @@ def plot_consolidated_parallel_coordinates(df_fix, df_rot, save_path=None, show=
 
     Features are ordered left-to-right by descending |Pearson r| as computed
     on the **Rotating Cage** data only — Rotating Cage defines the importance
-    ordering.  Each feature's x-tick is a dual-rank label:
+    ordering.  Each panel shows its own feature rank:
 
-      • Bottom ticks (Fixed Cage panel):  Rotating Cage rank in blue
-      • Top ticks (Rotating Cage panel):  Fixed Cage rank in red
-
-    This lets the reader cross-reference: "Feature X is Rotating's #1 but only
-    Fixed's #7 — the gap tells the story."
+      • Top panel (Rotating Cage):  Rotating rank (R#) in blue
+      • Bottom panel (Fixed Cage):  Fixed rank (F#) in red
 
     Parameters
     ----------
@@ -737,16 +739,16 @@ def plot_consolidated_parallel_coordinates(df_fix, df_rot, save_path=None, show=
 
         ax.set_xticks(x_pos)
 
-        if idx == 0:  # ── Rotating Cage (top panel) — Fixed ranks on TOP ──
+        if idx == 0:  # ── Rotating Cage (top panel) — Rotating ranks on TOP ──
             ax.tick_params(top=True, labeltop=True, bottom=False, labelbottom=False)
-            ax.set_xticklabels(fix_tick_labels, rotation=55, ha='left', fontsize=9)
-            for lbl in ax.get_xticklabels():
-                lbl.set_color(CONDITION_COLORS['Fixed Cage'])  # red
-        else:          # ── Fixed Cage (bottom panel) — Rotating ranks on BOTTOM ──
-            ax.tick_params(top=False, labeltop=False, bottom=True, labelbottom=True)
-            ax.set_xticklabels(rot_tick_labels, rotation=55, ha='right', fontsize=9)
+            ax.set_xticklabels(rot_tick_labels, rotation=55, ha='left', fontsize=9)
             for lbl in ax.get_xticklabels():
                 lbl.set_color(CONDITION_COLORS['Rotating Cage'])  # blue
+        else:          # ── Fixed Cage (bottom panel) — Fixed ranks on BOTTOM ──
+            ax.tick_params(top=False, labeltop=False, bottom=True, labelbottom=True)
+            ax.set_xticklabels(fix_tick_labels, rotation=55, ha='right', fontsize=9)
+            for lbl in ax.get_xticklabels():
+                lbl.set_color(CONDITION_COLORS['Fixed Cage'])  # red
 
         # Remove X-axis margins so lines extend edge-to-edge
         ax.margins(x=0)
@@ -786,6 +788,11 @@ def plot_consolidated_parallel_coordinates(df_fix, df_rot, save_path=None, show=
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"   💾 Saved consolidated parallel coordinates → "
               f"{os.path.relpath(save_path, THIS_DIR)}")
+
+        # Dual-save to thesis/plots/ per §4.0.1
+        thesis_dst = os.path.join(THESIS_PLOTS_DIR, "consolidated_parallel_coordinates.png")
+        plt.savefig(thesis_dst, dpi=300, bbox_inches='tight')
+        print(f"   📎 → thesis/plots/consolidated_parallel_coordinates.png")
 
     if show:
         plt.show()
@@ -1036,6 +1043,10 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
         plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.08)
         print(f"   💾 Saved consolidated feature correlation → "
               f"{os.path.relpath(save_path, THIS_DIR)}")
+        # Dual-save to thesis/plots/ per §4.0.1
+        thesis_dst = os.path.join(THESIS_PLOTS_DIR, "consolidated_feature_correlation.png")
+        shutil.copy2(save_path, thesis_dst)
+        print(f"   📎 → thesis/plots/consolidated_feature_correlation.png")
     if show:
         plt.show()
     plt.close(fig)
@@ -1244,6 +1255,10 @@ def plot_consolidated_top_features(df_fix, df_rot, save_path=None, show=True):
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"   💾 Saved consolidated top features → "
               f"{os.path.relpath(save_path, THIS_DIR)}")
+        # Dual-save to thesis/plots/ per §4.0.1
+        thesis_dst = os.path.join(THESIS_PLOTS_DIR, "consolidated_top_features.png")
+        plt.savefig(thesis_dst, dpi=300, bbox_inches='tight')
+        print(f"   📎 → thesis/plots/consolidated_top_features.png")
     if show:
         plt.show()
     plt.close(fig)

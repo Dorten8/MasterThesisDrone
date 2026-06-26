@@ -767,7 +767,8 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                 else:
                     print(f"[WARN] No pass files found in directory: {f_name}")
 
-        for base_folder, pass_idx, pass_path in pass_files_to_process:
+        total_in_flight = len(pass_files_to_process)
+        for pi, (base_folder, pass_idx, pass_path) in enumerate(pass_files_to_process, 1):
             try:
                 # Load and process MCAP
                 topic_data, bag_start_ns = load_mcap(pass_path)
@@ -895,16 +896,16 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     if is_excluded_pass(pass_name):
                         from dev_logs.analysis.database.db_manager import get_exclusion_info
                         _, reason, _ = get_exclusion_info(pass_name)
-                        print(f"⏭️  '{pass_name}' excluded by manual review ({reason}), skipping.")
+                        print(f"[{pi}/{total_in_flight}] ⏭️  '{pass_name}' excluded by manual review ({reason}), skipping.")
                         continue
 
                     # Only write a complete pass (WP1 + WP2 + WP3 all detected)
                     has_full_pass = ('WP1' in wp_events or 'WP2' in wp_events) and 'WP3' in wp_events
                     if not has_full_pass:
-                        print(f"⚠️  Incomplete pass detected ({pass_name}), skipping DB insert.")
+                        print(f"[{pi}/{total_in_flight}] ⚠️  Incomplete pass detected ({pass_name}), skipping DB insert.")
                         continue
 
-                    print(f"🔄 Segmented implicit pass: {pass_name}")
+                    print(f"[{pi}/{total_in_flight}] 🔄 Segmented implicit pass: {pass_name}")
 
                     # Calculate physical metrics with dynamic column coordinates
                     # EKF kinematics replaces MoCap-derived velocity for the metric computation
@@ -984,8 +985,8 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                     # The check_columns list is intentionally long: every column
                     # that has been added at any point is enumerated so that
                     # schema evolution is handled automatically.
-                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_std_ay', 'motor_avg_before', 'e_sp_timestamp_PX4', 'e_impact_timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_rmsld', 'imu_ax_spread_impact']):
-                        print(f"⏭️  '{pass_name}' already in database, skipping insert.")
+                    if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_std_ay', 'motor_avg_before', 'e_sp_timestamp_PX4', 'e_impact_timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_rmsld', 'imu_ax_spread_impact', 'imu_delta_v_z', 'imu_delta_v_x', 'imu_delta_v_y']):
+                        print(f"[{pi}/{total_in_flight}] ⏭️  '{pass_name}' already in database, skipping insert.")
                     else:
                         insert_or_replace_flight(pass_name, condition_label, metrics)
 
@@ -1056,7 +1057,7 @@ def run(label, angle_deg, column_x=0.408, column_y=0.358,
                             pid_capsule_path = os.path.join(flight_dir, f"{pass_prefix}pid_rate_tracking.png")
                             plot_pid_rate_tracking(ulg_files[0], offset_sec, bag_start_ns, wp_events, pass_name, condition_label, pid_capsule_path, show_plot=False)
                     else:
-                        print(f"⏭️  No collision detected in {pass_name}, skipping plot generation.")
+                        print(f"[{pi}/{total_in_flight}] ⏭️  No collision detected in {pass_name}, skipping plot generation.")
 
                     metrics_list.append(metrics)
                     details_list.append({
@@ -1419,7 +1420,8 @@ if __name__ == "__main__":
     #
     # The pass name is constructed as "<flight_folder> - Pass-NN" which is
     # the primary key in the database — no two passes share the same key.
-    for folder_name, folder_path, pass_path in all_pass_files:
+    total_passes = len(all_pass_files)
+    for i, (folder_name, folder_path, pass_path) in enumerate(all_pass_files, 1):
         pass_basename = os.path.basename(pass_path)
         # Parse pass index from filename, e.g., "...-pass03.mcap" → 3
         m = _re.search(r'-pass(\d+)\.mcap$', pass_basename)
@@ -1432,16 +1434,16 @@ if __name__ == "__main__":
         if is_excluded_pass(pass_name):
             from dev_logs.analysis.database.db_manager import get_exclusion_info
             _, reason, _ = get_exclusion_info(pass_name)
-            print(f"⏭️  Skipping (excluded by manual review: {reason}): {pass_name}")
+            print(f"[{i}/{total_passes}] ⏭️  Skipping (excluded: {reason}): {pass_name}")
             skipped += 1
             continue
 
         if False:  # Temporarily bypassed to populate new motor metrics columns for all flights
-            print(f"⏭️  Skipping (already cached): {pass_name}")
+            print(f"[{i}/{total_passes}] ⏭️  Skipping (already cached): {pass_name}")
             skipped += 1
             continue
 
-        print(f"\n🔄 Processing: {pass_name}")
+        print(f"\n[{i}/{total_passes}] 🔄 Processing: {pass_name}")
         try:
             # Load the self-contained pass MCAP
             from mcap_ros2.reader import read_ros2_messages as _read_msgs
@@ -1563,8 +1565,8 @@ if __name__ == "__main__":
             condition = _infer_condition(folder_name)
             
             # Skip if already cached
-            if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_std_ay', 'motor_avg_before', 'e_sp_timestamp_PX4', 'e_impact_timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_rmsld', 'imu_ax_spread_impact']):
-                print(f"⏭️  '{pass_name}' already in database, skipping insert.")
+            if is_already_cached(pass_name, check_columns=['impact_detected', 'nom_sp_x', 'before_impact_accel', 'imu_peak_accel', 'imu_std_ay', 'motor_avg_before', 'e_sp_timestamp_PX4', 'e_impact_timestamp_PX4', 'allocator_saturation_duration_sec', 'max_unallocated_torque', 'thrust_setpoint_achieved_pct', 'roll_rate_error_rms', 'pitch_rate_error_rms', 'yaw_rate_error_rms', 'active_flight_time_sec', 'voltage_drop_rate_v_per_min', 'capacity_drain_rate_pct_per_min', 'max_actuator_output', 'path_spread_rmsld', 'imu_ax_spread_impact', 'imu_delta_v_z', 'imu_delta_v_x', 'imu_delta_v_y']):
+                print(f"[{i}/{total_passes}] ⏭️  '{pass_name}' already in database, skipping insert.")
             else:
                 insert_or_replace_flight(pass_name, condition, metrics)
 
@@ -1632,7 +1634,7 @@ if __name__ == "__main__":
                     pid_capsule_path = os.path.join(folder_path, f"{pass_prefix}pid_rate_tracking.png")
                     plot_pid_rate_tracking(ulg_files[0], offset_sec, bag_start_ns, wp_events, pass_name, condition, pid_capsule_path, show_plot=False)
             else:
-                print(f"   ⏭️  No collision detected in {pass_name}, skipping plot generation.")
+                print(f"   [{i}/{total_passes}] ⏭️  No collision detected in {pass_name}, skipping plot generation.")
 
             populated += 1
 

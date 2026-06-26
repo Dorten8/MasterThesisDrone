@@ -1210,6 +1210,7 @@ def compute_flight_metrics(df_mocap, wp_events, column_x, column_y, column_radiu
             'mean_tracking_error': 0.0,
             'max_lateral_displacement': 0.0,
             'imu_peak_accel': None, 'imu_peak_accel_x': None, 'imu_peak_accel_y': None, 'imu_peak_accel_z': None,
+            'imu_delta_v_z': None, 'imu_delta_v_x': None, 'imu_delta_v_y': None,
             'imu_peak_gyro': None, 'imu_peak_gyro_x': None, 'imu_peak_gyro_y': None, 'imu_peak_gyro_z': None,
             'imu_accel_energy': None, 'imu_accel_energy_x': None, 'imu_accel_energy_y': None, 'imu_accel_energy_z': None,
             'imu_gyro_energy': None, 'imu_gyro_energy_x': None, 'imu_gyro_energy_y': None, 'imu_gyro_energy_z': None,
@@ -1439,6 +1440,7 @@ def compute_flight_metrics(df_mocap, wp_events, column_x, column_y, column_radiu
     # ==================================================================
     imu_metrics = {
         'imu_peak_accel': None, 'imu_peak_accel_x': None, 'imu_peak_accel_y': None, 'imu_peak_accel_z': None,
+        'imu_delta_v_z': None,
         'imu_peak_gyro': None, 'imu_peak_gyro_x': None, 'imu_peak_gyro_y': None, 'imu_peak_gyro_z': None,
         'imu_accel_energy': None, 'imu_accel_energy_x': None, 'imu_accel_energy_y': None, 'imu_accel_energy_z': None,
         'imu_gyro_energy': None, 'imu_gyro_energy_x': None, 'imu_gyro_energy_y': None, 'imu_gyro_energy_z': None,
@@ -1471,6 +1473,41 @@ def compute_flight_metrics(df_mocap, wp_events, column_x, column_y, column_radiu
         imu_metrics['imu_peak_accel_x'] = float(df_contact['ax'].abs().max())
         imu_metrics['imu_peak_accel_y'] = float(df_contact['ay'].abs().max())
         imu_metrics['imu_peak_accel_z'] = float((df_contact['az'] + 9.81).abs().max())
+
+        # === DELTA-V Z (INTEGRATED ACCELERATION) ===
+        # Unlike peak deceleration (a single instantaneous max), Delta-V Z
+        # captures the *sustained* vertical impulse over the entire 400 ms
+        # contact window.  This distinguishes a brief elastic "snap" (high
+        # peak, low integral — the cage shell bouncing elastically off the
+        # column) from a genuine aerodynamic "slump" where the drone loses
+        # lift for a sustained period (moderate peak, high integral).
+        #
+        # Computation: shift Z-acceleration to remove gravity compensation
+        # (adding back +9.81 m/s^2), take the absolute value so that both
+        # upward and downward excursions contribute positively, then
+        # integrate via the composite trapezoidal rule.
+        #
+        #   ΔV_z = ∫ |a_z(t) + g| dt   [m/s]    over [t-50ms, t+350ms]
+        #
+        # The IMU samples at 250 Hz → dt = 0.004 s exactly, so we can use
+        # the fixed dx=0.004 instead of recomputing the time vector.
+        # np.trapz with explicit dx is faster and avoids timestamp jitter.
+        if len(df_contact) >= 2:
+            imu_metrics['imu_delta_v_z'] = float(np.trapz(
+                (df_contact['az'] + 9.81).abs(), dx=0.004))
+        else:
+            imu_metrics['imu_delta_v_z'] = 0.0
+
+        # Delta-V X and Y (horizontal impulse integrals) — same principle
+        # as Delta-V Z but without gravity compensation.
+        if len(df_contact) >= 2:
+            imu_metrics['imu_delta_v_x'] = float(np.trapz(
+                df_contact['ax'].abs(), dx=0.004))
+            imu_metrics['imu_delta_v_y'] = float(np.trapz(
+                df_contact['ay'].abs(), dx=0.004))
+        else:
+            imu_metrics['imu_delta_v_x'] = 0.0
+            imu_metrics['imu_delta_v_y'] = 0.0
 
         imu_metrics['imu_peak_gyro'] = float(df_contact['g_mag'].max())
         imu_metrics['imu_peak_gyro_x'] = float(df_contact['gx'].abs().max())
@@ -1601,6 +1638,9 @@ def compute_flight_metrics(df_mocap, wp_events, column_x, column_y, column_radiu
         'imu_peak_accel_x': imu_metrics['imu_peak_accel_x'],
         'imu_peak_accel_y': imu_metrics['imu_peak_accel_y'],
         'imu_peak_accel_z': imu_metrics['imu_peak_accel_z'],
+        'imu_delta_v_z': imu_metrics['imu_delta_v_z'],
+        'imu_delta_v_x': imu_metrics['imu_delta_v_x'],
+        'imu_delta_v_y': imu_metrics['imu_delta_v_y'],
         'imu_peak_gyro': imu_metrics['imu_peak_gyro'],
         'imu_peak_gyro_x': imu_metrics['imu_peak_gyro_x'],
         'imu_peak_gyro_y': imu_metrics['imu_peak_gyro_y'],

@@ -191,6 +191,24 @@ $Z$-axis acceleration has $+g = 9.81$~m/s$^2$ added back to remove gravity compe
 \texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
 
 \medskip
+\paragraph{Delta-V Z (Integrated Vertical Deceleration).}
+\begin{equation}
+    \Delta V_z = \int_{t_{\text{impact}}-0.05}^{t_{\text{impact}}+0.35} |a_z(t) + g| \; dt \qquad [\mathrm{m\,s^{-1}}]
+\end{equation}
+The signal is shifted by $+g$ to remove the IMU's gravity compensation before integration, so that the integral captures the \emph{total} upward-downward impulse during the collision, not merely the deviation from hover. The absolute value prevents positive and negative excursions from cancelling in the integral---both the initial upward jolt and the subsequent rebound contribute additively.
+
+Whereas the raw peak $\max|a_z|$ captures the instantaneous \emph{snap} (a single elastic shock spike), the integral $\Delta V_z$ captures the sustained \emph{slump}: the aerodynamic consequence of the collision, i.e., how much lift the drone loses over the full 400~ms contact window. Two collisions can produce identical peak values yet differ markedly in the duration of upward impulse; $\Delta V_z$ distinguishes these cases.
+
+\paragraph{Delta-V X and Delta-V Y (Horizontal Impulse Integrals).}
+The horizontal components are defined analogously without gravity compensation:
+\begin{align}
+    \Delta V_x &= \int_{t_{\text{impact}}-0.05}^{t_{\text{impact}}+0.35} |a_x(t)| \; dt \qquad [\mathrm{m\,s^{-1}}] \\
+    \Delta V_y &= \int_{t_{\text{impact}}-0.05}^{t_{\text{impact}}+0.35} |a_y(t)| \; dt \qquad [\mathrm{m\,s^{-1}}]
+\end{align}
+These are equivalent to $E_{\text{accel},x}$ and $E_{\text{accel},y}$ in the per-axis energy definition below. Lower horizontal impulse indicates better lateral energy absorption by the cage.\\
+\texttt{\small dev\_logs/analysis/kinematics/kin\_calculator.py:\ compute\_flight\_metrics()}
+
+\medskip
 \paragraph{Integrated IMU Energy (per-axis).}
 \begin{align}
     E_{\text{accel},c} &= \int_{t_{\text{impact}}-0.05}^{t_{\text{impact}}+0.35} |a_c(t)| \; dt \qquad [\mathrm{m\,s^{-1}}] \\
