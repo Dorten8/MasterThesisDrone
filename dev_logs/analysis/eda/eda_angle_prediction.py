@@ -824,7 +824,6 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
         If True, calls plt.show().
     """
     from matplotlib.patches import ConnectionPatch
-    from matplotlib.gridspec import GridSpec
 
     # ── Compute Pearson r for each feature per cage ────────────────────────
     def _compute_corr(df):
@@ -860,21 +859,15 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
         fix_y[row['feature']] = n_features - 1 - i
         fix_abs_r[row['feature']] = row['abs_r']
 
-    # ── Build figure: 5-column GridSpec ────────────────────────────────────
-    # Col 0: Rotating Cage keys    (rank + feature name, right-aligned flush to heatmap)
-    # Col 1: Rotating Cage heatmap (1-column, r values)
-    # Col 2: Center spline axis    (empty, ConnectionPatch arcs)
-    # Col 3: Fixed Cage heatmap    (1-column, r values)
-    # Col 4: Fixed Cage keys       (feature name, left-aligned pushing outward)
+    # ── Build figure: absolute add_axes coordinates (no GridSpec) ───────────
+    # [x_start, y_start, width, height] — locks each column to a fixed canvas
+    # fraction so no column can push or resize its neighbours.
     fig = plt.figure(figsize=(10.0, max(8, n_features * 0.34)), dpi=150)
-    gs = GridSpec(1, 5, figure=fig,
-                  width_ratios=[0.9, 0.7, 0.4, 0.7, 0.9],
-                  wspace=0.015)
-    ax_rot_keys = fig.add_subplot(gs[0, 0])
-    ax_rot_heat = fig.add_subplot(gs[0, 1])
-    ax_splines  = fig.add_subplot(gs[0, 2])
-    ax_fix_heat = fig.add_subplot(gs[0, 3])
-    ax_fix_keys = fig.add_subplot(gs[0, 4])
+    ax_rot_keys = fig.add_axes([0.35, 0.05, 0.01, 0.83])   # 1% sliver axis. Text bleeds left.
+    ax_rot_heat = fig.add_axes([0.37, 0.05, 0.08, 0.83])   # Exactly 0.01 gap from the text sliver
+    ax_splines  = fig.add_axes([0.45, 0.05, 0.10, 0.83])   # Center gap crushed from 0.16 down to 0.10
+    ax_fix_heat = fig.add_axes([0.55, 0.05, 0.08, 0.83])   # Symmetrical to the left side
+    ax_fix_keys = fig.add_axes([0.64, 0.05, 0.01, 0.83])   # 1% sliver axis. Text bleeds right.
 
     # ── Shared y-limits across all 5 axes ──────────────────────────────────
     y_bottom, y_top = -0.5, n_features - 0.5
@@ -889,7 +882,7 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
 
     # ── Figure title ───────────────────────────────────────────────────────
     fig.suptitle('IMU Feature Correlation with Impact Angle',
-                 fontweight='bold', fontsize=13, y=0.99)
+                 fontweight='bold', fontsize=14, x=0.58, y=0.96)
 
     # ═══════════════════════════════════════════════════════════════════════
     #  Col 0: Rotating Cage Keys  (rank + feature name, right-aligned
@@ -900,8 +893,8 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
     for i, (_, row) in enumerate(rot_corr.iterrows()):
         rank = i + 1
         y_pos = n_features - 1 - i
-        # Right-aligned at x=0.98 so the rank+name is tight against the heatmap
-        ax_rot_keys.text(0.98, y_pos, f"{rank}. {row['label']}",
+        # Right-aligned at x=1.0 — flush to right edge of text column
+        ax_rot_keys.text(1.0, y_pos, f"{rank}. {row['label']}",
                          fontsize=7.0, va='center', ha='right', color='#333333')
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -919,7 +912,7 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
         ax_rot_heat.spines[spine].set_visible(False)
 
     # Sub-title centred directly above the heatmap column
-    ax_rot_heat.text(0.5, y_top + 1.0, 'Rotating Cage',
+    ax_rot_heat.text(0.5, y_top + 0.5, 'Rotating Cage',
                      fontweight='bold', fontsize=11, va='bottom', ha='center',
                      color='black', transform=ax_rot_heat.get_yaxis_transform())
 
@@ -936,7 +929,7 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
         ax_rot_heat.text(0, y_pos, f"{val:+.3f}{sig}",
                          ha='center', va='center', fontsize=7.0,
                          fontweight='bold',
-                         color='white' if abs(val) > 0.55 else 'black')
+                         color='white' if abs(val) >= 0.5 else 'black')
 
     # ═══════════════════════════════════════════════════════════════════════
     #  Col 2: Center Spline Axis  (invisible canvas for ConnectionPatches)
@@ -955,7 +948,7 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
         ax_fix_heat.spines[spine].set_visible(False)
 
     # Sub-title centred directly above the heatmap column
-    ax_fix_heat.text(0.5, y_top + 1.0, 'Fixed Cage',
+    ax_fix_heat.text(0.5, y_top + 0.5, 'Fixed Cage',
                      fontweight='bold', fontsize=11, va='bottom', ha='center',
                      color='black', transform=ax_fix_heat.get_yaxis_transform())
 
@@ -972,7 +965,7 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
         ax_fix_heat.text(0, y_pos, f"{val:+.3f}{sig}",
                          ha='center', va='center', fontsize=7.0,
                          fontweight='bold',
-                         color='white' if abs(val) > 0.55 else 'black')
+                         color='white' if abs(val) >= 0.5 else 'black')
 
     # ═══════════════════════════════════════════════════════════════════════
     #  Col 4: Fixed Cage Keys  (feature name, left-aligned so text pushes
@@ -983,9 +976,8 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
     for i, (_, row) in enumerate(fix_corr.iterrows()):
         rank = i + 1
         y_pos = n_features - 1 - i
-        # Left-aligned at the inner edge (x=0.02) so text starts near the
-        # heatmap and extends rightward — clean uniform left edge.
-        ax_fix_keys.text(0.02, y_pos, f"{rank}. {row['label']}",
+        # Left-aligned at x=0.0 — flush to left edge of text column
+        ax_fix_keys.text(0.0, y_pos, f"{rank}. {row['label']}",
                          fontsize=7.0, va='center', ha='left', color='#333333')
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -1030,17 +1022,13 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
     # ═══════════════════════════════════════════════════════════════════════
     #  Shared Colorbar — dedicated axes at the far-right canvas edge
     # ═══════════════════════════════════════════════════════════════════════
-    cax = fig.add_axes([0.96, 0.12, 0.012, 0.76])
+    cax = fig.add_axes([0.83, 0.12, 0.015, 0.76])
     cbar = fig.colorbar(im_rot, cax=cax)
     cbar.set_label("Pearson R with Impact Angle\n← Negative  |  Positive →",
                    fontweight='bold', fontsize=8.5)
     cbar.ax.tick_params(labelsize=7)
-
-
-    # ── Final layout adjustments ───────────────────────────────────────────
-    fig.subplots_adjust(left=0.02, right=0.94, top=0.88, bottom=0.05)
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.08)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.02)
         print(f"   💾 Saved consolidated feature correlation → "
               f"{os.path.relpath(save_path, THIS_DIR)}")
         # Dual-save to thesis/plots/ per §4.0.1
