@@ -1,8 +1,9 @@
+\clearpage
 \section{Methodology}
 \label{sec:methodology}
 The methodology for this thesis project stands on the development of a drone to use for the various tests and implementations, together with a controlled environment to test the drone in.
 The development consists of hardware choices, software choices, and the constraints arising from these two, which dictate much of the design.
-\subsection{Design and Development}
+\subsection{Requirements and Constraints}
 \subsubsection{Flight Type}
 A quadcopter design was a very clear choice as these are widely used and allow for very nimble and precise movement as opposed to fixed-wing designs which need to be in forward motion to generate upthrust for their flight. The Quadcopter design due to its symmetric nature makes it easy to control predictably.
 
@@ -15,7 +16,7 @@ This makes the control of quadcopter somewhat simple as it can be summarized in 
     \caption{Standard quadcopter ``props-in'' configuration showing yaw ($\psi$), pitch ($\theta$), and roll ($\phi$). From~\cite{gomezParetoOptimalPID2020}.}
     \label{fig:drone_movement}
 \end{figure}
-\subsubsection{Constraints and Design Objectives}
+\subsubsection{Constraints, Design Objectives, and Platform Sizing}
 This work is a continuation of the Spinfly platform by A.~Lerche \cite{lercheSpinFlyUAVSystem}, which identified two primary limitations that directly shaped this project: \textbf{insufficient weight headroom}---the original platform struggled with takeoff when equipped with the protective cage, leaving no margin for component upgrades---and \textbf{insufficient battery capacity}, which created operational friction by limiting test throughput.
 
 These problems are coupled: battery mass scales with capacity, yet a heavier battery forces higher motor output, accelerating discharge and potentially negating the added capacity. Solving both simultaneously required systematic trade-off analysis. Lerche also noted a lack of robust autonomous control and unreliable telemetry, which informed the autopilot selection.
@@ -26,9 +27,6 @@ From these constraints, three design targets were formulated:
     \item \textbf{Achieve longer flight duration} --- extend mission time while maintaining efficient power draw.
     \item \textbf{Simplify autonomous control} --- adopt a proven, modular flight controller to reduce software complexity.
 \end{enumerate}
-
-\subsubsection{Platform Sizing: The 4-Inch Tradeoff}
-\label{sec:sizing_tradeoff}
 
 The drone's physical dimensions are governed by a narrow three-way tradeoff, illustrated in \autoref{fig:drone_sizing_tradeoff}:
 
@@ -45,11 +43,65 @@ The drone's physical dimensions are governed by a narrow three-way tradeoff, ill
 
 \textbf{Upper bound: indoor safety ceiling.} The 4-inch propeller class is the practical upper limit for indoor flight in confined spaces.\footnote{As recommended by commercial test platforms: \url{https://vibms.com/what-size-fpv-drone-should-i-get/}} Larger platforms (5-inch and above) produce propeller wash that destabilises the vehicle in tight enclosures and increase the kinetic energy carried into any collision, raising the barrier to physical survivability. Platforms large enough to carry heavy sensors such as a full-size LIDAR (e.g., Ouster OS0 at $\sim$450\,g) exceed the thrust budget while also exceeding safe indoor operating dimensions.
 
-\textbf{The 4-inch sweet spot.} At this scale, 2004-stator motors paired with 4-inch GF4023 propellers on a 6S battery produce sufficient lift for the companion computer and cage while hovering at 45--50\% throttle---near the efficiency peak. The resulting TWR of $\sim$3.8:1 places the drone in the responsive research-autonomy band, with enough thrust to arrest post-collision drift and recover to the commanded setpoint.
+\textbf{The 4-inch optimum.} At this scale, 2004-stator motors paired with 4-inch GF4023 propellers on a 6S battery produce sufficient lift for the companion computer and cage while hovering at 45--50\% throttle---near the efficiency peak. The resulting TWR of $\sim$3.8:1 places the drone in the responsive research-autonomy band, with enough thrust to arrest post-collision drift and recover to the commanded setpoint. The specific motor, battery, and efficiency trade-offs that realise this target are detailed in the System Architecture section below.
 
-\paragraph{Platform Selection: PX4 and Pixhawk 6C}
+\subsection{System Architecture}
 
-To address these objectives holistically, PX4 was selected as the autonomous platform. Two platforms currently dominate the open-source UAV ecosystem: ArduPilot and PX4. PX4 was chosen over ArduPilot for its permissive BSD licensing (which allows proprietary extensions, whereas ArduPilot's GPLv3 requires contributed code to remain open), its modular publish-subscribe architecture (uORB), and its well-developed hardware standards under the Dronecode Foundation~\cite{meierPX4NodebasedMultithreaded2015}. PX4's open-source standard is built on modular architecture using \textbf{uORB (microObject Request Broker)}---a publish-subscribe middleware layer suited for plug-and-play development. These factors promised faster integration with the ROS~2 middleware layer and reduced hardware-software troubleshooting. This modularity enables rapid research iteration: novel autonomous behaviors can be implemented as independent modules without modifying the core flight stack.
+The autonomous flight stack is organised into five layers, illustrated in \autoref{fig:architecture}: Hardware \& Firmware, Middleware, ROS~2 Environment, High-Level Control, and Data \& Analysis. Each layer was selected or developed to address the specific constraints of collision-resilient flight in signal-denied, confined spaces. An external Motion Capture subsystem and a standalone User Input node complete the architecture outside the layered stack.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.92\textwidth]{Figures/architecture.pdf}
+    \caption{Drone software stack architecture: PX4 flight controller (red), uXRCE-DDS middleware (green), ROS~2 environment (blue) with \texttt{px4\_msgs} flowing into \texttt{px4\_ros\_com}, high-level control nodes (teal) including the \texttt{flight\_director.py} state machine driven by Mission and User Input, and the data pipeline (grey) routing MCAP/ULog files through DB Pipeline to Experiment Summary and Jupyter Diagnostics. Motion capture (purple) enters via a Wi-Fi multicast link.}
+    \label{fig:architecture}
+\end{figure}
+
+\subsubsection{Frame and Cage Design}
+
+The drone's mechanical design integrates all major subsystems---flight controller, companion computer, motors, battery, and protective cage---into a single, compact assembly. \autoref{fig:drone_exploded} provides an exploded overview of how these components come together, a layout shaped by the rotating-shell principles explored in the collision-resilience literature~\cite{mahmudDevelopmentCollisionResilient2021}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{Figures/Drone_exploded.pdf}
+    \caption{CAD exploded view of the complete drone assembly.}
+    \label{fig:drone_exploded}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[angle=270,width=0.95\textwidth]{Figures/drone_all_parts.jpg}
+    \caption{Physical exploded view of the complete drone assembly.}
+    \label{fig:drone_all_parts}
+\end{figure}
+
+The protective cage design draws on established geometries from the collision-resilience literature. To ensure self-righting after ground impacts, Mulgaonkar et al.~\cite{mulgaonkarRobustAerialRobot2018} utilised G\"omb\"oc-shaped shells---a convex mono-monostatic body with a single stable equilibrium---for their micro-drone swarms. Separately, Mahmud~\cite{mahmudDevelopmentCollisionResilient2021} explored rotating-shell principles, comparing a truncated icosahedron cage on a 3-axis gimbal against a simpler, single-axis turtle-shell cage; he concluded the truncated icosahedron was \emph{more efficient in minimising collision forces for all possible oblique collisions}, while the turtle-shell was the better choice only when low cost and reduced complexity were paramount. The cage adopted for this work draws on Mahmud's rotating-shell principle while adapting it for airborne impact deflection rather than ground self-recovery.
+
+The development process began with CAD modelling of the frame and cage assembly in OnShape, iterating through several revisions to balance structural rigidity, weight, and propeller clearance.
+% TODO [USER]: Insert your custom technical drawings and CAD renders of the drone assembly here.
+The frame plates were designed as a stack-up sandwich: a bottom plate for the power distribution board and ESCs, a middle deck for the Pixhawk 6C flight controller, and a top plate for the Raspberry Pi 5 companion computer (see the exploded assembly in \autoref{fig:drone_all_parts}). Each layer is separated by vibration-dampening standoffs to mechanically isolate the IMU from high-frequency motor vibrations.
+
+% TODO [USER]: Insert CAD design drawings of the frame assembly and cage structure here.
+
+The cage itself is a PETG-printed spherical shell of 35.8\,cm diameter, mounted on a bearing assembly that allows the outer shell to spin freely upon contact with an obstacle. The bearing is integrated into the frame's structural core: the inner race is fixed to the frame plates, while the outer race carries the PETG shell. This mechanical decoupling converts linear collision momentum into rotational energy, shunting impact shock away from the central fuselage and flight controller.
+
+% TODO [USER]: Insert photographs of the individual assembled frame parts, bearing assembly, and completed drone with cage here.
+
+The fixed-cage control configuration uses identical geometry but rigidly mounts the outer shell to the frame, eliminating the bearing's rotational degree of freedom. All other parameters (mass, diameter, material, propeller clearance) are held constant between the two configurations, isolating the effect of the bearing mechanism as the single experimental independent variable.
+
+\subsubsection{Motor and Battery Selection}
+
+The design targets a \textbf{thrust-to-weight ratio (TWR) of approximately 3.8:1}, positioning the platform in the research/autonomous zone where hover occurs at roughly 45--50\% throttle. This mid-throttle hover is deliberate: motor efficiency peaks at 40--70\% throttle, and hovering at 50\% reserves substantial headroom for autonomous obstacle avoidance, gust rejection, and post-collision recovery. Hovering at or near 100\% throttle leaves zero control margin.\cite{bershadsky2016propulsion}
+
+\textbf{EMAX ECOII 2004 1600KV} motors were selected to meet this target. The 2004 stator (20\,mm diameter, 4\,mm height) provides high torque at mid-throttle while the low 1600\,KV rating (1600\,RPM per volt) is matched to a \textbf{6S LiPo battery} (22.2\,V nominal). On this voltage, the motors deliver approximately 860\,g static thrust each under 4-inch GF4023 propellers---a combined 3,440\,g~\cite{bershadsky2016propulsion}\footnote{Product specifications available at: \url{https://drone24hours.com/products/t-motor-f2004-1700kv}}. The 6S voltage also places the practical RPM ($\sim$24,000--28,000 under load) within the 4-inch propeller's efficient range, avoiding excessive tip speeds.
+
+\textbf{Efficiency Advantages of the 6S Architecture.}
+The choice of a 6-cell battery over a 4-cell alternative is driven by efficiency. Theoretical foundations of brushless DC (BLDC) motor dynamics demonstrate that higher-voltage architectures (such as 6S) are significantly more efficient than lower-voltage alternatives (such as 4S) for equivalent power outputs. Because electrical power is proportional to voltage multiplied by current ($P = VI$), increasing the system voltage proportionally reduces the current required to generate the same mechanical thrust. This reduction in current quadratically decreases the resistive copper losses ($P_{\text{loss}} = I^2R$) within the motor windings and electronic speed controllers, thereby reducing thermal dissipation and extending overall flight endurance.\cite{hughes2013electric}
+
+\textbf{Voltage sag}---the temporary voltage drop under high-current discharge, caused by battery internal resistance ($V_{\text{drop}} = I \times R_{\text{internal}}$)---is proportionally less severe at higher baseline voltages. Under an equivalent current spike, a 4S pack may sag by over 30\% of its nominal voltage, whereas an equivalent-quality 6S pack sees a smaller relative drop.\cite{bershadsky2016propulsion} For autonomous flight, where the controller expects a predictable motor response, excessive sag introduces a latency between commanded and actual thrust that degrades control stability during rapid maneuvers. Higher baseline voltage provides a larger operating margin against this effect. The detailed derivation is given in the \hyperref[sec:annex_hardware]{Annex}.
+
+\subsubsection{Flight Controller: PX4 and Pixhawk 6C}
+
+The flight controller occupies the Hardware \& Firmware layer of the system architecture (\autoref{fig:architecture}), directly interfacing with the motors, ESCs, and onboard sensors. To address the three design objectives holistically, PX4 was selected as the autonomous platform. Two platforms currently dominate the open-source UAV ecosystem: ArduPilot and PX4. PX4 was chosen over ArduPilot for its permissive BSD licensing (which allows proprietary extensions, whereas ArduPilot's GPLv3 requires contributed code to remain open), its modular publish-subscribe architecture (uORB), and its well-developed hardware standards under the Dronecode Foundation~\cite{meierPX4NodebasedMultithreaded2015}. PX4's open-source standard is built on modular architecture using \textbf{uORB (microObject Request Broker)}---a publish-subscribe middleware layer suited for plug-and-play development. These factors promised faster integration with the ROS~2 middleware layer and reduced hardware-software troubleshooting. This modularity enables rapid research iteration: novel autonomous behaviors can be implemented as independent modules without modifying the core flight stack.
 
 The \textbf{Pixhawk 6C flight controller} was chosen as the hardware instantiation of the PX4 standard. Critically, Pixhawk is not a monolithic design but represents standardized connector specifications, sensor integration points, and reference schematics managed by the Dronecode Foundation~\footnote{\url{https://www.unmannedsystemstechnology.com/2023/01/latest-pixhawk-open-standards-available/}}. This standardization means:
 
@@ -63,71 +115,19 @@ The \textbf{Pixhawk 6C flight controller} was chosen as the hardware instantiati
 
 The 6C's form factor (84.8 \(\times\) 44 \(\times\) 12.4 mm) justifies the 4-inch drone design choice.\footnote{\url{https://docs.holybro.com/autopilot/pixhawk-6c/technical-specification}} Four-inch platforms represent the upper practical limit for indoor flight while remaining large enough to carry meaningful payloads.
 
-\paragraph{Thrust-to-Weight and Efficiency Rationale}
+The Pixhawk 6C runs PX4 Autopilot firmware (\texttt{v1.16.1rc}) and is responsible for low-level attitude control, motor mixing, and sensor fusion. Its dual IMU sensors (ICM-42688-P and BMI088) and onboard IST8310 magnetometer are fused in the EKF2 estimator alongside external vision odometry from the MoCap system. The magnetometer is disabled for indoor operation to prevent interference with MoCap yaw data. The full parameter configuration is given in the repository \texttt{README.md}.
 
-The design targets a \textbf{thrust-to-weight ratio (TWR) of approximately 3.8:1}, positioning the platform in the research/autonomous zone where hover occurs at roughly 45--50\% throttle. This mid-throttle hover is deliberate: motor efficiency peaks at 40--70\% throttle, and hovering at 50\% reserves substantial headroom for autonomous obstacle avoidance, gust rejection, and post-collision recovery. Hovering at or near 100\% throttle leaves zero control margin.\cite{bershadsky2016propulsion}
+\subsubsection{Companion Computer: Raspberry Pi 5}
 
-\paragraph{Motor and Battery Selection}
+The companion computer is a \textbf{Raspberry Pi 5} (8\,GB variant), selected for its substantial compute headroom over previous Pi generations: the quad-core Cortex-A76 provides roughly 2--3$\times$ the CPU throughput of the Pi~4, sufficient for concurrent MoCap data ingestion, offboard control computation, and high-bandwidth telemetry logging without frame drops.
 
-\textbf{EMAX ECOII 2004 1600KV} motors were selected. The 2004 stator (20\,mm diameter, 4\,mm height) provides high torque at mid-throttle while the low 1600\,KV rating (1600\,RPM per volt) is matched to a \textbf{6S LiPo battery} (22.2\,V nominal). On this voltage, the motors deliver approximately 860\,g static thrust each under 4-inch GF4023 propellers---a combined 3,440\,g~\cite{bershadsky2016propulsion}\footnote{Product specifications available at: \url{https://drone24hours.com/products/t-motor-f2004-1700kv}}. The 6S voltage also places the practical RPM ($\sim$24,000--28,000 under load) within the 4-inch propeller's efficient range, avoiding excessive tip speeds.
-
-\paragraph{Efficiency Advantages of the 6S Architecture}
-
-The choice of a 6-cell battery over a 4-cell alternative is driven by efficiency. Theoretical foundations of brushless DC (BLDC) motor dynamics demonstrate that higher-voltage architectures (such as 6S) are significantly more efficient than lower-voltage alternatives (such as 4S) for equivalent power outputs. Because electrical power is proportional to voltage multiplied by current ($P = VI$), increasing the system voltage proportionally reduces the current required to generate the same mechanical thrust. This reduction in current quadratically decreases the resistive copper losses ($P_{\text{loss}} = I^2R$) within the motor windings and electronic speed controllers, thereby reducing thermal dissipation and extending overall flight endurance.\cite{hughes2013electric}
-
-\textbf{Voltage sag}---the temporary voltage drop under high-current discharge, caused by battery internal resistance ($V_{\text{drop}} = I \times R_{\text{internal}}$)---is proportionally less severe at higher baseline voltages. Under an equivalent current spike, a 4S pack may sag by over 30\% of its nominal voltage, whereas an equivalent-quality 6S pack sees a smaller relative drop.\cite{bershadsky2016propulsion} For autonomous flight, where the controller expects a predictable motor response, excessive sag introduces a latency between commanded and actual thrust that degrades control stability during rapid maneuvers. Higher baseline voltage provides a larger operating margin against this effect. The detailed derivation is given in the \hyperref[sec:annex_hardware]{Annex}.
-
-\subsection{System Architecture}
-
-The autonomous flight stack is organised into five layers, illustrated in \autoref{fig:architecture}: Hardware \& Firmware, Middleware, ROS~2 Environment, High-Level Control, and Data \& Analysis. Each layer was selected or developed to address the specific constraints of collision-resilient flight in signal-denied, confined spaces. An external Motion Capture subsystem and a standalone User Input node complete the architecture outside the layered stack.
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/architecture.pdf}
-    \caption{Drone software stack architecture: PX4 flight controller (red), uXRCE-DDS middleware (green), ROS~2 environment (blue) with \texttt{px4\_msgs} flowing into \texttt{px4\_ros\_com}, high-level control nodes (teal) including the \texttt{flight\_director.py} state machine driven by Mission and User Input, and the data pipeline (grey) routing MCAP/ULog files through DB Pipeline to Experiment Summary and Jupyter Diagnostics. Motion capture (purple) enters via a Wi-Fi multicast link.}
-    \label{fig:architecture}
-\end{figure}
-
-\subsubsection{Hardware Platform}
-
-The companion computer is a \textbf{Raspberry Pi 5} (8\,GB variant), selected for its substantial compute headroom over previous Pi generations: the quad-core Cortex-A76 provides roughly 2--3$\times$ the CPU throughput of the Pi~4, sufficient for concurrent MoCap data ingestion, offboard control computation, and high-bandwidth telemetry logging without frame drops. During testing, observed CPU utilization remained below 40\% and RAM below 3\,GB during concurrent MoCap ingestion, ROS~2 operation, and telemetry logging, ensuring zero computational bottlenecks.
-
-The Pi~5 runs \textbf{Ubuntu 24.04} natively on its host OS, as the Raspberry Pi~5 does not officially support older Ubuntu releases. However, the ROS~2 and PX4 development ecosystems are largely built and validated against Ubuntu~22.04 LTS with ROS~2 Humble. To bridge this compatibility gap while maintaining a clean separation of concerns, the flight software stack runs inside a \textbf{Docker container} provisioned with Ubuntu~22.04 LTS and ROS~2 Humble. This containerised approach isolates the flight-critical software from the host OS version, ensures reproducible builds, and grants the container full access to the Pi~5's hardware peripherals (UART, GPIO, networking) via Docker's device-mapping flags. All high-level autonomy---waypoint navigation, MoCap data ingestion, offboard control logic, and telemetry logging---executes within this container.
+The Pi~5 runs the flight software stack inside a \textbf{Docker container} provisioned with Ubuntu~22.04 LTS and ROS~2 Humble (full provisioning details in the \hyperref[sec:appendix_architecture]{Software Annex}). The container communicates with the Pixhawk~6C over a dedicated UART serial link as shown in \autoref{fig:architecture} and \ref{fig:architecture_xrce_dds}.
 
 The Pi~5 communicates with the flight controller over UART (TELEM2) and mounts directly above it within the 4-inch frame envelope.
 
-\subsubsection{Flight Controller}
-
-The \textbf{Pixhawk 6C} runs PX4 Autopilot firmware (\texttt{v1.16.1rc}) and is responsible for low-level attitude control, motor mixing, and sensor fusion.
-
-Its dual IMU redundancy (ICM-42688-P and BMI088) and onboard IST8310 magnetometer are fused in the EKF2 estimator alongside external vision odometry from the MoCap system. The magnetometer is disabled for indoor operation to prevent interference with MoCap yaw data. The full parameter configuration is given in the repository \texttt{README.md}.
-
-\subsubsection{Frame and Cage Design}
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[angle=270,width=0.95\textwidth]{Figures/drone_all_parts.jpg}
-    \caption{Exploded view of the complete drone assembly showing all major components: frame plates, Pixhawk 6C flight controller, Raspberry Pi~5 companion computer, EMAX ECOII 2004 motors, 6S LiPo battery, and the PETG protective cage with bearing assembly.}
-    \label{fig:drone_all_parts}
-\end{figure}
-
-The protective cage design draws on established geometries from the collision-resilience literature. Mahmud~\cite{mahmudDevelopmentCollisionResilient2021} compared a freely rotating gimbal sphere against a G\"omb\"oc-shaped shell (a mono-monostatic body with a single stable equilibrium), concluding the turtle-like G\"omb\"oc form was superior for self-righting after ground impacts. The cage adopted for this work takes inspiration from Mahmud's rotating-shell principle while adapting it for airborne impact deflection rather than ground self-recovery.
-
-The development process began with CAD modelling of the frame and cage assembly in Fusion 360, iterating through several revisions to balance structural rigidity, weight, and propeller clearance.
-% TODO [USER]: Insert your custom technical drawings and CAD renders of the drone assembly here.
-The frame plates were designed as a stack-up sandwich: a bottom plate for the power distribution board and ESCs, a middle deck for the Pixhawk 6C flight controller, and a top plate for the Raspberry Pi 5 companion computer (see the exploded assembly in \autoref{fig:drone_all_parts}). Each layer is separated by vibration-dampening standoffs to mechanically isolate the IMU from high-frequency motor vibrations.
-
-% TODO [USER]: Insert CAD design drawings of the frame assembly and cage structure here.
-
-The cage itself is a PETG-printed spherical shell of 35.8\,cm diameter, mounted on a bearing assembly that allows the outer shell to spin freely upon contact with an obstacle. The bearing is integrated into the frame's structural core: the inner race is fixed to the frame plates, while the outer race carries the PETG shell. This mechanical decoupling converts linear collision momentum into rotational energy, shunting impact shock away from the central fuselage and flight controller.
-
-% TODO [USER]: Insert photographs of the individual assembled frame parts, bearing assembly, and completed drone with cage here.
-
-The fixed-cage control configuration uses identical geometry but rigidly mounts the outer shell to the frame, eliminating the bearing's rotational degree of freedom. All other parameters (mass, diameter, material, propeller clearance) are held constant between the two configurations, isolating the effect of the bearing mechanism as the single experimental independent variable.
-
 \subsubsection{Communication Middleware Between Flight Controller and Pi~5}
 
-The communication middleware (Micro-XRCE-DDS) acts as a serial bridge, translating the flight controller's internal C++ struct messages (uORB) into standard ROS~2 network messages, allowing the companion computer to read telemetry. The flight controller and companion computer communicate over a UART serial link (TELEM2, 921\,600 baud). During experimental flights, the link uses \textbf{uXRCE-DDS} exclusively: the PX4 uXRCE-DDS client publishes internal uORB topics (\texttt{vehicle\_odometry}, \texttt{vehicle\_status}, \texttt{actuator\_motors}) to the ROS~2 node graph via \texttt{MicroXRCEAgent} running on the Pi~5 (illustrated in \autoref{fig:architecture_xrce_dds}). A secondary \textbf{MAVLink} stream can be enabled on the same port for ground-station debugging (QGroundControl), but the two protocols are not used simultaneously during active data collection.
+The communication middleware (Micro-XRCE-DDS) acts as a serial bridge, translating the flight controller's internal C++ struct messages (uORB) into standard ROS~2 network messages (\autoref{fig:architecture_xrce_dds}). During experimental flights, \textbf{uXRCE-DDS} is used exclusively: the PX4 uXRCE-DDS client publishes internal uORB topics to the ROS~2 node graph via \texttt{MicroXRCEAgent} running on the Pi~5. A secondary \textbf{MAVLink} stream can be enabled for ground-station debugging (QGroundControl), but the two protocols are not used simultaneously during active data collection.
 
 \begin{figure}[htbp]
     \centering
@@ -140,7 +140,7 @@ The communication middleware (Micro-XRCE-DDS) acts as a serial bridge, translati
 
 \paragraph{Source Submodules}
 
-The ROS~2 workspace integrates several external repositories as Git submodules, providing the interface layer between the high-level autonomy code and the low-level PX4 flight stack:
+The ROS~2 workspace---corresponding to the blue (ROS~2 Environment) and teal (High-Level Control) layers of \autoref{fig:architecture}---integrates several external repositories as Git submodules, providing the interface layer between the high-level autonomy code and the low-level PX4 flight stack:
 
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none,caption={Source submodules under \texttt{src/} providing the ROS~2--PX4 interface layer.},label={lst:submodules}]
 src/
@@ -156,15 +156,14 @@ src/
                                 #   transformer
 \end{lstlisting}
 
-Three of these are critical for the MoCap-to-PX4 chain: \texttt{px4\_msgs} provides the interface message definitions (ROS~2 \texttt{.msg} files mirroring PX4 uORB topics), \texttt{px4\_ros\_com} handles frame transformations (ENU to NED/FRD), and \texttt{mocap\_px4\_bridge} publishes the transformed poses to \texttt{/fmu/in/vehicle\_visual\_odometry}.
+Three of these are critical for the MoCap-to-PX4 chain: \texttt{px4\_msgs} provides the interface message definitions (ROS~2 \texttt{.msg} files mirroring PX4 uORB topics), \texttt{px4\_ros\_com} handles frame transformations (more on that in \autoref{sec:motion_capture}), and \texttt{mocap\_px4\_bridge} publishes the transformed poses to \texttt{/fmu/in/vehicle\_visual\_odometry}.
 
 \paragraph{The Flight Director}
 
 The \texttt{flight\_director.py} node was developed directly from the PX4 ROS~Com offboard control examples, inheriting their structure for heartbeat publishing, offboard mode switching, and trajectory setpoint generation. It serves as the primary mission executor:
 
 \begin{itemize}
-    \item \textbf{State machine}: Implements the waypoint state machine shown in \autoref{fig:flight_director_state_machine}, transitioning through
-    \texttt{DISARMED} $\to$ \texttt{TAKEOFF} (WP0) $\to$ \texttt{WP\_stage} (U-turn) $\to$ \texttt{Exp.\ Start-point} (WP1) $\to$ \texttt{Exp.\ End-point} (WP2) $\to$ \texttt{Recovery} (WP3) $\to$ (auto-loop to \texttt{WP\_stage}, or \texttt{LANDING}). Each state transition publishes a waypoint-identifier message that drives the event segmenter.
+    \item \textbf{State machine}: Implements the waypoint state machine shown in \autoref{fig:flight_director_state_machine} and detailed in \autoref{fig:mission_geometry}. Each state transition publishes a waypoint-identifier message that drives the event segmenter.
     \item \textbf{Offboard control}: Publishes \texttt{TrajectorySetpoint} messages to \texttt{/fmu/in/trajectory\_setpoint} with explicit velocity feedforward (\texttt{hb.velocity = True}). Subscribes to \texttt{/fmu/out/vehicle\_status} for telemetry feedback.
 \end{itemize}
 
@@ -181,15 +180,19 @@ The flight director enforces a multi-layered safety regime designed to prevent t
 
 \textbf{Geofence boundary.} Before each experimental session, a geofence polygon is defined and loaded into the flight director. This boundary is deliberately drawn \emph{inside} the physical extents of the 6-camera OptiTrack Prime~22 capture volume, ensuring that the drone cannot exit the tracking area even at maximum excursion. The boundary is inflated inward by the cage radius (17.9\,cm) plus an additional safety margin, so that a geofence breach is triggered before any part of the cage can contact an external obstacle or leave the tracked volume. If the drone's MoCap position crosses this boundary at any time, the flight director immediately commands an emergency landing.
 
-\textbf{MoCap Loss, Transient Occlusion, and EKF Validation.}
+\subparagraph{Sensor Fusion and Redundancy Safeguards}
 
-\textbf{Safety failsafe.} Should the OptiTrack tracking rate drop below a critical threshold---indicating marker occlusion or tracking degradation---the flight director triggers an automatic landing. This prevents the drone from flying blind in the event of a complete tracking failure.
+\begin{itemize}
+    \item \textbf{Geofence/MoCap loss failsafe.} Before flight, the flight director verifies that all planned waypoints (including the collision sweep and recovery path) project safely inside the geofence boundary with the cage-radius offset subtracted. During flight, if the OptiTrack tracking rate drops below a critical threshold---indicating marker occlusion or tracking degradation---or the drone's MoCap position crosses the geofence, the flight director immediately commands an emergency landing.
 
-\textbf{Transient occlusion during impact.} A distinct and more nuanced problem arises during the exact millisecond of physical impact: the protective cage and column structure physically block the infrared camera's line-of-sight to the drone's reflective markers. This transient marker occlusion causes the MoCap tracking data to glitch. When velocity and acceleration are derived from position by numerical differentiation, even a single-frame position glitch produces a massive, non-physical spike in the resulting kinematic profile. The Savitzky-Golay differentiation filter cannot remove this artefact---it amplifies any discontinuity in the underlying data. Figure~\ref{fig:mocap_dropout} illustrates this failure: the MoCap-derived velocity and acceleration traces exhibit violent, unphysical excursions at the impact instant ($t = 0$), while the EKF2 odometry remains smooth and continuous throughout the event.
+    \item \textbf{Transient occlusion during impact.} A distinct and more nuanced problem arises during the exact millisecond of physical impact: the protective cage and column structure physically block the infrared camera's line-of-sight to the drone's reflective markers. This transient marker occlusion causes the MoCap tracking data to glitch. When velocity and acceleration are derived from position by numerical differentiation, even a single-frame position glitch produces a massive, non-physical spike in the resulting kinematic profile. The Savitzky-Golay differentiation filter cannot remove this artefact---it amplifies any discontinuity in the underlying data. Figure~\ref{fig:mocap_dropout} illustrates this failure: the MoCap-derived velocity and acceleration traces exhibit violent, unphysical excursions at the impact instant ($t = 0$), while the EKF2 odometry remains smooth and continuous throughout the event.
 
-\textbf{EKF2 inertial bridging.} The flight controller's EKF2 does not rely solely on the external vision stream. It continuously fuses the onboard 250\,Hz IMU accelerometer and gyroscope data into its state estimate. When the MoCap feed momentarily degrades during impact, the inertial propagation bridges the gap without introducing noticeable drift. The smooth, physically plausible EKF velocity profile through the collision window---visible in Figure~\ref{fig:mocap_dropout}---confirms that the filter successfully compensates for the optical dropout.
+    \item \textbf{EKF2 inertial bridging.} The flight controller's EKF2 does not rely solely on the external vision stream. It continuously fuses the onboard 250\,Hz IMU accelerometer and gyroscope data into its state estimate. When the MoCap feed momentarily degrades during impact, the inertial propagation bridges the gap without introducing noticeable drift. The smooth, physically plausible EKF velocity profile through the collision window---visible in Figure~\ref{fig:mocap_dropout}---confirms that the filter successfully compensates for the optical dropout.
 
-To validate that the EKF2 accurately mirrors the MoCap ground truth under normal (unoccluded) conditions, Figure~\ref{fig:ekf_validation} overlays the EKF-estimated velocity against the MoCap-derived velocity for representative flights from both cage configurations during clean, steady flight. The close alignment between the two traces confirms that the EKF2 produces velocity estimates consistent with the external reference. Based on this validation, EKF odometry is adopted as the primary source of velocity and acceleration data for all kinematic calculations through the collision window. The raw MoCap position data is retained solely for geometric reference (impact angle computation, clearance measurement, and trajectory visualisation)---calculations that do not require numerical differentiation and are therefore insensitive to transient position glitches.
+    \item \textbf{EKF2--MoCap validation.} Figure~\ref{fig:ekf_validation} overlays the EKF-estimated velocity against the MoCap-derived velocity for representative flights from both cage configurations during clean, steady flight. The close alignment between the two traces confirms that the EKF2 produces velocity estimates consistent with the external reference. Based on this validation, EKF odometry is adopted as the primary source of velocity and acceleration data for all kinematic calculations through the collision window. The raw MoCap position data is retained solely for geometric reference (impact angle computation, clearance measurement, and trajectory visualisation)---calculations that do not require numerical differentiation and are therefore insensitive to transient position glitches.
+
+    \item \textbf{Kill switch.} A spacebar-activated software kill switch runs in the flight director's main loop, providing the operator with an instant disarm capability independent of the geofence and MoCap monitors.
+\end{itemize}
 
 \begin{figure}[htbp]
     \centering
@@ -204,10 +207,6 @@ To validate that the EKF2 accurately mirrors the MoCap ground truth under normal
     \caption{EKF vs.\ MoCap velocity validation during clean, unoccluded flight for representative Fixed Cage (left) and Rotating Cage (right) flights. The close alignment between the two traces confirms that the EKF2 accurately mirrors the MoCap ground truth under normal tracking conditions.}
     \label{fig:ekf_validation}
 \end{figure}
-
-\textbf{Kill switch.} A spacebar-activated software kill switch runs in the flight director's main loop, providing the operator with an instant disarm capability independent of the geofence and MoCap monitors.
-
-\textbf{Pre-flight boundary verification.} Before the flight director accepts a mission, it performs an active pre-check: the planned waypoint trajectory (including the collision sweep leg and recovery path) is projected against the geofence boundary with the cage-radius offset subtracted. If any waypoint or its connecting path segment would violate the boundary, the mission is rejected before takeoff. This ensures that no commanded trajectory can accidentally steer the drone outside the safe capture volume.
 
 The complete experimental pipeline, from hardware through the ROS~2 node graph to telemetry storage, is illustrated in \autoref{fig:experiments_pipeline}.
 

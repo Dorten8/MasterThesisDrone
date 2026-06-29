@@ -4,20 +4,22 @@
 
 The quantitative mechanical results in \autoref{sec:impact_acceleration_vibrations} through \autoref{sec:clearance_sdld}, together with the Random Forest angle-prediction analysis in \autoref{sec:angle_prediction}, establish a clear functional distinction between the fixed and rotating cage configurations. This section interprets those findings in the context of the design objectives and examines the trade-offs they introduce for confined-space drone operations.\medskip
 
-\subsection{Impact Force Deflection}
+\subsection{Mechanical Performance Analysis}
+
+\subsubsection{Impact Force Deflection}
 
 The primary design rationale for the rotating cage is to deflect, rather than absorb, collision energy. The 59\% reduction in maximum deceleration (Fixed: $\mu = -1.64 \pm 0.64\:\text{m/s}^2$, Rotating: $\mu = -1.03 \pm 0.50\:\text{m/s}^2$, $p < 0.001$, $d = 1.05$) corroborates this design intent.
 
 The fixed cage absorbs collision shock structurally, transmitting the full deceleration force directly into the central fuselage and flight controller. In contrast, the rotating cage's bearing mechanism allows the outer shell to spin upon contact, converting linear momentum into rotational energy and shunting a substantial portion of the shockwave away from the sensitive onboard electronics. This mechanical decoupling is the primary mechanism behind the large effect size ($d = 1.05$) observed in the deceleration data.
 
-\subsection{Structural Resonances}
+\subsubsection{Structural Resonances}
 
 The IMU vibration data reveals qualitatively distinct post-impact mechanical behaviors between the two designs. The fixed cage drags against the column surface, producing sustained high-frequency pitch and roll oscillations consistent with stick-slip resonance~\cite{bowden2001friction}.
 In this regime, dynamic friction between the cage and the obstacle continuously catches and releases during the scraping contact, injecting broadband vibration into the airframe and keeping the IMU in an elevated noise state well beyond the initial impact event.
 
-The rotating cage decouples this frictional feedback by separating the contact surface from the airframe. By rolling across the obstacle rather than scraping, the cage prevents the stick-slip mechanism from forming, allowing the internal IMU to return to a nominal flight state substantially faster. The practical implication is that a rotating-cage platform can maintain sensor fidelity --- and therefore state estimation quality --- during sustained or multi-impact collision sequences in a way that a fixed cage cannot.
+The rotating cage decouples this frictional feedback by separating the contact surface from the airframe. By rolling across the obstacle rather than scraping, the cage prevents the stick-slip mechanism from forming, allowing the internal IMU to return to a nominal flight state substantially faster. The rotating cage is therefore the better configuration for sensor fidelity: it can maintain state estimation quality during sustained or multi-impact collision sequences in a way that a fixed cage cannot.
 
-\subsection{Trajectory Recovery as a Design Trade-off}
+\subsubsection{Trajectory Recovery as a Design Trade-off}
 
 The force and vibration benefits of the rotating cage introduce a measurable spatial cost. The bearing assembly induces a secondary rotational momentum transfer at the moment of impact: as the cage spins against the obstacle, angular momentum pushes the drone slightly further off its intended track, yielding a modest but statistically significant increase in maximum trajectory deviation (Fixed: $\mu = 118.4 \pm 30.4\:\text{mm}$, Rotating: $\mu = 131.0 \pm 32.1\:\text{mm}$, $p = 0.022$, $d = 0.41$). The fixed cage, by absorbing lateral momentum on contact, keeps the vehicle more tightly constrained to the commanded reference line.
 
@@ -31,9 +33,9 @@ The battery drain rate was comparable across both cage configurations (21.3\,\% 
 
 Finally, all trajectory and deviation analysis in this work relies on post-processed MoCap ground truth. The extent to which these dynamics are observable through onboard sensors alone is addressed by the Random Forest analysis presented in \autoref{sec:angle_prediction} and interpreted below.
 
-\subsection{Onboard Tactical Awareness: Interpreting the Random Forest Results}
+\subsection{Onboard Tactile Awareness: Interpreting the Random Forest Results}
 
-The Random Forest analysis in \autoref{sec:angle_prediction} quantifies how much impact-angle information survives in purely onboard IMU signals. Across both cage configurations, the model recovers an $R^2$ of approximately 0.72 with a mean absolute error of $4.5^\circ$--$4.9^\circ$. In an operational context, a $\sim$5$^\circ$ angular estimate could support rudimentary tactical awareness --- the drone would know whether it struck an obstacle at a shallow glancing angle ($\sim$30$^\circ$) versus a deeper collision ($\sim$60$^\circ$) --- with sufficient resolution to adapt its subsequent navigation strategy.
+The Random Forest analysis in \autoref{sec:angle_prediction} quantifies how much impact-angle information survives in purely onboard IMU signals. Across both cage configurations, the model recovers an $R^2$ of approximately 0.72 with a mean absolute error of $4.5^\circ$--$4.9^\circ$. In an operational context, a $\sim$5$^\circ$ angular estimate could support rudimentary tactile awareness --- the drone would know whether it struck an obstacle at a shallow glancing angle ($\sim$30$^\circ$) versus a deeper collision ($\sim$60$^\circ$) --- with sufficient resolution to adapt its subsequent navigation strategy.
 
 \subsubsection{Non-Linearity in the IMU-to-Angle Mapping}
 

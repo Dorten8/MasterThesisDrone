@@ -15,6 +15,7 @@ This repository contains the complete hardware BOM, software stack, and data ana
 - [Architecture Overview](#architecture-overview)
 - [Repository Structure](#repository-structure)
 - [Hardware Bill of Materials](#hardware-bill-of-materials)
+- [3D CAD Model (OnShape)](#3d-cad-model-onshape)
 - [How the Drone Flies](#how-the-drone-flies)
 - [Network Reference](#network-reference)
 - [Pi 5 Host Setup](#pi-5-host-setup)
@@ -169,6 +170,16 @@ The system operates across three coordinate frame conventions. The figure below 
 ![Coordinate frame conventions (NED vs ENU)](thesis/Figures/coordinate_frames_NEDvsENU.png)
 
 *NED (North-East-Down) and ENU (East-North-Up) conventions. PX4 uses NED internally; the MoCap system streams in ENU. The `mocap_px4_bridge` node performs the static rotation:  X_NED = Y_ENU, Y_NED = X_ENU, Z_NED = −Z_ENU.*
+
+---
+
+## 3D CAD Model (OnShape)
+
+The complete drone assembly CAD model is available on OnShape:
+
+🔗 **[OnShape CAD Document](https://cad.onshape.com/documents/7cbebd1596e6b9c6c98f0e3f/w/5e6908f6b6eb3e1d2b683876/e/866a8eb8a37ae0706272cbd1?renderMode=0&uiState=6a4263881140b20f69c49cb9)**
+
+This document contains the frame plates, bearing assembly, protective cage (35.8 cm diameter), and all mounted components. It served as the primary mechanical reference throughout the design, manufacturing, and assembly phases of the thesis.
 
 ---
 

@@ -574,7 +574,7 @@ def plot_ekf_dual_comparison(rot_data, fix_data, output_path=None):
     ax.set_ylim(-0.05, 0.85)
     ax.set_yticks(np.arange(0, 0.9, 0.2))
     ax.set_title(f"Fixed Cage — Representative (MoCap ≈ {ekf_fix['rate']} Hz)",
-                 fontsize=12, color="#cc3300")
+                 fontsize=12, color="#D62728")
     ax.set_ylabel("Speed [m/s]")
     ax.set_xlim(t_min_fix, t_max_fix)
     ax.xaxis.set_major_locator(ticker.MultipleLocator(1.0))
@@ -590,7 +590,7 @@ def plot_ekf_dual_comparison(rot_data, fix_data, output_path=None):
     ax.set_ylim(-0.05, 0.85)
     ax.set_yticks(np.arange(0, 0.9, 0.2))
     ax.set_title(f"Rotating Cage — Representative (MoCap ≈ {ekf_rot['rate']} Hz)",
-                 fontsize=12, color="#006600")
+                 fontsize=12, color="#1F77B4")
     ax.set_ylabel("Speed [m/s]")
     ax.set_xlim(t_min_rot, t_max_rot)
     ax.xaxis.set_major_locator(ticker.MultipleLocator(1.0))

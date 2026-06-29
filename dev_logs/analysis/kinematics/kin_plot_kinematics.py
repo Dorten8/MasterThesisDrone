@@ -1058,8 +1058,8 @@ def plot_imu_xyz_combined(rot_data, fix_data, output_path=None):
         axes[-1, col_idx].set_xlabel("Time (seconds since Arming)")
 
     # Column titles
-    axes[0, 0].set_title("Rotating Cage", fontsize=13, fontweight="bold", color="#006600")
-    axes[0, 1].set_title("Fixed Cage", fontsize=13, fontweight="bold", color="#cc3300")
+    axes[0, 0].set_title("Rotating Cage", fontsize=13, fontweight="bold", color="#1F77B4")
+    axes[0, 1].set_title("Fixed Cage", fontsize=13, fontweight="bold", color="#D62728")
 
     fig.suptitle('Raw IMU X/Y/Z Components — Rotating Cage vs Fixed Cage\n'
                  '[X = Lateral/Roll, Y = Longitudinal/Pitch, Z = Vertical/Yaw]',

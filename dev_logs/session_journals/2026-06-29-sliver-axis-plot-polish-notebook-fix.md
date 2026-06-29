@@ -59,5 +59,49 @@ Three final tweaks to `plot_consolidated_feature_correlation()`:
 
 ## State
 - Plot layout complete — ready to run pipeline and regenerate the figure
-- Supervisor plan cleaned — 18 remaining items (11 user, 5 Claude, 2 DONE kept as ambiguous)
+- Supervisor plan purged to 11 remaining items (9 user, 1 Claude, 1 mixed)
 - Thesis title page spacing change was correctly about the figure suptitle, not the LaTeX titlepage
+
+## Later Work (June 29-30 continuation)
+
+### Block 6: RF CV Metrics Table Reformatted (June 29)
+**File:** `thesis/Sections/Experiments.tex`
+
+- Changed from `tabular` + `\resizebox` to `tabularx` + `\footnotesize` + `\setlength{\tabcolsep}{4pt}` matching the master comparison table visual standard
+- Shortened headers: "Fixed Cage" → "Fix. Cage", "Rotating Cage" → "Rot. Cage"
+- Separated "Direction" (Higher better / Lower better) from "Better" (arrow + winning cage)
+
+### Block 7: imu_delta_v_z Pipeline Verification (June 29)
+**Files:** `dev_logs/analysis/database/db_manager.py`, `dev_logs/analysis/experiments_analysis_summary.ipynb`, `thesis/Sections/Experiments.tex`
+
+- Verified the full plan (dynamic-rolling-squid.md) was already implemented end-to-end
+- DB column exists with 127 non-null values (AVG=0.1945)
+- Notebook cell `ab24ca44` already has Delta-V Z/X/Y in metrics list
+- LaTeX table already has "Shock Impulse Z, ΔV (m/s)" rows
+
+### Block 8: Supervisor Revision Sprint (June 29-30)
+
+**E13 — Simplify parallel coordinates text** — Replaced dense language ("This multivariate dispersion is further illustrated...") with plain English ("Parallel coordinates show the same picture from another angle.") in `thesis/Sections/Experiments.tex`.
+
+**E9 — Fix green subtitle bug** — Found Rotating Cage subtitles hardcoded to `#006600` (green) instead of project standard `#1F77B4` (blue) in 3 Python files: `kin_plot_kinematics.py`, `kin_plot_actuators.py`, `flight_loader.py`. All 6 occurrences patched.
+
+**E15 — Three deletions** — (1) Title page pre-submission draft disclaimer removed from `main.tex`, (2) Figure 5 caption trimmed to "Physical exploded view of the complete drone assembly." in `Methodology.tex`, (3) "Onboard" removed from "Onboard Impact-Angle Inference" heading in `Conclusion.tex`.
+
+**M7 — De-specific + cross-ref** — Replaced specific ENU→NED/FRD frame transformation description in `Methodology.tex` with "more on that in \autoref{sec:motion_capture}" pointing to the full explanation in `Experiments.tex`. Added `\label{sec:motion_capture}` to the Motion Capture Setup subsection.
+
+**E1 — Move impact angle distribution figure** — Relocated the figure and its descriptive paragraph from the MoCap Setup section to sit right after the Mission Outcome table (`tab:mission_outcomes`), with a new cross-reference in the lead-in text. Removed from original location in the MoCap section.
+
+**E2 — Marked done** — User confirmed the EKF deduplication result was satisfactory.
+
+### Block 9: Supervisor Plan Purge (June 30)
+**File:** `dev_logs/supervisor_revisions_plan.md`
+
+- Removed all 7 completed tasks (M7, E1, E2, E9, E10, E13, E15)
+- Updated summary table: 9 done, 9 pending user, 1 Claude solo task remaining
+
+### Block 10: Final Compile
+**File:** `thesis/main.pdf`
+
+- Compiled cleanly to 103 pages, 22.5 MB
+- All new cross-references resolved correctly
+- Only pre-existing BibTeX warnings remain (missing years in .bib entries)

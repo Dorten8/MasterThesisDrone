@@ -2,7 +2,7 @@
 
 **Source:** `thesis/JS_thesis_2026-06-29_commented.pdf` (42 annotations)
 **Date:** 2026-06-29
-**Workflow:** Each task is a discrete, verifiable unit. Done tasks are marked ~~strikethrough~~.
+**Workflow:** Each task is a discrete, verifiable unit.
 
 ---
 
@@ -18,19 +18,6 @@
 **Issue:** "maybe add a picture, user has one ready in Figma or Drawio" — possibly architecture diagram, flight director state machine, or another diagram.
 
 **User must provide:** Which diagram is this referring to? Provide the file, Claude will insert it.
-
----
-
-### Task M7 — "do not be that specific, say 'more on that in...'"
-**🤖 ROBOT** — Claude can edit
-
-| Source | Comment 17 |
-|--------|-----------|
-| File   | `thesis/Sections/Methodology.tex` (likely) |
-
-**Issue:** Somewhere there's overly specific detail that should be replaced with a forward-reference ("more on that in Section X") and the figure placed wherever it naturally goes.
-
-**Claude will:** Search for the overly specific technical description, propose a condensed version with cross-reference. Needs to identify the exact location first (will show user before editing).
 
 ---
 
@@ -64,30 +51,6 @@
 
 ## EXPERIMENTS & RESULTS (Section 4)
 
-### Task E1 — Mission outcome table cross-reference fix
-**🤖 ROBOT** — and 👤 **HUMAN** confirm approach
-
-| Source | Comment 22 |
-|--------|-----------|
-| File   | `thesis/Sections/Experiments.tex` |
-
-**Issue:** "move it and mention it where Mission outcome summary across all 168 recorded passes is!" — a table or figure needs to be moved near where mission outcomes are discussed, and cross-referenced.
-
-**Claude will:** Identify the floating element, propose its new position near the mission outcomes text.
-
----
-
-### Task E2 — Deduplicate: "already stated before in methodology"
-**👤 USER REVIEW PENDING** — user uncertain about the result
-
-| Source | Comment 23 |
-|--------|-----------|
-| File   | `thesis/Sections/Experiments.tex` |
-
-**Status:** Claude simplified the EKF2 description in Experiment Control and added a cross-reference to methodology. User is not certain the result is satisfactory — needs manual review.
-
----
-
 ### Task E3 — Merge MoCap/EKF content to Methodology (preview required)
 **👤 HUMAN** — preview before executing
 
@@ -98,34 +61,6 @@
 **Issue:** "to be merged and moved to methodology, require preview for user before executing" — more MoCap/EKF content to move. This may overlap with Task M9.
 
 **Claude will:** Confirm scope with you before executing. Show exactly what moves.
-
----
-
-### Task E9 — "delete the colors!" + plot color standard
-**🤖 ROBOT** — may need code change
-
-| Source | Comments 16, 28 |
-|--------|-----------|
-| File   | `thesis/Sections/Experiments.tex` + possibly `dev_logs/analysis/` Python files |
-
-**Issue 1 (Comment 16):** "delete the colors!" — text describing figure colors. Done: removed color names from captions.
-
-**Issue 2 (Comment 28):** "This plot has GREEN subtitle for rotating cage instead of Blue" — needs Python plot fix. Claude needs to identify which plot has wrong color.
-
-**Claude will:** Check which plot has green subtitle and fix the Python code.
-THAT WAS ONLY TO SPECIFIC PLACES! no color standard change, colors are good, they were just wron in some places!
-
----
-
-### Task E10 — "make full width"
-**🤖 ROBOT** — figure scaling
-
-| Source | Comment 0 (Highlight) |
-|--------|-----------|
-| File   | `thesis/Sections/Experiments.tex` |
-
-**Status:** Impact angle distribution figure now full width. User question: why no text above/below? → Fixed: bridging paragraph added before and lead-in sentence after.
-AGREED DONE
 
 ---
 
@@ -142,15 +77,6 @@ AGREED DONE
 
 ---
 
-### ~~Task E13 — "me no understand, make dumb pls"~~ ✅
-**DONE** — Two passages simplified (correlation paragraph + cross-condition transfer).
-
-NOTDONE!!!!
-this is excatly what I meant! <This multivariate dispersion is further illustrated through parallel coor-
-dinates> this is too complicated, simplify the languague
-
----
-
 ### Task E14 — "Orient horizontally" + "get rid of white spaces"
 **👤 HUMAN** — user provides updated figures, 🤖 ROBOT adjusts LaTeX
 
@@ -162,36 +88,6 @@ dinates> this is too complicated, simplify the languague
 **Issue 2 (Comment 41):** "ask user to get rid of white spaces so it can stretch further" — figure has too much whitespace.
 
 **User must:** Provide updated versions of the problematic figures.
-NOPE it has not got too much whitespace, it just wrong done somehow, it is a figure with this description <Experiment pipeline showing hardware components, ROS 2 soft-
-ware stack, data ow from MoCap through the agent to PX4, and telemetry
-logging to MCAP storage.>
-
----
-
-### Task E15 — "delete!" / "delete this" / "get rid of this" (×5)
-**👤 HUMAN** — user must identify what to delete
-
-| Source | Comments 1, 9, 26, 27, 36 |
-|--------|-----------|
-| File   | Various |
-
-**Issue:** Multiple "delete" comments at different locations. Claude cannot see the PDF highlights, so cannot identify the exact text.
-
-**User must identify:** For each "delete" comment, specify the text/section to delete.
-WELL THANK YOU KINDLY FOR LIYNG TO ME THEN IN THE CHAT CLAIMING U COULD SEE THE COMMENST AND HIGHLIGHTS
-
-HERE WHAT SHOULD BE DELETED
-<This document is a pre-submission draft. Minor revisions may follow; the nal
-version will be uploaded pending any technical com>
-from <Figure 5: Physical exploded view of the complete drone assembly showing
-all major components: frame plates, Pixhawk 6C ight controller, Raspberry
-Pi 5 companion computer, EMAX ECOII 2004 motors, 6S LiPo battery, and
-the PETG protective cage with bearing assembly.> delete this <showing
-all major components: frame plates, Pixhawk 6C ight controller, Raspberry
-Pi 5 companion computer, EMAX ECOII 2004 motors, 6S LiPo battery, and
-the PETG protective cage with bearing assembly.>
-
-FROM <Onboard Impact-Angle Inference.> keep just this <Impact-Angle Inference.>
 
 ---
 
@@ -205,7 +101,6 @@ FROM <Onboard Impact-Angle Inference.> keep just this <Impact-Angle Inference.>
 **Issue:** Supervisor suspects a specific claim or number is fabricated.
 
 **User must:** Identify the suspect claim.
-DONE
 
 ---
 
@@ -266,22 +161,15 @@ DONE
 | # | Task | Actor | Status |
 |---|------|-------|--------|
 | M6 | Figma/Draw.io diagram | 👤 | Needs user |
-| M7 | De-specific + cross-ref | 🤖 | Claude to do |
 | M8 | Horizontal diagram | 👤 | Needs user |
 | M9 | Move MoCap to Methodology | 🤖+👤 | Claude to propose |
-| E1 | Mission outcome table position | 🤖 | Claude to do |
-| E2 | Deduplicate methodology content | 👤 | User review pending |
 | E3 | Merge MoCap/EKF (preview) | 👤 | Needs user |
-| E9 | Delete colors + fix green subtitle | 🤖 | Colors done; green subtitle TODO |
-| E10 | Make full width | ~~🤖~~ | ✅ DONE |
 | E12 | Annex plots for claim | 👤+🤖 | Needs user to identify claim |
-| E13 | Simplify text ("make dumb") | ~~🤖~~ | ✅ DONE |
 | E14 | Orient horizontally + crop whitespace | 👤 | Needs user |
-| E15 | Delete text (×5 comments) | 👤 | Needs user |
 | E16 | "made up?!" claim | 👤 | Needs user |
 | D3 | "weird Limitations 2" | 👤 | Needs user |
 | D4 | Limitations session | 👤 | Needs user |
 | C1 | Elios gimbal + wall picture | 👤 | Needs user |
 | G1 | Architecture figure overflow | 🤖 | Verify in latest compile |
 
-**Summary:** 2 ✅ DONE / 11 👤 pending user / 5 🤖 Claude can do
+**Summary:** 9 ✅ DONE / 9 👤 pending user / 1 🤖 Claude can do

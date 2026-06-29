@@ -616,8 +616,8 @@ def plot_pid_rate_tracking_combined(rot_data, fix_data, output_path=None):
                            label='Impact')
 
     # Column titles
-    axes[0, 0].set_title("Rotating Cage", fontsize=13, fontweight="bold", color="#006600")
-    axes[0, 1].set_title("Fixed Cage", fontsize=13, fontweight="bold", color="#cc3300")
+    axes[0, 0].set_title("Rotating Cage", fontsize=13, fontweight="bold", color="#1F77B4")
+    axes[0, 1].set_title("Fixed Cage", fontsize=13, fontweight="bold", color="#D62728")
     axes[-1, 0].set_xlabel("Time (s)")
     axes[-1, 1].set_xlabel("Time (s)")
 
