@@ -1619,57 +1619,64 @@ def plot_attitude_shock_phase_portrait(df_impacts, output_path=None,
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 
 def plot_allocator_saturation(df_impacts, output_path=None, show_plot=True):
-    """1×3 boxplots: saturation duration, unallocated torque, thrust achieved.
+    """Single-panel boxplot: motor command saturation duration after impact.
+
+    Shows the time motors were held at saturation limits (command ≥99.9%
+    or ≤0.1% of full range) during the first second after impact.
 
     Parameters
     ----------
     df_impacts : pd.DataFrame
-        Needs: condition, allocator_saturation_duration_sec,
-        max_unallocated_torque, thrust_setpoint_achieved_pct.
+        Needs: condition, allocator_saturation_duration_sec.
     """
-    df_p = df_impacts.dropna(subset=['allocator_saturation_duration_sec',
-                                      'max_unallocated_torque',
-                                      'thrust_setpoint_achieved_pct'])
-    colors = [C_ROT, C_FIX]
+    df_p = df_impacts.dropna(subset=['allocator_saturation_duration_sec'])
     df_rot = df_p[df_p['condition'] == 'Rotating Cage']
     df_fix = df_p[df_p['condition'] == 'Fixed Cage']
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5), dpi=150)
+    # Convert seconds → ms for readable axis
+    rot_ms = df_rot['allocator_saturation_duration_sec'].dropna() * 1000
+    fix_ms = df_fix['allocator_saturation_duration_sec'].dropna() * 1000
 
-    configs = [
-        (0, 'allocator_saturation_duration_sec',
-         'Saturation Duration (seconds)',
-         'Control Allocator Saturation Duration'),
-        (1, 'max_unallocated_torque',
-         'Max Unallocated Torque (N·m)',
-         'Maximum Unallocated Torque'),
-        (2, 'thrust_setpoint_achieved_pct',
-         'Thrust Setpoint Achieved (%)',
-         'Thrust Setpoint Achieved Percentage'),
-    ]
-    for idx, col, ylabel, title in configs:
-        bd = [df_rot[col].dropna(), df_fix[col].dropna()]
-        bp = axes[idx].boxplot(bd, tick_labels=['Rotating Cage', 'Fixed Cage'],
-                               patch_artist=True, widths=0.4,
-                               medianprops=dict(color='black', linewidth=1.5))
-        for patch, color in zip(bp['boxes'], colors):
-            patch.set_facecolor(color); patch.set_alpha(0.7)
-        axes[idx].set_ylabel(ylabel, fontsize=10, fontweight='bold')
-        axes[idx].set_title(title, fontsize=11, fontweight='bold')
-        axes[idx].grid(True, linestyle='--', alpha=0.3)
+    fig, ax = plt.subplots(1, 1, figsize=(6, 5), dpi=150)
 
-    fig.suptitle('Rotating Cage vs Fixed Cage — Control Allocator Performance',
-                 fontsize=13, fontweight='bold', y=0.98)
+    bd = [rot_ms, fix_ms]
+    bp = ax.boxplot(bd, tick_labels=['Rotating Cage', 'Fixed Cage'],
+                    patch_artist=True, widths=0.4,
+                    medianprops=dict(color='black', linewidth=1.5))
+    for patch, color in zip(bp['boxes'], [C_ROT, C_FIX]):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+
+    ax.set_ylabel('Saturation Duration (ms)', fontsize=11, fontweight='bold')
+    ax.set_title('Motor Command Saturation Duration After Impact',
+                 fontsize=12, fontweight='bold')
+    ax.set_ylim(-10, 350)
+    ax.set_yticks(range(0, 351, 50))
+    ax.grid(True, linestyle='--', alpha=0.3)
+
+    # Data origin footnote (right-bottom per §4.1A)
     fig.text(0.98, 0.01,
-             f"Comparison of {len(df_rot)}× Rotating Cage and "
-             f"{len(df_fix)}× Fixed Cage flights",
-             ha='right', va='bottom', fontsize=7.5, fontweight='bold',
-             bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8,
-                       edgecolor='none'))
+             f"flights_summary (N={len(rot_ms)} Rotating, N={len(fix_ms)} Fixed)",
+             ha='right', va='bottom', fontsize=7.5, color='#555555')
+
+    # Threshold note (left-bottom per §4.1B)
+    fig.text(0.02, 0.01,
+             "Note: Saturation = motor command ≥99.9% of full range.",
+             ha='left', va='bottom', fontsize=7.5, fontstyle='italic',
+             color='#555555')
+
     plt.tight_layout()
 
+    # Save to graphics/ (dev copy)
     _save_and_show(fig, output_path or os.path.join(_GRAPHICS_DIR,
                     'plot_17_allocator_saturation_comparison.png'), show_plot)
+
+    # Dual-save to thesis/plots/ (LaTeX-ready copy per §4.0.1)
+    thesis_path = os.path.join(_project_root, 'thesis', 'plots',
+                               'Allocator Saturation Duration.png')
+    os.makedirs(os.path.dirname(thesis_path), exist_ok=True)
+    fig.savefig(thesis_path, dpi=300, bbox_inches='tight')
+    print(f"[INFO] Thesis → {os.path.relpath(thesis_path, _THIS_DIR)}")
 
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗

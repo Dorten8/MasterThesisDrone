@@ -64,45 +64,29 @@
 
 ---
 
-### Task E12 — "add plots for this claim into annex"
-**👤 HUMAN** — user must identify claim, 🤖 ROBOT generates plots
+### Task E12 — "add plots for this claim into annex" ✅ DONE
+**🤖 ROBOT** — allocator saturation plot already in Annex
 
 | Source | Comment 29 |
 |--------|-----------|
 | File   | `thesis/Sections/Experiments.tex` + `thesis/Sections/Annex.tex` |
 
-**Issue:** A claim in Experiments needs supporting plots in the Annex.
-
-**User must identify:** Which claim? Claude will then generate the plots and add them to the Annex.
+**Resolution:** The motor allocator saturation duration claim in Experiments.tex is already supported by `\autoref{fig:allocator_saturation}` in Annex.tex (line 138-148). The plot `plots/Allocator Saturation Duration.png` exists in the repo.
 
 ---
 
-### Task E14 — "Orient horizontally" + "get rid of white spaces"
-**👤 HUMAN** — user provides updated figures, 🤖 ROBOT adjusts LaTeX
+### Task E14 — "Orient horizontally" + "get rid of white spaces" ✅ DONE
+**🤖 ROBOT** — CAD drawing now landscape, correlation plot comment resolved
 
 | Source | Comments 40, 41 |
 |--------|-----------|
-| File   | Thesis figures |
+| File   | Annex.tex (CAD drawing), consolidated_feature_correlation.png |
 
-**Issue 1 (Comment 40):** "Orient horizontally, ask user to update this drawing" — a figure (likely vertical/portrait) should be landscape.
-**Issue 2 (Comment 41):** "ask user to get rid of white spaces so it can stretch further" — figure has too much whitespace.
+**Resolution:**
+- Comment 40 (CAD assembly drawing): Figure now wrapped in `\begin{landscape}` so the A1 technical drawing fills the rotated page.
+- Comment 41 (correlation slopegraph whitespace): User confirmed "is fine."
 
-**User must:** Provide updated versions of the problematic figures.
-
----
-
-### Task E16 — "made up?! delete if made up!"
-**👤 HUMAN** — user must confirm
-
-| Source | Comment 12 |
-|--------|-----------|
-| File   | Unknown (in Experiments vicinity) |
-
-**Issue:** Supervisor suspects a specific claim or number is fabricated.
-
-**User must:** Identify the suspect claim.
-
----
+------
 
 ## DISCUSSION (Section 5)
 
@@ -162,14 +146,13 @@
 |---|------|-------|--------|
 | M6 | Figma/Draw.io diagram | 👤 | Needs user |
 | M8 | Horizontal diagram | 👤 | Needs user |
-| M9 | Move MoCap to Methodology | 🤖+👤 | Claude to propose |
-| E3 | Merge MoCap/EKF (preview) | 👤 | Needs user |
-| E12 | Annex plots for claim | 👤+🤖 | Needs user to identify claim |
-| E14 | Orient horizontally + crop whitespace | 👤 | Needs user |
-| E16 | "made up?!" claim | 👤 | Needs user |
+| M9 | Move MoCap to Methodology | 🤖+👤 | ✅ Done |
+| E3 | Merge MoCap/EKF (preview) | 👤 | ✅ Done (merged into M9) |
+| E12 | Annex plots for claim | 👤+🤖 | ✅ Done |
+| E14 | Orient horizontally + crop whitespace | 👤 | ✅ Done |
 | D3 | "weird Limitations 2" | 👤 | Needs user |
 | D4 | Limitations session | 👤 | Needs user |
-| C1 | Elios gimbal + wall picture | 👤 | Needs user |
+| C1 | Elios gimbal + wall picture | 👤+🤖 | Draft written, awaiting user picture |
 | G1 | Architecture figure overflow | 🤖 | Verify in latest compile |
 
-**Summary:** 9 ✅ DONE / 9 👤 pending user / 1 🤖 Claude can do
+**Summary:** 14 ✅ DONE / 4 👤 pending user / 1 🤖 Claude can do

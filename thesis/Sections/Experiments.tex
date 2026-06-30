@@ -10,22 +10,7 @@ To evaluate the operational and protective capabilities of the drone cage and to
 
 External state estimation is provided by a \textbf{6-camera OptiTrack Prime~22} system streaming at 120\,Hz via the Motive software platform (Mudfish network middleware). The Prime~22 offers sub-millimetre positional accuracy at short range, sufficient for the $\sim$5\,m$\times$5\,m capture volume used in these experiments.
 
-The \texttt{motion\_capture\_tracking} ROS~2 node receives the multicast stream from Motive, and the \texttt{mocap\_px4\_bridge} node transforms the poses between coordinate frames before publishing them to \texttt{/fmu/in/vehicle\_visual\_odometry}.
-
-\paragraph{Coordinate Frame Transformations}
-
-Coordinate frame conventions differ between MoCap and PX4. ENU is a ground-fixed frame where the $X$~axis points East, $Y$~points North, and $Z$~points Up; the vehicle body frame has $X$~toward the front, $Z$~up, and $Y$~toward the left. PX4's internal state estimator operates in the \textbf{NED (North-East-Down)} frame, where $X$~points North, $Y$~points East, and $Z$~points Down; the corresponding vehicle body frame (\textbf{FRD}, Forward-Right-Down) has $X$~toward the front, $Z$~down, and $Y$~accordingly. \autoref{fig:coordinate_frames} shows both conventions side by side.\footnote{Software documentation available at: \url{https://docs.px4.io/main/en/tutorials/motion-capture}}
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{Figures/coordinate_frames_NEDvsENU.png}
-    \caption{NED (left) and ENU (right) coordinate frame conventions. Adapted from PX4 documentation~\footnote{Software documentation available at: \url{https://docs.px4.io/main/en/tutorials/motion-capture}}.}
-    \label{fig:coordinate_frames}
-\end{figure}
-
-The \texttt{mocap\_px4\_bridge} performs this transform in two steps: first, a static rotation maps ENU to NED ($X_{\text{NED}} = Y_{\text{ENU}}$, $Y_{\text{NED}} = X_{\text{ENU}}$, $Z_{\text{NED}} = -Z_{\text{ENU}}$); second, the NED pose is rotated into the FRD body frame using the vehicle's current attitude quaternion. The resulting \texttt{VehicleVisualOdometry} message is published at 120\,Hz to \texttt{/fmu/in/vehicle\_visual\_odometry}.
-
-The EKF2 estimator fuses this external vision with the onboard 250\,Hz IMU data. The fidelity of this sensor fusion under both normal and degraded tracking conditions is validated in the methodology (\autoref{sec:methodology}), where the EKF velocity estimates are shown to align closely with MoCap-derived ground truth and to bridge transient marker dropouts during impact via inertial propagation.
+The MoCap-to-PX4 interface pipeline---including coordinate frame transformations (ENU~$\to$~NED~$\to$~FRD), the \texttt{mocap\_px4\_bridge} node, and EKF2 fusion with the onboard 250\,Hz IMU---is described in \autoref{sec:coordinate_frames} (Methodology). The EKF2 output is validated against MoCap ground truth in that same section, and its inertial bridging behavior during impact is explicitly demonstrated.
 
 The physical experiment environment and the automated flight pipeline that produced these 127 verified collisions are described in the following subsections.
 
@@ -34,17 +19,21 @@ The physical experiment environment and the automated flight pipeline that produ
 The physical experiments were conducted at the REALLAB at the IT University of Copenhagen (ITU) within an OptiTrack Motion Capture (MoCap) environment. A vertically oriented cylindrical cardboard column, internally reinforced with an aluminum profile, was anchored to the floor and ceiling to serve as the static collision target. The column oscillates slightly when subjected to manual force, but no additional structural supports were added in order to prevent any occlusion of the MoCap cameras, preserving their function as the primary reference point for the drone's spatial positioning. Analysis of the MoCap data confirmed that obstacle displacement during impacts was below the system's millimetre tracking resolution. Therefore, energy absorption by the environment is considered negligible.
 
 \subsubsection{Experiment Control and Data Collection}
-The experimental platform relies on an integrated software architecture designed to bridge abstracted trajectory generation with real-time hardware constraints. The low-level flight stack utilizes PX4 Autopilot firmware on a NuttX real-time operating system (RTOS). The EKF2 state estimator---validated in the methodology (\autoref{sec:methodology})---serves as the primary source of velocity data for the entire analysis pipeline, fusing onboard IMU data at 250\,Hz with the 120\,Hz external MoCap vision odometry stream.\footnote{Software documentation available at: \url{https://docs.px4.io/main/en/flight_controller/pixhawk6c}}
 
-High-level position commanding is managed within a ROS~2 abstraction layer running on an external offboard computing node. Real-time topic translation between the ROS~2 node graph and the internal PX4 uORB messaging system is handled via a micro-XRCE-DDS agent.
-
-To orchestrate the experimental runs, a custom software component named \texttt{flight\_director.py} was developed to automatically execute the collision-test mission. This script functions as an automated mission execution environment, systematically enforcing geofence safety parameters. The flight director automates the data collection pipeline by initializing synchronized telemetry recordings, saving each distinct flight loop into an independent \texttt{.mcap} file. These files were subsequently parsed using a custom Python database pipeline to calculate the physical variables presented in the following results. All impact events were additionally vetted manually by inspecting the raw IMU acceleration traces to confirm that each detected contact corresponded to a genuine physical collision rather than a sensor artefact or transient noise spike.
-
-The complete experimental pipeline, from hardware components through the ROS~2 software stack and MoCap integration to telemetry storage, is illustrated in \autoref{fig:experiments_pipeline}.
+The flight stack (PX4, EKF2, ROS~2, Micro-XRCE-DDS, \texttt{flight\_director.py}, and the MoCap--PX4 coordinate frame integration) is described in \autoref{sec:methodology}. The telemetry recording pipeline (\texttt{flight\_recorder.py} $\to$ segmented \texttt{.mcap} files $\to$ Python database pipeline) and the manual IMU-based impact vetting procedure are also covered there. The complete experimental pipeline, from hardware components through the ROS~2 software stack and MoCap integration to telemetry storage, is illustrated in \autoref{fig:experiments_pipeline}.
 
 \subsubsection{Pre-Computed Path and Waypoint Configuration}
 
-To reiterate, this physical collision framework represents the actual experimental flight tests conducted, from which all the data in this thesis stems. The system uses a pre-computed ROS~2 waypoint trajectory targeting two approach angles ($45^\circ$ and $75^\circ$). While the commanded path was mechanically identical within each condition, the actual measured impact angle varied across passes due to aerodynamic drift, bearing dynamics, and subtle differences in contact geometry. The resulting distribution of measured impact angles is shown in Figure~\ref{fig:impact_angle_distribution}. The exact spatial path, including the approach, impact, and recovery segments, is detailed in Figure~\ref{fig:mission_geometry}.
+To reiterate, this physical collision framework represents the actual experimental flight tests conducted, from which all the data in this thesis stems. The system uses a pre-computed ROS~2 waypoint trajectory targeting two approach angles ($45^\circ$ and $75^\circ$). While the commanded path was nearly mechanically identical within each condition, the actual measured impact angle varied across passes due to aerodynamic drift, bearing dynamics, and subtle differences in contact geometry. The resulting distribution of measured impact angles is shown in Figure~\ref{fig:impact_angle_distribution}. The exact spatial path, including the approach, impact, and recovery segments, is detailed in Figure~\ref{fig:mission_geometry}.
+
+\begin{sidewaysfigure}
+    \centering
+    % \columnwidth forces it to fill the long landscape edge.
+    % height=13cm strictly limits the vertical stretch so the caption is never pushed off the page.
+    \includegraphics[width=\columnwidth, height=13cm, keepaspectratio]{Figures/experiments_pipeline.pdf}
+    \caption{Experiment pipeline showing hardware components, ROS~2 software stack, data flow from MoCap through the agent to PX4, and telemetry logging to MCAP storage.}
+    \label{fig:experiments_pipeline}
+\end{sidewaysfigure}
 
 \begin{figure}[h!]
     \centering
@@ -86,7 +75,16 @@ Battery drain rate (\%\,min$^{-1}$) & 21.3 & Both configurations; full unsliced 
 \subsubsection{Trajectory Visualisation and Mission Outcomes}
 \label{sec:horizontal_kinematics}
 
-To evaluate the drone's horizontal flight dynamics, this analysis focuses on the spatial divergence between the pre-computed commanded path and the actual trajectory executed. Visualizing this path deviation in Figure~\ref{fig:horizontal_kinematics} displays the physical trajectories executed during the impacts. A breakdown of the specific mission outcomes (impacts vs.\ no impacts across angles) is provided in Table~\ref{tab:mission_outcomes}, and the distribution of measured impact angles is shown in Figure~\ref{fig:impact_angle_distribution}.
+To evaluate the drone's horizontal flight dynamics, this analysis focuses on the spatial divergence between the pre-computed commanded path and the actual trajectory executed. A breakdown of the specific mission outcomes (impacts vs.\ no impacts across angles) is provided in Table~\ref{tab:mission_outcomes}.
+
+\begin{table}[H]
+    \centering
+    \input{tables/mission_outcome_table}
+    \caption{Mission outcome summary across all 168 recorded passes. Flights are categorised by cage configuration, nominal mission approach angle ($45^\circ$ and $75^\circ$), and the measured impact angle at the collision instant. The ``No Impact'' column counts passes where the drone cleared the column without physical contact.}
+    \label{tab:mission_outcomes}
+\end{table}
+
+Visualizing the path deviation in Figure~\ref{fig:horizontal_kinematics} displays the physical trajectories executed during the impacts, and the distribution of measured impact angles is shown in Figure~\ref{fig:impact_angle_distribution}.
 
 \begin{figure}[h!]
     \centering
@@ -94,13 +92,6 @@ To evaluate the drone's horizontal flight dynamics, this analysis focuses on the
     \caption{2D horizontal visualization of the experiment flight paths. The plot compares commanded versus executed trajectories for both fixed and rotating cage configurations across the collision sweep leg, showing spatial deviation, impact coordinates, and recovery overshoot required to stabilize lateral drift.}
     \label{fig:horizontal_kinematics}
 \end{figure}
-
-\begin{table}[h!]
-    \centering
-    \input{tables/mission_outcome_table}
-    \caption{Mission outcome summary across all 168 recorded passes. Flights are categorised by cage configuration, nominal mission approach angle ($45^\circ$ and $75^\circ$), and the measured impact angle at the collision instant. The ``No Impact'' column counts passes where the drone cleared the column without physical contact.}
-    \label{tab:mission_outcomes}
-\end{table}
 
 While the planned mission trajectories targeted two nominal approach angles ($45^\circ$ and $75^\circ$), the actual measured impact angle at the instant of contact varied across passes. \autoref{fig:impact_angle_distribution} shows the resulting distribution of measured angles across all 127 verified impacts; the rotating cage sample is shifted toward lower angles (mean~$\pm$~SD: $40.6 \pm 11.5^\circ$) compared to the fixed cage ($46.7 \pm 13.0^\circ$), reflecting the influence of aerodynamic drift, bearing dynamics, and subtle differences in contact geometry on the actual collision trajectory.
 
@@ -120,20 +111,30 @@ The spatial consequences of the physical impacts are quantified by assessing the
 
 \textbf{Maximum Trajectory Deviation} ($d_{\text{max}}$) is the peak perpendicular distance between the executed MoCap track and the commanded `ideal' reference line. This ideal line is drawn exactly from the coordinate where the drone was commanded forward (\texttt{WP1}) to the exact target coordinate it must reach (\texttt{WP2}, which includes a 15~cm precision leeway). This metric captures the single worst-case excursion during the obstacle transit. According to Table~\ref{tab:spatial_metrics}, the rotating cage recorded a maximum trajectory deviation of $131.0 \pm 32.1$~mm, while the fixed cage recorded $118.4 \pm 30.4$~mm.
 
-\textbf{Spatial Integral of Absolute Error} (SIAE) measures the total spatial area footprint of the recovery phase. Table~\ref{tab:spatial_metrics} shows the spatial area of the recovery phase was $120.4 \pm 32.2 \times 10^{-3}~\text{m}^2$ for the rotating cage and $117.4 \pm 33.2 \times 10^{-3}~\text{m}^2$ for the fixed cage.
 
-Finally, the \textbf{Path Spread (RMSLD)} quantifies how tightly the drone tracks the ideal line over the entirety of the obstacle passage. To visualize this overall consistency across all flight tests, the overlaid paths of all flights are shown in Figure~\ref{fig:path_heatmap}. As extracted from the dataset, the path spread is recorded at $40.3 \pm 9.8$~mm for the rotating cage and $37.4 \pm 11.0$~mm for the fixed cage.
+
+\begin{tcolorbox}[breakable, colback=gray!8, colframe=black!30, arc=0pt,
+    boxsep=10pt, left=4pt, right=4pt, top=4pt, bottom=4pt,
+    before skip=6pt, after skip=6pt]
+\textbf{Spatial Integral of Absolute Error (SIAE).}
+SIAE measures the total spatial area footprint of the recovery phase: it integrates the absolute perpendicular deviation from the commanded path over the entire post-impact recovery window, capturing both the duration and the magnitude of the drift. A brief large excursion and a prolonged small offset can therefore produce similar SIAE values---the metric reflects the cumulative burden placed on the flight controller rather than any single worst-case instant.
+
+\textbf{Path Spread (RMSLD).}
+RMSLD (Root Mean Square Lateral Deviation) quantifies how tightly the drone tracks the ideal line over the entirety of the obstacle passage. It is the RMS of the perpendicular distance between the executed MoCap track and the commanded reference line, evaluated from the approach through the exit waypoint.
+\end{tcolorbox}
+
+Table~\ref{tab:spatial_metrics} reports these values: the rotating cage recorded a SIAE of $120.4 \pm 32.2 \times 10^{-3}~\text{m}^2$ and an RMSLD of $40.3 \pm 9.8$~mm; the fixed cage recorded $117.4 \pm 33.2 \times 10^{-3}~\text{m}^2$ and $37.4 \pm 11.0$~mm. To visualize the aggregate consistency across all flight tests, the overlaid paths of all flights are shown in Figure~\ref{fig:path_heatmap}.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plot_16_path_heatmap.png}
-    \caption{Path overlay of all impact flights for both cage configurations. Each flight trajectory is plotted at low opacity, showing the aggregate spatial footprint of the collision sweep for Rotating Cage (left) and Fixed Cage (right). The dashed line marks the nominal commanded path.}
+    \caption{Path overlay of all impact flights for both cage configurations. Each flight trajectory is plotted at low opacity, showing the aggregate spatial footprint of the collision sweep. The dashed line marks the nominal commanded path.}
     \label{fig:path_heatmap}
 \end{figure}
 
 Based on the data reported above, the spatial recovery metrics suggest that the rotating cage's bearing mechanism does not expand the final recovery footprint required by the standard flight controller settings. This pattern is further evaluated by comparing the worst-case excursions and recovery consistency across configurations.
 
-The two complementary metrics---maximum deviation and SIAE---confirm that a brief large excursion and a prolonged small offset can produce similar SIAE values. The rotating cage exhibited a slightly wider maximum trajectory deviation than the fixed cage. While this difference is statistically significant ($U = 2484$, $p = 0.022$, Cohen's $d = 0.41$), the effect size is small. More importantly, the total spatial area required by the PID controller to arrest the drift and return to the setpoint (SIAE) remains nearly \mbox{identical} between the two configurations ($U = 2009$, $p = 0.998$, not significant). \textbf{In summary, the rotating cage is the better overall configuration for spatial recovery:} it achieves deeper obstacle clearance with a nearly identical recovery footprint, and the small increase in maximum deviation is absorbed by the PID controller without expanding the total recovery envelope.
+The two complementary metrics---maximum deviation and SIAE---confirm that a brief large excursion and a prolonged small offset can produce similar SIAE values. The rotating cage exhibited a slightly wider maximum trajectory deviation than the fixed cage. While this difference is statistically significant ($U = 2484$, $p = 0.022$, Cohen's $d = 0.41$), the effect size is small. More importantly, the total spatial area required by the Proportional-Integral-Derivative (PID) controller to arrest the drift and return to the setpoint (SIAE) remains nearly \mbox{identical} between the two configurations ($U = 2009$, $p = 0.998$, not significant). \textbf{In summary, the rotating cage is the better overall configuration for spatial recovery:} it achieves deeper obstacle clearance with a nearly identical recovery footprint, and the small increase in maximum deviation is absorbed by the PID controller without expanding the total recovery envelope.
 
 \begin{table}[htbp]
 \centering
@@ -179,6 +180,30 @@ Battery Covariance (Huber Slope) & $0.000$ & $-0.005$ \\
 
 As detailed in Table~\ref{tab:deceleration_battery}, the rotating cage recorded a mean maximum deceleration of $-1.03 \pm 0.50$~m/s$^2$, while the fixed cage recorded $-1.64 \pm 0.64$~m/s$^2$---a 37.2\% reduction. An independent samples t-test (Welch) confirms this difference is statistically significant ($t(124.7) = 6.00$, $p < 0.001$, Cohen's $d = 1.05$).
 
+
+
+\begin{tcolorbox}[breakable, colback=gray!8, colframe=black!30, arc=0pt,
+    boxsep=10pt, left=4pt, right=4pt, top=4pt, bottom=4pt,
+    before skip=6pt, after skip=6pt]
+\textbf{Huber Regression.}
+Huber regression is a robust linear technique used throughout this thesis to model noisy crash telemetry. Unlike ordinary least squares, which squares every error equally and is easily skewed by a single extreme spike, Huber regression applies a squared penalty to small residuals but switches to a linear penalty for large ones---down-weighting the influence of violent transient outliers that are common in collision data. In Table~\ref{tab:deceleration_battery} the near-zero Huber slopes confirm that battery state-of-charge is not systematically correlated with impact deceleration; the technique reappears in \autoref{sec:angle_prediction} as a single-feature linear baseline against which the Random Forest is benchmarked.
+\end{tcolorbox}
+
+
+\begin{tcolorbox}[breakable, colback=gray!8, colframe=black!30, arc=0pt,
+    boxsep=10pt, left=4pt, right=4pt, top=4pt, bottom=4pt,
+    before skip=6pt, after skip=6pt]
+\textbf{Cohen's $d$ (Effect Size).}
+Cohen's $d$ is the standardised mean difference between two groups:
+\begin{equation}
+    d = \frac{\bar{x}_1 - \bar{x}_2}{s_{\text{pooled}}}
+\end{equation}
+where $s_{\text{pooled}}$ is the pooled standard deviation. Unlike a $p$-value, which only answers ``is there a difference?'', $d$ answers ``how large is the difference?'' in units of standard deviations. Conventional benchmarks: $|d| \approx 0.2$ = small, $0.5$ = medium, $0.8$ = large.
+
+\textbf{Statistical Tests Used.}
+\textbf{Welch's $t$-test} (reported as $t(\text{df})$, $p$) compares the means of two independent groups without assuming equal variance. The \textbf{Mann--Whitney $U$ test} (reported as $U$, $p$) is its non-parametric counterpart: it compares distributions by rank rather than by raw values, making no assumption of normality. Throughout this thesis, $U$ is used for spatial and saturation metrics (which tend to be skewed or zero-inflated), while $t$ is used for normally distributed measures such as deceleration magnitudes.
+\end{tcolorbox}
+
 \paragraph{IMU Time-Series: Individual and Aggregated Signatures}
 
 Figure~\ref{fig:imu_dynamics_pair} presents the acceleration and gyroscopic traces. The upper panel shows representative single-flight traces. The lower panel aggregates all 127 flights. In the aggregated data, the overlaid individual traces reveal a visually narrower spread of linear acceleration peaks for the rotating cage, alongside a shorter median gyroscopic peak duration compared to the fixed cage.
@@ -188,7 +213,7 @@ Figure~\ref{fig:imu_dynamics_pair} presents the acceleration and gyroscopic trac
     \begin{subfigure}{\textwidth}
         \centering
         \includegraphics[width=\textwidth]{plots/Combined IMU Collision Dynamics.png}
-        \caption{Representative single-flight traces for Rotating Cage (left) and Fixed Cage (right).}
+        \caption{Representative single-flight traces for both cage configurations.}
         \label{fig:combined_imu_dynamics}
     \end{subfigure}
     \vspace{1em}
@@ -224,12 +249,19 @@ The box plots in Figure~\ref{fig:xyz_oscillation_variance} summarise the post-im
 
 Table~\ref{tab:master_comparison} organises the collision data into three mechanically distinct categories that together characterise each design's response to impact.
 
-\textbf{Impact Severity (Shock Impulse Z, $\Delta V$)} quantifies the sustained vertical impulse transmitted to the airframe over the 400~ms contact window. Rather than a single instantaneous peak, this is the integral of absolute acceleration---the total shock ``dose'' absorbed by the structure. \textbf{Rotational Stability (Yaw Rate RMS)} captures the heading disturbance induced by the collision; the rotating cage's ability to decouple the contact surface from the airframe should dramatically reduce this term. \textbf{Recovery Capacity (Allocator Saturation Duration)} measures how long the flight controller's motor mixer remains pegged at its output limits while trying to arrest the collision-induced drift --- a direct proxy for control authority margin.
-
-The mechanical trade-off encoded in these three dimensions is this: a collision-mitigating mechanism can either \emph{absorb} the energy locally (keeping it out of the airframe), \emph{redirect} it into a less destructive axis, or \emph{survive} it by maintaining control authority. The following rows reveal which strategy each cage configuration favours, and whether the bearing mechanism trades one form of protection for another.
-
 \medskip
-The preceding kinematic and vibrational analyses establish that the rotating cage fundamentally alters the physical distribution of collision energy. However, for a drone operating without external motion-tracking, this mechanical advantage is only practically useful if the onboard sensors retain enough information to characterise the impact. As indicated by the IMU feature correlation analysis (see \autoref{fig:imu_correlation}), the relationship between impact angle and inertial response is highly complex and dispersed across multiple axes. This dispersion suggests that simple linear thresholds are insufficient, necessitating a multivariate, non-linear approach to successfully decode the collision geometry from the raw telemetry.
+\begin{tcolorbox}[breakable, colback=gray!8, colframe=black!30, arc=0pt,
+    boxsep=10pt, left=4pt, right=4pt, top=4pt, bottom=4pt,
+    before skip=6pt, after skip=6pt]
+\textbf{Shock Impulse ($\Delta V$).}
+Rather than a single instantaneous peak, this is the integral of absolute acceleration over the 400~ms contact window---the total shock ``dose'' absorbed by the structure. The full equation and justification are given in \autoref{sec:intermediate_discussion}.
+
+\textbf{Yaw Rate RMS.}
+The root-mean-square of the yaw-axis angular velocity captures the heading disturbance induced by the collision; the rotating cage's ability to decouple the contact surface from the airframe should dramatically reduce this term.
+
+\textbf{Allocator Saturation Duration.}
+The total time the flight controller's motor mixer remains pegged at its output limits (0\% or 100\%) while attempting to arrest collision-induced drift---a direct proxy for control authority margin. The distribution of saturation durations for both configurations is shown in \autoref{fig:allocator_saturation} (Annex).
+\end{tcolorbox}
 
 \begin{table}[h!]
 \centering
@@ -263,6 +295,11 @@ The preceding kinematic and vibrational analyses establish that the rotating cag
 \end{tabularx}
 \end{table}
 
+The mechanical trade-off encoded in these three dimensions is this: a collision-mitigating mechanism can either \emph{absorb} the energy locally (keeping it out of the airframe), \emph{redirect} it into a less destructive axis, or \emph{survive} it by maintaining control authority. The rows in Table~\ref{tab:master_comparison} reveal which strategy each cage configuration favours, and whether the bearing mechanism trades one form of protection for another.
+
+\medskip
+The preceding kinematic and vibrational analyses establish that the rotating cage fundamentally alters the physical distribution of collision energy. However, for a drone operating without external motion-tracking, this mechanical advantage is only practically useful if the onboard sensors retain enough information to characterise the impact. As indicated by the IMU feature correlation analysis (see \autoref{fig:imu_correlation}), the relationship between impact angle and inertial response is highly complex and dispersed across multiple axes. This dispersion suggests that simple linear thresholds are insufficient, necessitating a multivariate, non-linear approach to successfully decode the collision geometry from the raw telemetry.
+
 % ======================================================================
 \subsection{Intermediate Mechanical Discussion: Energy Deflection and Survivability}
 \label{sec:intermediate_discussion}
@@ -272,18 +309,24 @@ To accurately assess the structural and aerodynamic consequences of the obstacle
 
 Before interpreting the aggregate behaviour, it is necessary to define the mathematical basis of the primary metrics used to evaluate impact severity, as raw instantaneous peak values fail to capture the temporal realities of a crash.
 
-\paragraph{Accumulated Shock Impulse.}
-Rather than recording a single instantaneous shock spike, impact severity is quantified by integrating the absolute acceleration over the entire 400~ms contact window:
+\medskip
+\begin{tcolorbox}[breakable, colback=gray!8, colframe=black!30, arc=0pt,
+    boxsep=10pt, left=4pt, right=4pt, top=4pt, bottom=4pt,
+    before skip=6pt, after skip=6pt]
+\textbf{Accumulated Shock Impulse ($\Delta V$).}
+Rather than recording a single instantaneous spike, impact severity is quantified by integrating the absolute acceleration over the entire 400~ms contact window:
 \begin{equation}
     \text{Impulse} = \int_{t_{\text{impact}}-0.05}^{t_{\text{impact}}+0.35} |a(t)| \; dt
 \end{equation}
 By taking the absolute value before integrating, this metric prevents oscillating vibrations from cancelling each other out. It captures the total shock impulse sustained across each axis, representing the cumulative physical ``energy dose'' absorbed by the airframe rather than net velocity lost.
 
-\paragraph{Attitude Rate RMS.}
-The root-mean-square of the angular velocity (Roll, Pitch, and Yaw rates) measures the sustained rotational turbulence transmitted to the chassis.
+\textbf{Attitude Rate RMS.}
+The root-mean-square (RMS) of the angular velocity---Roll, Pitch, and Yaw rates---measures the sustained rotational turbulence transmitted to the chassis over the collision window. RMS is a standard measure of the effective magnitude of a varying signal: squaring the instantaneous values weights larger deviations more heavily, the mean captures the average power, and the square root returns the result to the original units.
+\end{tcolorbox}
+\medskip
 
 \paragraph{Allocator Saturation Duration.}
-This metric calculates the total time the flight controller's motor mixer is forced to hold actuator outputs at absolute hardware limits (0\% or 100\%) while attempting to arrest collision-induced drift.
+This metric calculates the total time the flight controller's motor mixer is forced to hold actuator outputs at absolute hardware limits (0\% or 100\%) while attempting to arrest collision-induced drift. The distribution of saturation durations for both cage configurations is shown in \autoref{fig:allocator_saturation} (Annex).
 
 \medskip
 \noindent\textbf{The 3D Kinematic Trade-Off (X, Y, and Z Axes).}
@@ -299,7 +342,7 @@ However, the cage is mechanically constrained and cannot spin freely around the 
 
 \medskip
 \noindent\textbf{Hardware Limits and System Survivability.}
-Ultimately, surviving a confined-space collision is a race against gravity dictated by hardware limits. The fixed cage forces the drone to fight wall friction across all three rotational axes while simultaneously battling a massive lateral rebound. This overwhelms the flight controller, forcing it to command maximum output from the EMAX Eco~II motors, holding them at absolute saturation for a mean of 134~ms (with severe unpredictability, as some flights exceeded 300~ms)---an eternity in flight dynamics.
+Ultimately, surviving a confined-space collision is a race against gravity dictated by hardware limits. The fixed cage forces the drone to fight wall friction across all three rotational axes while simultaneously battling a massive lateral rebound. This overwhelms the flight controller, forcing it to command maximum output from the motors, holding them at absolute saturation for a mean of 134~ms (with severe unpredictability, as some flights exceeded 300~ms)---an eternity in flight dynamics.
 
 By perfectly isolating the yaw axis and absorbing the lateral impulse, the rotating cage drastically simplifies the aerodynamic recovery. Even though the drone still experiences elevated roll and pitch turbulence, the reduction in total chaotic friction reduces mean motor saturation time to just 5~ms. The system remains well within its operational envelope, allowing for immediate aerodynamic recovery and continued flight.
 
@@ -314,18 +357,28 @@ This systematic deflection of collision energy fundamentally alters the relation
 
 This section addresses the second research question (RQ2): whether the onboard IMU telemetry recorded during a collision can be used to infer the physical impact angle without external ground truth. The 26 IMU-derived aggregate features introduced in the methodology (\autoref{sec:methodology}) are correlated against the MoCap-derived impact angle to determine which inertial channels carry angle-discriminative information, and to what extent that information is preserved across the two cage configurations.
 
-Pearson's correlation coefficient ($r$) measures the strength and direction of the linear relationship between two variables, ranging from $-1$ (perfect negative correlation) to $+1$ (perfect positive correlation). Statistical significance thresholds ($^{***} p < 0.001$, $^{**} p < 0.01$, $^{*} p < 0.05$) indicate the probability that the observed correlation occurred by chance; formal mathematical derivations are provided in the Math Annex (\autoref{sec:math_appendix}).
+
+
+\begin{tcolorbox}[breakable, colback=gray!8, colframe=black!30, arc=0pt,
+    boxsep=10pt, left=4pt, right=4pt, top=4pt, bottom=4pt,
+    before skip=6pt, after skip=6pt]
+\textbf{Pearson's Correlation Coefficient ($r$).}
+$r$ measures the strength and direction of the linear relationship between two variables, ranging from $-1$ (perfect negative correlation) to $+1$ (perfect positive correlation), with $0$ indicating no linear relationship. Concretely, $r$ quantifies how consistently two variables move together relative to their individual variability: if impact angle and a given IMU feature tend to rise and fall in lockstep, their Pearson $r$ will be far from zero; if they fluctuate independently, $r$ will be near zero. (Mathematically, $r$ is the covariance of the two variables divided by the product of their standard deviations, normalising the result to the $[-1,1]$ interval.)
+
+\textbf{Statistical Significance ($p$).}
+The $p$-value indicates the probability that the observed correlation occurred by chance: $^{***} p < 0.001$ (highly significant, less than 0.1\% probability of a spurious result), $^{**} p < 0.01$ (strongly significant, less than 1\%), and $^{*} p < 0.05$ (significant, less than 5\%). Formal mathematical derivations are provided in the Math Annex (\autoref{sec:math_appendix}).
+\end{tcolorbox}
 
 The consolidated feature correlation slopegraph (\autoref{fig:imu_correlation}) shows which sensor channels are most useful for predicting the impact angle.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plots/consolidated_feature_correlation.png}
-    \caption{Consolidated feature correlation slopegraph: Pearson~$r$ between each of the 26 IMU aggregate metrics and impact angle, for Rotating Cage (left heatmap) and Fixed Cage (right heatmap). Connecting splines trace rank changes for each feature between the cage types. Significance stars: *** $p<0.001$, ** $p<0.01$, * $p<0.05$.}
+    \caption{Consolidated feature correlation slopegraph: Pearson~$r$ between each of the 26 IMU aggregate metrics and impact angle. Connecting splines trace rank changes for each feature between the cage types. Significance stars: *** $p<0.001$, ** $p<0.01$, * $p<0.05$.}
     \label{fig:imu_correlation}
 \end{figure}
 
-Parallel coordinates (\autoref{fig:consolidated_parallel_coordinates}) show the same picture from another angle. The top 10 IMU features---ranked by how strongly they correlate with impact angle---are shown for both cage types. Each coloured line represents one flight, normalised so all features are on the same scale. The lines from different angle bins (colours) cross and overlap across every axis---no single feature cleanly separates shallow impacts from steep ones. This confirms that the impact angle information is spread across many IMU channels, which is why a single-feature model cannot work and a multi-feature model like Random Forest is needed.
+Parallel coordinates (\autoref{fig:consolidated_parallel_coordinates}) show the same picture from another angle. The top 10 IMU features for the Rotating Cage---ranked by how strongly each correlates with impact angle in that configuration---are shown for both cage types (the same features are plotted for the Fixed Cage to enable direct comparison). Each coloured line represents one flight, normalised so all features are on the same scale. The lines from different angle bins (colours) cross and overlap across every axis---no single feature cleanly separates shallow impacts from steep ones. This confirms that the impact angle information is spread across many IMU channels, which is why a single-feature model cannot work and a multi-feature model like Random Forest is needed.
 
 \begin{figure}[htbp]
     \centering
@@ -339,7 +392,21 @@ Parallel coordinates (\autoref{fig:consolidated_parallel_coordinates}) show the 
 
 To map these complex, dispersed vibrational signatures to a specific impact angle, a Random Forest regressor was employed. Random Forest is an ensemble machine learning algorithm that constructs multiple decision trees during training and outputs the mean prediction of those individual trees. It is particularly well-suited for this application because it natively models non-linear relationships and complex interactions between multiple variables---such as the coupled gyroscopic and acceleration forces generated during a multi-axis collision. Furthermore, unlike strict linear models, it does not require the underlying physical data to follow a formal mathematical distribution, making it highly effective at parsing chaotic, high-frequency crash telemetry.
 
-Model performance is evaluated using three standard regression metrics to provide a holistic view of predictive accuracy. \textbf{Mean Absolute Error (MAE)} represents the average absolute difference between the predicted and actual impact angles, providing a direct, easily interpretable measure of typical angular error in degrees. \textbf{Root Mean Square Error (RMSE)} similarly measures prediction error but mathematically penalizes larger deviations more heavily; a substantial gap between MAE and RMSE indicates the presence of severe individual mispredictions. Finally, the \textbf{Coefficient of Determination ($R^2$)} quantifies the proportion of variance in the true impact angle that the IMU features successfully explain, serving as a normalized indicator of the model's overall predictive power.
+Model performance is evaluated using three standard regression metrics to provide a holistic view of predictive accuracy.
+
+
+\begin{tcolorbox}[breakable, colback=gray!8, colframe=black!30, arc=0pt,
+    boxsep=10pt, left=4pt, right=4pt, top=4pt, bottom=4pt,
+    before skip=6pt, after skip=6pt]
+\textbf{Mean Absolute Error (MAE).}
+The average absolute difference between the predicted and actual impact angles, providing a direct, easily interpretable measure of typical angular error in degrees. An MAE of 5$^\circ$ means the model's predictions are, on average, $\pm$5$^\circ$ from the true value.
+
+\textbf{Root Mean Square Error (RMSE).}
+Similar to MAE but squares each error before averaging and then takes the square root; this mathematically penalizes larger deviations more heavily. A substantial gap between MAE and RMSE indicates the presence of severe individual mispredictions---errors that are large in magnitude but infrequent.
+
+\textbf{Coefficient of Determination ($R^2$).}
+$R^2$ quantifies the proportion of variance in the true impact angle that the IMU features successfully explain. An $R^2$ of 1 means the model accounts for all variability in the data; 0 means it performs no better than always predicting the mean; negative values (possible in cross-validation or transfer evaluation) mean the model is worse than the mean baseline.
+\end{tcolorbox}
 
 While the preceding sections characterise the mechanical consequences of collision, they rely on post-processed MoCap ground truth. A practical drone operating in a confined space does not have access to an external tracking system --- it must infer collision properties from onboard sensors alone. To evaluate whether impact angle can be estimated from the vibration and inertial signatures recorded by the onboard IMU, a Random Forest regressor was trained on the 14 IMU-derived features described in the methodology (\autoref{sec:methodology}). The model was evaluated separately for each cage configuration using stratified 5-fold cross-validation, enabling direct comparison of how well the vibration-to-angle mapping survives the mechanical differences between fixed and rotating designs.
 
@@ -347,10 +414,10 @@ While the preceding sections characterise the mechanical consequences of collisi
 
 The 5-fold cross-validation procedure splits the impact flights for each cage configuration into five subgroups, trains the model on four, and evaluates on the held-out fifth in rotation. This ensures every flight contributes to testing exactly once, providing an unbiased estimate of generalisation performance on unseen data.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{plots/consolidated_actual_vs_predicted.png}
-    \caption{Consolidated five-fold cross-validation: predicted vs.\ actual impact angle for both cage configurations. Fixed Cage (left) and Rotating Cage (right) are shown side by side with identical axis limits, aspect ratio, and tick spacing for direct visual comparison. Each marker colour denotes one cross-validation fold; the black dashed line marks the $y=x$ identity; the grey band shows $\pm5^\circ$ tolerance.}
+    \includegraphics[width=0.92\textwidth]{plots/consolidated_actual_vs_predicted.png}
+    \caption{Consolidated five-fold cross-validation: predicted vs.\ actual impact angle for both cage configurations, shown side by side with identical axis limits, aspect ratio, and tick spacing for direct visual comparison. Each marker colour denotes one cross-validation fold; the black dashed line marks the $y=x$ identity; the grey band shows $\pm5^\circ$ tolerance.}
     \label{fig:rf_cv_consolidated}
 \end{figure}
 
@@ -381,12 +448,12 @@ Features selected & 14 & 14 & --- & --- \\
 \end{tabularx}
 \end{table}
 
-The residual plots (\autoref{fig:rf_residuals_consolidated}) reveal a diagnostic pattern consistent across both cage types. In both configurations, but particularly visible in the Rotating Cage, the residuals exhibit a discernible curve running from negative to positive rather than a fully random scatter around zero. This structured pattern indicates that the underlying relationship between IMU signatures and impact angle possesses a non-linear component that the current Random Forest configuration does not completely capture --- the model leaves a systematic bias that a deeper or differently tuned architecture could potentially absorb.
+The residual plots (\autoref{fig:rf_residuals_consolidated}) — where each residual is the difference between actual and predicted angle ($y_{\text{true}} - \hat{y}_{\text{pred}}$) — reveal a diagnostic pattern consistent across both cage types. In both configurations, but particularly visible in the Rotating Cage, the residuals exhibit a discernible curve running from negative to positive rather than a fully random scatter around zero. This structured pattern indicates that the underlying relationship between IMU signatures and impact angle possesses a non-linear component that the current Random Forest configuration does not completely capture --- the model leaves a systematic bias that a deeper or differently tuned architecture could potentially absorb.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plots/consolidated_residuals.png}
-    \caption{Consolidated residual plots for both cage configurations. Rotating Cage (left) and Fixed Cage (right). The black dashed horizontal line marks zero error; residuals are coloured by cross-validation fold.}
+    \caption{Consolidated residual plots for both cage configurations. The black dashed horizontal line marks zero error; residuals are coloured by cross-validation fold.}
     \label{fig:rf_residuals_consolidated}
 \end{figure}
 
@@ -394,8 +461,8 @@ The residual plots (\autoref{fig:rf_residuals_consolidated}) reveal a diagnostic
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{plots/consolidated_learning_curves.png}
-    \caption{Consolidated learning curves for both cage configurations. Rotating Cage (left) and Fixed Cage (right). Each panel shows training $R^2$ and validation $R^2$ against training-set size with shared vertical axis limits, enabling direct comparison of the overfitting margin between the two cage types.}
+    \includegraphics[width=\textwidth]{plots/consolidated_learning_curves.png}
+    \caption{Consolidated learning curves for both cage configurations. Each panel shows training $R^2$ and validation $R^2$ against training-set size with shared vertical axis limits, enabling direct comparison of the overfitting margin between the two cage types.}
     \label{fig:rf_learning_consolidated}
 \end{figure}
 
@@ -405,25 +472,27 @@ The learning curves for both cage configurations (Figure~\ref{fig:rf_learning_co
 
 The Random Forest succeeded in recovering the impact angle from IMU data alone. But a critical sanity check remains: could a simple linear regression on the single best-correlated feature have achieved the same result? To answer this, the model was benchmarked against a Huber linear regressor operating on the single best-correlated IMU feature for each configuration.
 
-To establish this baseline for comparison, Huber Regression was applied to the single most highly correlated IMU feature for each cage configuration (visualised in Figure~\ref{fig:rf_huber_consolidated}). Huber Regression is a robust linear technique that applies a standard squared loss function to small errors but transitions to a linear loss function for larger outliers. This makes it significantly less sensitive to the extreme, unpredictable noise spikes inherent in crash data compared to standard Ordinary Least Squares (OLS) regression. It is utilized here to determine exactly how much of the impact angle can be explained by a simple, direct linear relationship before justifying the complexity of the Random Forest.
+To establish this baseline for comparison, Huber regression (described in \autoref{sec:impact_acceleration_vibrations}) was applied to the top three individually best-correlated IMU features for each cage configuration. \autoref{fig:eda_top3_scatter} shows the raw data: each subplot plots one IMU feature against the measured impact angle, with the Huber trendline superimposed. If any single IMU channel carried a strong linear relationship to impact angle, the points would cluster tightly around the trendline and the line would have a clear slope.
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{plots/consolidated_top_features.png}
+    \includegraphics[width=\textwidth]{plots/consolidated_top_features.png}
     \caption{Scatter plots of the top three IMU features (by Pearson~$|r|$) against impact angle, with Huber robust trendlines superimposed. These represent the best-case linear scenario: the single strongest individual sensor channel available. The wide scatter and flat slopes, particularly for the Rotating Cage, visually confirm why single-feature linear regression cannot recover the impact angle.}
     \label{fig:eda_top3_scatter}
 \end{figure}
 
+They do not. In both cage types the points are broadly dispersed and the trendlines are nearly flat, meaning even the best single sensor channel cannot reliably distinguish a shallow ($\sim$30$^\circ$) impact from a steep ($\sim$60$^\circ$) one. The Rotating Cage is especially severe: the bearing mechanism disperses the angle signature so thoroughly across multiple vibrational modes that no individual feature retains a usable linear trace. \autoref{fig:rf_huber_consolidated} quantifies this collapse in a single number by comparing each configuration's best-feature Huber $R^2$ against the full 14-feature Random Forest.
+
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{plots/consolidated_model_comparison.png}
-    \caption{Model comparison: Random Forest vs.\ Huber linear baseline for Rotating Cage (left) and Fixed Cage (right). Bar charts show $R^2$ with $\pm1\sigma$ error bars across folds, with identical vertical axis limits for direct comparison.}
+    \includegraphics[width=\textwidth]{plots/consolidated_model_comparison.png}
+    \caption{Model comparison: Random Forest vs.\ Huber linear baseline for both cage configurations. Bar charts show $R^2$ with $\pm1\sigma$ error bars across folds, with identical vertical axis limits for direct comparison.}
     \label{fig:rf_huber_consolidated}
 \end{figure}
 
 The comparison reveals a striking asymmetry between the two cage types. For the Fixed Cage, the single-feature Huber baseline achieves an $R^2$ of 0.348 --- weak but containing genuine correlation. The Random Forest lifts this to $R^2 = 0.731$, a gain of $\Delta R^2 = +0.384$ attributable to its ability to combine non-linear interactions across all 14 features.
 
-For the Rotating Cage, the pattern is fundamentally different. The Huber baseline collapses to an $R^2$ of 0.004 --- functionally zero, indicating that no single linear IMU channel carries usable angle information. Yet the Random Forest recovers an $R^2$ of 0.719 from the same data. The $\Delta R^2 = +0.714$ gain is nearly double the Fixed Cage improvement, demonstrating that the rotating bearing mechanism disperses the angle signal across a broader, more distributed fingerprint that only a multi-feature non-linear model can decode. This finding is consistent with the mechanical interpretation: by decoupling the contact surface from the airframe, the rotating cage spreads collision energy across a richer set of vibrational modes, making the angle information more complex to extract but not fundamentally absent.
+For the Rotating Cage, the pattern is fundamentally different. The Huber baseline collapses to an $R^2$ of 0.004 --- functionally zero, indicating that no single linear IMU channel carries usable angle information. Yet the Random Forest recovers an $R^2$ of 0.719 from the same data. The $\Delta R^2 = +0.714$ gain is nearly double the Fixed Cage improvement, suggesting that the bearing mechanism distributes the angle signature across multiple IMU channels rather than concentrating it in one dominant axis---a signal structure that only a multi-feature model can exploit. This is a plausible mechanical consequence of decoupling the contact surface from the airframe: by converting a rigid scrape into a rolling contact, the rotating cage may spread the collision energy across a broader set of vibrational modes rather than channelling it along a single structural path. However, confirming this causal mechanism would require complementary measurement (e.g., high-speed footage or bearing torque instrumentation) that was not available in the present setup; the Random Forest results demonstrate the \emph{existence} of a distributed multivariate signal, not its physical origin.
 
 \subsubsection{Cross-Condition Transfer: Are the Dynamics Transferable?}
 
@@ -432,11 +501,11 @@ A critical practical question is whether a model trained on one cage type can pe
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plots/consolidated_cross_condition_transfer.png}
-    \caption{Consolidated cross-condition transfer: Fixed Cage model evaluated on Rotating Cage data (left) and Rotating Cage model evaluated on Fixed Cage data (right). Grey points show within-condition CV performance; red diamonds show the model's predictions when applied directly to opposite-condition flights. The systematic off-diagonal displacement in both directions confirms that the learned vibration-to-angle mapping does not transfer across cage mechanics.}
+    \caption{Consolidated cross-condition transfer: Fixed Cage model evaluated on Rotating Cage data and Rotating Cage model evaluated on Fixed Cage data. Within-condition CV performance is also shown; red diamonds mark the model's predictions when applied directly to opposite-condition flights. The systematic off-diagonal displacement in both directions confirms that the learned vibration-to-angle mapping does not transfer across cage mechanics.}
     \label{fig:rf_transfer_consolidated}
 \end{figure}
 
-The cross-condition transfer tests a simple but important question: can the same model work for both cage types? The answer is a clear no. When the Fixed Cage model is tested on Rotating Cage data, it performs worse than simply guessing the mean angle ($R^2 = -0.095$). When the Rotating Cage model is tested on Fixed Cage data, it manages $R^2 = 0.257$ — still far below usable performance. In short, training on one cage type and deploying on the other would produce systematically wrong angle estimates. This is not statistical noise: the bearing mechanism fundamentally changes which IMU channels carry the angle information and how they combine. For practical fleet operations, models must either be trained per-platform or a mechanical-normalisation transfer function must be developed to map feature distributions between cage types.
+The cross-condition transfer tests a simple but important question: can the same model work for both cage types? The answer is a clear no. When the Fixed Cage model is tested on Rotating Cage data, it performs worse than simply guessing the mean angle ($R^2 = -0.095$). When the Rotating Cage model is tested on Fixed Cage data, it manages $R^2 = 0.257$ --- still far below usable performance. The operational implications of this divergence are discussed in \autoref{sec:discussion}.
 
 \subsubsection{Feature Importance: Which IMU Channels Carry the Signal?}
 
@@ -445,7 +514,7 @@ To understand which physical signatures the models rely on, the permutation-base
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{plots/consolidated_feature_importance.png}
-    \caption{Permutation feature importance for the Random Forest models trained on Rotating Cage (left) and Fixed Cage (right). Features are ranked by the mean drop in $R^2$ when their values are permuted; error bars show $\pm 1\sigma$ across 30 permutation repetitions. The differing rank orders between cage types reflect the mechanical redistribution of collision energy by the rotating bearing.}
+    \caption{Permutation feature importance for the Random Forest models trained on both cage configurations. Features are ranked by the mean drop in $R^2$ when their values are permuted; error bars show $\pm 1\sigma$ across 30 permutation repetitions. The differing rank orders between cage types reflect the mechanical redistribution of collision energy by the rotating bearing.}
     \label{fig:consolidated_feature_importance}
 \end{figure}
 

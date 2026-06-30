@@ -297,8 +297,13 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
     df_train = df_fixed if train_condition == 'Fixed Cage' else df_rot
     df_transfer = df_rot if train_condition == 'Fixed Cage' else df_fixed
 
-    # Drop rows with NaN in any IMU_COLS or impact_angle
-    keep_cols = ['impact_angle', 'condition', 'flight_name'] + IMU_COLS
+    # Drop rows with NaN in any IMU_COLS or impact_angle.
+    # condition and flight_name are metadata — keep if present, skip if not
+    # (e.g., load_impact_data() does not include them).
+    keep_cols = ['impact_angle'] + IMU_COLS
+    for col in ['condition', 'flight_name']:
+        if col in df_train.columns:
+            keep_cols.append(col)
     df_train = df_train[keep_cols].dropna(subset=IMU_COLS + ['impact_angle'])
     print(f"   → {len(df_train)} {train_condition} flights with complete IMU data")
 
@@ -902,19 +907,15 @@ def run_rf_pipeline(train_condition='Fixed Cage', save_to_disk=True, show_plots=
 def plot_consolidated_feature_importance(results_fix, results_rot,
                                           save_to_disk=True, show_plots=True):
     """
-    Consolidated Random Forest Feature Importance + Permutation Importance —
-    2 rows × 2 columns.
+    Consolidated Random Forest Feature Importance — 2 rows × 1 column.
 
-    Top row:     MDI Feature Importance (Rotating | Fixed)
-    Bottom row:  Permutation Feature Importance (Rotating | Fixed)
+    Top:    Rotating Cage
+    Bottom: Fixed Cage
 
-    Top-row panels share:
-      - X-axis limits [0, 0.25] with ticks every 0.1
-      - Same feature ordering (combined ranking across both cages)
-    A single shared feature-group legend sits below the figure.
-
-    Subtitle format: 'Rotating Cage (14 features) OOB R² = 0.752'
-                     'Fixed Cage (14 features) OOB R² = 0.752'
+    Within each panel, MDI importance is shown as a solid filled horizontal
+    bar and Permutation importance as an outlined (hollow) bar of the same
+    feature-group colour, making the two metrics directly comparable per
+    feature without doubling the number of subplots.
 
     Parameters
     ----------
@@ -933,7 +934,6 @@ def plot_consolidated_feature_importance(results_fix, results_rot,
     ]
 
     # ── Build combined feature list from both cages ────────────────────────
-    # Take union of features, sorted by their average MDI across both cages.
     all_features = set()
     feat_data = {}
     for cond_name, res in conditions:
@@ -955,7 +955,7 @@ def plot_consolidated_feature_importance(results_fix, results_rot,
             else:
                 feat_data[f]['imp_rot'] = row['importance']
 
-    # Sort by mean importance across both cages
+    # Sort by mean MDI across both cages
     feat_list = sorted(all_features,
                        key=lambda f: (feat_data[f]['imp_fix'] + feat_data[f]['imp_rot']) / 2,
                        reverse=True)
@@ -970,105 +970,119 @@ def plot_consolidated_feature_importance(results_fix, results_rot,
                 all_groups.add(g)
     all_groups = sorted(all_groups)
 
-    # ── Build 2×2 figure ───────────────────────────────────────────────────
-    # Left column = Rotating Cage, Right column = Fixed Cage
-    fig = plt.figure(figsize=(16, max(9, len(feat_list) * 0.85)), dpi=150)
+    # ── Build 2×1 figure ───────────────────────────────────────────────────
+    n_feats = len(feat_list)
+    fig, axes = plt.subplots(2, 1, figsize=(12, max(10, n_feats * 0.9)),
+                              dpi=150, sharex=False)
 
-    gs = fig.add_gridspec(2, 2, hspace=0.30, wspace=0.6,
-                          height_ratios=[1, 1],
-                          left=0.15, right=0.98, top=0.92, bottom=0.12)
+    # Determine shared x-axis limit from both importance types
+    x_max = 0
+    for cond_name, res in conditions:
+        if res is None:
+            continue
+        for imp_key in ['importance_df', 'permutation_df']:
+            df = res.get(imp_key)
+            if df is not None and len(df) > 0:
+                x_max = max(x_max, df['importance'].max())
+    x_lim = max(x_max * 1.12, 0.05)  # 12% headroom, floor at 0.05
 
-    for row_idx, imp_type in enumerate(['mdi', 'perm']):
-        for col_idx, (cond_name, res) in enumerate(conditions):
-            ax = fig.add_subplot(gs[row_idx, col_idx])
+    for row_idx, (cond_name, res) in enumerate(conditions):
+        ax = axes[row_idx]
 
-            if res is None:
-                ax.text(0.5, 0.5, f'{cond_name}\nNo data',
-                        transform=ax.transAxes, ha='center', va='center',
-                        fontsize=14, fontweight='bold', color='gray')
-                continue
+        if res is None:
+            ax.text(0.5, 0.5, f'{cond_name}\nNo data',
+                    transform=ax.transAxes, ha='center', va='center',
+                    fontsize=14, fontweight='bold', color='gray')
+            continue
 
-            if imp_type == 'mdi':
-                imp_df = res.get('importance_df')
-                oob = res.get('model', None).oob_score_ if res.get('model') else 0
-                n_feats = res.get('n_features', len(imp_df) if imp_df is not None else 0)
+        imp_df = res.get('importance_df')
+        perm_df = res.get('permutation_df')
+
+        if imp_df is None or len(imp_df) == 0:
+            ax.text(0.5, 0.5, f'{cond_name}\nNo importance data',
+                    transform=ax.transAxes, ha='center', va='center',
+                    fontsize=11, fontstyle='italic', color='gray')
+            continue
+
+        # ── Build MDI + Permutation series in common feature order ─────────
+        mdi_vals, perm_vals, labels, bar_colors = [], [], [], []
+        for f in feat_list:
+            row_mdi = imp_df[imp_df['feature'] == f]
+            if len(row_mdi) > 0:
+                mdi_vals.append(row_mdi.iloc[0]['importance'])
+                labels.append(row_mdi.iloc[0]['label'])
+                bar_colors.append(GROUP_COLORS.get(row_mdi.iloc[0]['group'], '#CCCCCC'))
             else:
-                imp_df = res.get('permutation_df')
-                oob = None
-                n_feats = len(imp_df) if imp_df is not None else 0
+                mdi_vals.append(0)
+                labels.append(feat_data.get(f, {}).get('label', f))
+                bar_colors.append(GROUP_COLORS.get(
+                    feat_data.get(f, {}).get('group', 'Other'), '#CCCCCC'))
 
-            if imp_df is None or len(imp_df) == 0:
-                ax.text(0.5, 0.5, f'{imp_type.upper()}\nNo data',
-                        transform=ax.transAxes, ha='center', va='center',
-                        fontsize=11, fontstyle='italic', color='gray')
-                continue
-
-            # Build importance series for this cage in the common feature order
-            cage_imp = []
-            for f in feat_list:
-                row = imp_df[imp_df['feature'] == f]
-                if len(row) > 0:
-                    cage_imp.append({
-                        'label': row.iloc[0]['label'],
-                        'importance': row.iloc[0]['importance'],
-                        'group': row.iloc[0]['group'],
-                    })
-                else:
-                    cage_imp.append({
-                        'label': feat_data.get(f, {}).get('label', f),
-                        'importance': 0,
-                        'group': feat_data.get(f, {}).get('group', 'Other'),
-                    })
-
-            cage_imp_df = pd.DataFrame(cage_imp).sort_values('importance', ascending=True)
-
-            bar_colors = [GROUP_COLORS.get(g, '#CCCCCC') for g in cage_imp_df['group']]
-            bars = ax.barh(cage_imp_df['label'], cage_imp_df['importance'],
-                           color=bar_colors, edgecolor='black', linewidth=0.5,
-                           alpha=0.75)
-
-            # Annotate non-zero values
-            for bar, val in zip(bars, cage_imp_df['importance']):
-                if val > 0.001:
-                    ax.text(bar.get_width() + 0.002,
-                            bar.get_y() + bar.get_height() / 2,
-                            f'{val:.3f}', va='center', fontsize=6.5,
-                            fontweight='bold')
-
-            # Simplified subtitle: just the cage name
-            ax.set_title(cond_name, fontweight='bold', fontsize=10, pad=6,
-                         color='black')
-
-            if imp_type == 'mdi':
-                # X-axis: hardcoded limits [0, 0.25], ticks every 0.1
-                ax.set_xlim(0, 0.27)
-                ax.set_xticks([0, 0.1, 0.2])
-                ax.set_xlabel('MDI Importance', fontweight='bold', fontsize=9)
+            if perm_df is not None:
+                row_perm = perm_df[perm_df['feature'] == f]
+                perm_vals.append(row_perm.iloc[0]['importance'] if len(row_perm) > 0 else 0)
             else:
-                ax.set_xlabel('Permutation Importance (ΔMSE)', fontweight='bold',
-                              fontsize=9)
+                perm_vals.append(0)
 
-            ax.grid(True, linestyle=':', alpha=0.4, axis='x')
-            ax.tick_params(labelsize=8)
+        # Sort all series together by MDI ascending (horizontal bars go bottom→top)
+        combined = sorted(zip(mdi_vals, perm_vals, labels, bar_colors),
+                          key=lambda x: x[0])
+        mdi_vals, perm_vals, labels, bar_colors = (zip(*combined)
+                                                    if combined else ([], [], [], []))
 
-    # ── Single shared legend below the figure ─────────────────────────────
-    legend_elements = [
+        y_pos = range(len(labels))
+        bar_height = 0.35
+
+        # MDI — solid filled bars (top half of each row)
+        ax.barh([y + bar_height / 2 for y in y_pos], mdi_vals, bar_height,
+                color=bar_colors, edgecolor='black', linewidth=0.5,
+                alpha=0.85)
+
+        # Permutation — outlined hollow bars (bottom half, same colour as edge)
+        ax.barh([y - bar_height / 2 for y in y_pos], perm_vals, bar_height,
+                color='none', edgecolor=bar_colors, linewidth=1.2,
+                alpha=0.9)
+
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(labels, fontsize=8)
+        ax.set_xlim(0, x_lim)
+        ax.set_xlabel('Importance', fontweight='bold', fontsize=9)
+        ax.set_title(cond_name, fontweight='bold', fontsize=12, pad=6,
+                     color='black')
+        ax.grid(True, linestyle=':', alpha=0.4, axis='x')
+        ax.tick_params(labelsize=8)
+
+    # ── MDI / Permutation legend (top) + Feature Group legend (bottom) ────
+    method_handles = [
+        Patch(facecolor='#555555', alpha=0.85,
+              label='MDI (solid fill)'),
+        Patch(facecolor='none', edgecolor='#555555', linewidth=1.5,
+              label='Permutation (outline)'),
+    ]
+    group_handles = [
         Patch(facecolor=GROUP_COLORS.get(g, '#CCCCCC'), alpha=0.75, label=g)
         for g in all_groups if g in GROUP_COLORS
     ]
-    fig.legend(handles=legend_elements, fontsize=8, loc='lower center',
-               title='Feature Group', title_fontsize=9,
-               ncol=min(5, len(legend_elements)),
-               bbox_to_anchor=(0.5, -0.01), framealpha=0.85)
+    leg1 = fig.legend(handles=method_handles, fontsize=7.5, loc='lower center',
+                      ncol=2, bbox_to_anchor=(0.5, 0.01), framealpha=0.85,
+                      title='Importance Type', title_fontsize=8)
+    fig.add_artist(leg1)
+    fig.legend(handles=group_handles, fontsize=7.5, loc='lower center',
+               ncol=min(5, len(group_handles)),
+               bbox_to_anchor=(0.5, -0.05), framealpha=0.85,
+               title='Feature Group', title_fontsize=8)
 
     # ── Global title ───────────────────────────────────────────────────────
-    fig.suptitle('Random Forest Feature Importance',
-                 fontweight='bold', fontsize=14, y=0.97)
+    fig.suptitle('Random Forest Feature Importance: MDI + Permutation',
+                 fontweight='bold', fontsize=14, y=0.98)
+
+    fig.subplots_adjust(top=0.93, bottom=0.22, hspace=0.35, left=0.28,
+                         right=0.94)
 
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.90, 0.00,
+    fig.text(0.88, 0.08,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
@@ -1109,7 +1123,7 @@ def plot_consolidated_actual_vs_predicted(results_fix, results_rot,
         ('Fixed Cage', results_fix),
     ]
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=150,
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6), dpi=150,
                               sharex=True, sharey=True)
 
     for col_idx, (cond_name, res) in enumerate(conditions):
@@ -1193,11 +1207,11 @@ def plot_consolidated_actual_vs_predicted(results_fix, results_rot,
     fig.suptitle('5-Fold Cross-Validation: Predicted vs Actual Impact Angle',
                  fontweight='bold', fontsize=14, y=0.98)
 
-    fig.subplots_adjust(top=0.90, bottom=0.18, wspace=0.25)
+    fig.subplots_adjust(top=0.90, bottom=0.18, wspace=0.0)
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.90, 0.00,
+    fig.text(0.88, 0.08,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
@@ -1225,7 +1239,7 @@ def plot_consolidated_residuals(results_fix, results_rot,
         ('Fixed Cage', results_fix),
     ]
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=150,
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6), dpi=150,
                               sharex=True, sharey=True)
 
     for col_idx, (cond_name, res) in enumerate(conditions):
@@ -1253,11 +1267,13 @@ def plot_consolidated_residuals(results_fix, results_rot,
         ax.axhline(0, color='black', linestyle='--', linewidth=1.5, alpha=0.7,
                    zorder=2)
 
-        # Strict formatting
+# Strict formatting
         ax.set_xlim(0, 90)
         ax.set_ylim(-30, 30)
         ax.set_xticks([0, 15, 30, 45, 60, 75, 90])
         ax.set_yticks([-30, -15, 0, 15, 30])
+        
+        ax.set_box_aspect(1)
 
         ax.set_xlabel('Predicted Impact Angle (°)', fontweight='bold')
 
@@ -1268,16 +1284,16 @@ def plot_consolidated_residuals(results_fix, results_rot,
         mean_res = np.mean(residuals)
         ax.set_title(f'{cond_name}\n'
                      f'Mean = {mean_res:.1f}°  Std = {std_res:.1f}°',
-                     fontweight='bold', fontsize=11, color='black')
+                     fontweight='bold', fontsize=12, color='black')
         ax.grid(True, linestyle=':', alpha=0.4)
 
     fig.suptitle('Residual Plots — Prediction Error Distribution',
-                 fontweight='bold', fontsize=14, y=1.05)
-    fig.subplots_adjust(top=0.90, bottom=0.18, wspace=0.25)
+                 fontweight='bold', fontsize=14, y=1)
+    fig.subplots_adjust(top=0.90, bottom=0.18, wspace=0.0)
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.90, 0,
+    fig.text(0.88, 0.08,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
@@ -1304,7 +1320,7 @@ def plot_consolidated_model_comparison(results_fix, results_rot,
         ('Fixed Cage', results_fix),
     ]
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=150)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6), dpi=150)
 
     for col_idx, (cond_name, res) in enumerate(conditions):
         ax = axes[col_idx]
@@ -1344,14 +1360,15 @@ def plot_consolidated_model_comparison(results_fix, results_rot,
         ax.set_ylim(0, 1.0)
         ax.set_yticks([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
         ax.grid(True, linestyle=':', alpha=0.4, axis='y')
+        ax.set_box_aspect(1.25)
 
     fig.suptitle('Model Comparison: Huber vs Random Forest',
-                 fontweight='bold', fontsize=14)
-    fig.subplots_adjust(top=0.88, bottom=0.18, wspace=0.25)
+                 fontweight='bold', fontsize=14, y=0.98)
+    fig.subplots_adjust(top=0.90, bottom=0.18, wspace=0.0)
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.90, 0.0,
+    fig.text(0.88, 0.08,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
@@ -1392,7 +1409,7 @@ def plot_consolidated_cross_condition_transfer(results_fix, results_rot,
     """
     from matplotlib.lines import Line2D
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=150,
+    fig, axes = plt.subplots(1, 2, figsize=(13, 6), dpi=150,
                               sharex=True, sharey=True)
 
     # ── Left panel: model trained on Rotating Cage → tested on Fixed Cage ──
@@ -1425,8 +1442,9 @@ def plot_consolidated_cross_condition_transfer(results_fix, results_rot,
     ax_l.set_xlabel('Actual Impact Angle (°)', fontweight='bold')
     ax_l.set_ylabel('Predicted Impact Angle (°)', fontweight='bold')
     ax_l.set_title('Rotating Cage   →   Fixed Cage',
-                   fontweight='bold', fontsize=12)
+                   fontweight='bold', fontsize=12, color='black')
     ax_l.grid(True, linestyle=':', alpha=0.4)
+    ax_l.set_box_aspect(1)
 
     # ── Right panel: model trained on Fixed Cage → tested on Rotating Cage ─
     ax_r = axes[1]
@@ -1456,8 +1474,9 @@ def plot_consolidated_cross_condition_transfer(results_fix, results_rot,
     ax_r.set_xlabel('Actual Impact Angle (°)', fontweight='bold')
     ax_r.set_ylabel('Predicted Impact Angle (°)', fontweight='bold')
     ax_r.set_title('Fixed Cage   →   Rotating Cage',
-                   fontweight='bold', fontsize=12)
+                   fontweight='bold', fontsize=12, color='black')
     ax_r.grid(True, linestyle=':', alpha=0.4)
+    ax_r.set_box_aspect(1)
 
     # ── Single unified legend (compact, large legible markers) ────────────
     legend_elements = [
@@ -1471,11 +1490,11 @@ def plot_consolidated_cross_condition_transfer(results_fix, results_rot,
 
     fig.suptitle('Cross Condition Transfer',
                  fontweight='bold', fontsize=14, y=0.98)
-    fig.subplots_adjust(top=0.90, bottom=0.18, wspace=0.25)
+    fig.subplots_adjust(top=0.90, bottom=0.18, wspace=0.0)
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.90, 0.00,
+    fig.text(0.88, 0.08,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:
@@ -1505,7 +1524,7 @@ def plot_consolidated_learning_curves(results_fix, results_rot,
         ('Fixed Cage', results_fix),
     ]
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5), dpi=150,
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6), dpi=150,
                               sharex=True, sharey=True)
 
     for col_idx, (cond_name, res) in enumerate(conditions):
@@ -1549,14 +1568,15 @@ def plot_consolidated_learning_curves(results_fix, results_rot,
         ax.grid(True, linestyle=':', alpha=0.4)
         ax.set_ylim(-0.2, 1.0)
         ax.set_yticks([-0.2, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+        ax.set_box_aspect(1)
 
     fig.suptitle('Learning Curves: Training Size vs R² Score',
-                 fontweight='bold', fontsize=14, y=0.97)
-    fig.subplots_adjust(top=0.88, bottom=0.18, wspace=0.25)
+                 fontweight='bold', fontsize=14, y=1)
+    fig.subplots_adjust(top=0.90, bottom=0.18, wspace=0.0)
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.90, 0.00,
+    fig.text(0.88, 0.08,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:

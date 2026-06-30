@@ -1024,7 +1024,7 @@ def plot_consolidated_feature_correlation(df_fix, df_rot, save_path=None, show=T
     # ═══════════════════════════════════════════════════════════════════════
     cax = fig.add_axes([0.83, 0.12, 0.015, 0.76])
     cbar = fig.colorbar(im_rot, cax=cax)
-    cbar.set_label("Pearson R with Impact Angle\n← Negative  |  Positive →",
+    cbar.set_label("Pearson $r$ with Impact Angle\n← Negative  |  Positive →",
                    fontweight='bold', fontsize=8.5)
     cbar.ax.tick_params(labelsize=7)
     if save_path:

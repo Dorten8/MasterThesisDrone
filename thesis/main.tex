@@ -32,6 +32,7 @@
 %\usepackage[textwidth=\marginparwidth]{todonotes}
 % NICE HIGHLIGHT OF COMMENTED TEXT
 \usepackage{soul} % provides \texthl
+\usepackage[breakable]{tcolorbox}
 
 \makeatletter
 \if@todonotes@disabled
@@ -46,6 +47,8 @@
 \usepackage{array}
 \usepackage{ragged2e}
 \usepackage{multirow}
+\usepackage{float}
+\usepackage{afterpage}
 \newcolumntype{P}[1]{>{\centering\arraybackslash}p{#1}} % center the column and justify its contents to the top in multirow tables
 \newcolumntype{R}[1]{>{\RaggedLeft\arraybackslash}p{#1}} % Align column to the right in multirow tables
 

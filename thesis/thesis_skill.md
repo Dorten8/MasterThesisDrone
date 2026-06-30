@@ -109,3 +109,51 @@ For sections/content that are incomplete but should remain visible in the PDF (n
 - `***HERE NEEDS TO BE SECTION ON <TOPIC>***` — when a section stub needs content
 
 These render as bold monospace in the PDF, so both humans and LLMs can spot them on a regen pass.
+
+## 🖨️ Monospace Line-Breaking: Use `\path` for Long Paths/URIs
+
+LaTeX's `\texttt{...}` does **not** break across lines — long monospace strings like ROS topic URIs (`/fmu/in/trajectory_setpoint`) bleed into the right margin. The `url` package (loaded with `[hyphens]`) provides `\path{...}`, which breaks at `/`, `_`, and `-`.
+
+**Rule:**
+
+| Context | Use | Example |
+|---|---|---|
+| Short code token (fits on one line) | `\texttt{px4\_msgs}` | `\texttt{px4\_msgs}` |
+| Long path/URI with `/` or `_` | `\path{/fmu/in/trajectory_setpoint}` | `\path{/fmu/in/trajectory_setpoint}` |
+| Docker image names, URLs, topic names | `\path{...}` | `\path{ghcr.io/org/container:v1}` |
+
+**Why `\path` works:** The `url` package with `hyphens` option inserts discretionary line-break points at `/`, `_`, `-`, and `.` — so the renderer can split `trajectory_setpoint` at the underscore if needed, keeping the line within the text block.
+
+**Apply this rule on every compile pass:** grep for `\texttt{...}` containing `/` or strings longer than ~30 characters and migrate them to `\path{...}`.
+
+## 📦 Metric/Calculation Definition Callout Box
+
+When the thesis introduces a metric, formula, or statistical concept that the reader needs to understand to follow the results, **use the gray callout box pattern** instead of burying it in regular body text. This visually separates the definition from the analytical narrative.
+
+**Template:**
+
+```latex
+
+\medskip
+\begingroup
+\setlength{\fboxsep}{10pt}
+\noindent\fcolorbox{black!30}{gray!8}{%
+\begin{minipage}{\dimexpr\textwidth-2\fboxsep-2\fboxrule}
+\textbf{<Name> ($<symbol>$).}
+<Definition — what it measures, its range/interpretation. Concrete explanation
+in plain English, not just the formula.>
+
+\textbf{<Second concept> ($<symbol>$).}
+<If two related concepts go together (e.g., Pearson $r$ and $p$-value),
+make each its own bold-headed paragraph inside the same box.>
+\end{minipage}}
+\endgroup
+\medskip
+```
+
+**Rules:**
+- Each concept gets its own bold-headed paragraph (`\textbf{Name ($symbol$).}` )
+- Always give the concrete intuition first ("quantifies how consistently two variables move together..."), then the formula if needed
+- Don't label it "Metric Definition" — just use the concept name
+- Multiple related concepts can share one box (e.g., Pearson $r$ + Significance $p$)
+- The box sits inline in the text flow — it replaces, not supplements, what would have been a loose paragraph

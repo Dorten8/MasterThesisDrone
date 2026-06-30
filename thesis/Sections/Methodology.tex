@@ -43,7 +43,7 @@ The drone's physical dimensions are governed by a narrow three-way tradeoff, ill
 
 \textbf{Upper bound: indoor safety ceiling.} The 4-inch propeller class is the practical upper limit for indoor flight in confined spaces.\footnote{As recommended by commercial test platforms: \url{https://vibms.com/what-size-fpv-drone-should-i-get/}} Larger platforms (5-inch and above) produce propeller wash that destabilises the vehicle in tight enclosures and increase the kinetic energy carried into any collision, raising the barrier to physical survivability. Platforms large enough to carry heavy sensors such as a full-size LIDAR (e.g., Ouster OS0 at $\sim$450\,g) exceed the thrust budget while also exceeding safe indoor operating dimensions.
 
-\textbf{The 4-inch optimum.} At this scale, 2004-stator motors paired with 4-inch GF4023 propellers on a 6S battery produce sufficient lift for the companion computer and cage while hovering at 45--50\% throttle---near the efficiency peak. The resulting TWR of $\sim$3.8:1 places the drone in the responsive research-autonomy band, with enough thrust to arrest post-collision drift and recover to the commanded setpoint. The specific motor, battery, and efficiency trade-offs that realise this target are detailed in the System Architecture section below.
+\textbf{The 4-inch optimum.} At this scale, 2004-stator motors paired with 4-inch GF4023 propellers on a 6S battery produce sufficient lift for the companion computer and cage while hovering near the efficiency peak. Small drones of this class are rarely required to carry the combined payload of a companion computer, protective cage, and bearing mechanism; the target all-up weight was 1,200\,g (projected TWR $\sim$2.87:1), and the final assembly settled at approximately 1,340\,g (actual TWR $\sim$2.57:1; detailed derivation in \autoref{sec:annex_hardware}). The most powerful 2004-stator motors available for 4-inch propellers were therefore selected. Despite the lower-than-projected thrust headroom, this margin proved sufficient to arrest post-collision drift and recover to the commanded setpoint.
 
 \subsection{System Architecture}
 
@@ -58,7 +58,7 @@ The autonomous flight stack is organised into five layers, illustrated in \autor
 
 \subsubsection{Frame and Cage Design}
 
-The drone's mechanical design integrates all major subsystems---flight controller, companion computer, motors, battery, and protective cage---into a single, compact assembly. \autoref{fig:drone_exploded} provides an exploded overview of how these components come together, a layout shaped by the rotating-shell principles explored in the collision-resilience literature~\cite{mahmudDevelopmentCollisionResilient2021}.
+The drone's mechanical design integrates all major subsystems---flight controller, companion computer, motors, battery, and protective cage---into a single, compact assembly. \autoref{fig:drone_exploded} provides an exploded overview of how these components come together, a layout shaped by the rotating-shell principles explored in the collision-resilience literature~\cite{mahmudDevelopmentCollisionResilient2021}. Figure~6 shows the physical realization of this assembly.
 
 \begin{figure}[htbp]
     \centering
@@ -74,7 +74,7 @@ The drone's mechanical design integrates all major subsystems---flight controlle
     \label{fig:drone_all_parts}
 \end{figure}
 
-The protective cage design draws on established geometries from the collision-resilience literature. To ensure self-righting after ground impacts, Mulgaonkar et al.~\cite{mulgaonkarRobustAerialRobot2018} utilised G\"omb\"oc-shaped shells---a convex mono-monostatic body with a single stable equilibrium---for their micro-drone swarms. Separately, Mahmud~\cite{mahmudDevelopmentCollisionResilient2021} explored rotating-shell principles, comparing a truncated icosahedron cage on a 3-axis gimbal against a simpler, single-axis turtle-shell cage; he concluded the truncated icosahedron was \emph{more efficient in minimising collision forces for all possible oblique collisions}, while the turtle-shell was the better choice only when low cost and reduced complexity were paramount. The cage adopted for this work draws on Mahmud's rotating-shell principle while adapting it for airborne impact deflection rather than ground self-recovery.
+To ensure self-righting after ground impacts, researchers have developed various passive recovery structures. Mulgaonkar et al.~\cite{mulgaonkarRobustAerialRobot2018} demonstrated the efficacy of a 25~g G\"omb\"oc-shaped shell for autonomous uprighting. Conversely, Mahmud~\cite{mahmudDevelopmentCollisionResilient2021} investigated rotating-shell principles, comparing a single-axis turtle-shell design against a 3-axis gimbaled truncated icosahedron. The rotating cage configuration adopted for this thesis takes direct inspiration from Mahmud's rotating-shell principle, adapting the mechanism specifically for airborne impact deflection rather than just ground recovery.
 
 The development process began with CAD modelling of the frame and cage assembly in OnShape, iterating through several revisions to balance structural rigidity, weight, and propeller clearance.
 % TODO [USER]: Insert your custom technical drawings and CAD renders of the drone assembly here.
@@ -90,18 +90,24 @@ The fixed-cage control configuration uses identical geometry but rigidly mounts 
 
 \subsubsection{Motor and Battery Selection}
 
-The design targets a \textbf{thrust-to-weight ratio (TWR) of approximately 3.8:1}, positioning the platform in the research/autonomous zone where hover occurs at roughly 45--50\% throttle. This mid-throttle hover is deliberate: motor efficiency peaks at 40--70\% throttle, and hovering at 50\% reserves substantial headroom for autonomous obstacle avoidance, gust rejection, and post-collision recovery. Hovering at or near 100\% throttle leaves zero control margin.\cite{bershadsky2016propulsion}
+The design targets a \textbf{thrust-to-weight ratio (TWR) of approximately 2.87:1} (at the design weight of 1,200\,g; actual assembly settled at $\sim$1,340\,g for a TWR of $\sim$2.57:1), positioning the platform in the research/autonomous zone where hover occurs at roughly 40\% throttle. This mid-throttle hover is deliberate: motor efficiency peaks at 40--70\% throttle, and hovering at 50\% reserves substantial headroom for autonomous obstacle avoidance, gust rejection, and post-collision recovery. Hovering at or near 100\% throttle leaves zero control margin.\cite{bershadsky2016propulsion}
 
 \textbf{EMAX ECOII 2004 1600KV} motors were selected to meet this target. The 2004 stator (20\,mm diameter, 4\,mm height) provides high torque at mid-throttle while the low 1600\,KV rating (1600\,RPM per volt) is matched to a \textbf{6S LiPo battery} (22.2\,V nominal). On this voltage, the motors deliver approximately 860\,g static thrust each under 4-inch GF4023 propellers---a combined 3,440\,g~\cite{bershadsky2016propulsion}\footnote{Product specifications available at: \url{https://drone24hours.com/products/t-motor-f2004-1700kv}}. The 6S voltage also places the practical RPM ($\sim$24,000--28,000 under load) within the 4-inch propeller's efficient range, avoiding excessive tip speeds.
 
 \textbf{Efficiency Advantages of the 6S Architecture.}
 The choice of a 6-cell battery over a 4-cell alternative is driven by efficiency. Theoretical foundations of brushless DC (BLDC) motor dynamics demonstrate that higher-voltage architectures (such as 6S) are significantly more efficient than lower-voltage alternatives (such as 4S) for equivalent power outputs. Because electrical power is proportional to voltage multiplied by current ($P = VI$), increasing the system voltage proportionally reduces the current required to generate the same mechanical thrust. This reduction in current quadratically decreases the resistive copper losses ($P_{\text{loss}} = I^2R$) within the motor windings and electronic speed controllers, thereby reducing thermal dissipation and extending overall flight endurance.\cite{hughes2013electric}
 
-\textbf{Voltage sag}---the temporary voltage drop under high-current discharge, caused by battery internal resistance ($V_{\text{drop}} = I \times R_{\text{internal}}$)---is proportionally less severe at higher baseline voltages. Under an equivalent current spike, a 4S pack may sag by over 30\% of its nominal voltage, whereas an equivalent-quality 6S pack sees a smaller relative drop.\cite{bershadsky2016propulsion} For autonomous flight, where the controller expects a predictable motor response, excessive sag introduces a latency between commanded and actual thrust that degrades control stability during rapid maneuvers. Higher baseline voltage provides a larger operating margin against this effect. The detailed derivation is given in the \hyperref[sec:annex_hardware]{Annex}.
+
+\begin{tcolorbox}[breakable, colback=gray!8, colframe=black!30, arc=0pt,
+    boxsep=10pt, left=4pt, right=4pt, top=4pt, bottom=4pt,
+    before skip=6pt, after skip=6pt]
+\textbf{Voltage Sag.}
+Voltage sag is the temporary voltage drop that occurs under high-current discharge, caused by battery internal resistance ($V_{\text{drop}} = I \times R_{\text{internal}}$). Under an equivalent current spike, a 4S pack may sag by over 30\% of its nominal voltage, whereas an equivalent-quality 6S pack sees a smaller relative drop---not necessarily because the absolute sag in volts is smaller, but because the same sag is a smaller \emph{fraction} of the higher baseline voltage.\cite{bershadsky2016propulsion} For autonomous flight, where the controller expects a predictable motor response, excessive sag introduces a latency between commanded and actual thrust that degrades control stability during rapid maneuvers. Higher baseline voltage provides a larger operating margin against this effect. The detailed derivation is given in the \hyperref[sec:annex_hardware]{Annex}.
+\end{tcolorbox}
 
 \subsubsection{Flight Controller: PX4 and Pixhawk 6C}
 
-The flight controller occupies the Hardware \& Firmware layer of the system architecture (\autoref{fig:architecture}), directly interfacing with the motors, ESCs, and onboard sensors. To address the three design objectives holistically, PX4 was selected as the autonomous platform. Two platforms currently dominate the open-source UAV ecosystem: ArduPilot and PX4. PX4 was chosen over ArduPilot for its permissive BSD licensing (which allows proprietary extensions, whereas ArduPilot's GPLv3 requires contributed code to remain open), its modular publish-subscribe architecture (uORB), and its well-developed hardware standards under the Dronecode Foundation~\cite{meierPX4NodebasedMultithreaded2015}. PX4's open-source standard is built on modular architecture using \textbf{uORB (microObject Request Broker)}---a publish-subscribe middleware layer suited for plug-and-play development. These factors promised faster integration with the ROS~2 middleware layer and reduced hardware-software troubleshooting. This modularity enables rapid research iteration: novel autonomous behaviors can be implemented as independent modules without modifying the core flight stack.
+The flight controller occupies the Hardware \& Firmware layer of the system architecture (\autoref{fig:architecture}), directly interfacing with the motors, ESCs, and onboard sensors. To address the three design objectives holistically, PX4 was selected as the autonomous platform. Two platforms currently dominate the open-source UAV ecosystem: ArduPilot and PX4. PX4 was chosen over ArduPilot for its permissive BSD licensing (which allows proprietary extensions, whereas ArduPilot's General Public License version 3 (GPLv3) requires contributed code to remain open), its modular publish-subscribe architecture (uORB), and its well-developed hardware standards under the Dronecode Foundation~\cite{meierPX4NodebasedMultithreaded2015}. PX4's open-source standard is built on modular architecture using \textbf{uORB (microObject Request Broker)}---a publish-subscribe middleware layer suited for plug-and-play development. These factors promised faster integration with the ROS~2 middleware layer and reduced hardware-software troubleshooting. This modularity enables rapid research iteration: novel autonomous behaviors can be implemented as independent modules without modifying the core flight stack.
 
 The \textbf{Pixhawk 6C flight controller} was chosen as the hardware instantiation of the PX4 standard. Critically, Pixhawk is not a monolithic design but represents standardized connector specifications, sensor integration points, and reference schematics managed by the Dronecode Foundation~\footnote{\url{https://www.unmannedsystemstechnology.com/2023/01/latest-pixhawk-open-standards-available/}}. This standardization means:
 
@@ -119,7 +125,7 @@ The Pixhawk 6C runs PX4 Autopilot firmware (\texttt{v1.16.1rc}) and is responsib
 
 \subsubsection{Companion Computer: Raspberry Pi 5}
 
-The companion computer is a \textbf{Raspberry Pi 5} (8\,GB variant), selected for its substantial compute headroom over previous Pi generations: the quad-core Cortex-A76 provides roughly 2--3$\times$ the CPU throughput of the Pi~4, sufficient for concurrent MoCap data ingestion, offboard control computation, and high-bandwidth telemetry logging without frame drops.
+The companion computer is a \textbf{Raspberry Pi 5} (8\,GB variant), selected for its substantial compute headroom sufficient for concurrent MoCap data ingestion, offboard control computation, and high-bandwidth telemetry logging.
 
 The Pi~5 runs the flight software stack inside a \textbf{Docker container} provisioned with Ubuntu~22.04 LTS and ROS~2 Humble (full provisioning details in the \hyperref[sec:appendix_architecture]{Software Annex}). The container communicates with the Pixhawk~6C over a dedicated UART serial link as shown in \autoref{fig:architecture} and \ref{fig:architecture_xrce_dds}.
 
@@ -156,7 +162,25 @@ src/
                                 #   transformer
 \end{lstlisting}
 
-Three of these are critical for the MoCap-to-PX4 chain: \texttt{px4\_msgs} provides the interface message definitions (ROS~2 \texttt{.msg} files mirroring PX4 uORB topics), \texttt{px4\_ros\_com} handles frame transformations (more on that in \autoref{sec:motion_capture}), and \texttt{mocap\_px4\_bridge} publishes the transformed poses to \texttt{/fmu/in/vehicle\_visual\_odometry}.
+Three of these are critical for the MoCap-to-PX4 chain: \texttt{px4\_msgs} provides the interface message definitions (ROS~2 \texttt{.msg} files mirroring PX4 uORB topics), and \texttt{px4\_ros\_com} handles frame transformations as detailed below.
+
+\subsubsection{MoCap--PX4 Coordinate Frame Integration}
+\label{sec:coordinate_frames}
+
+The \texttt{motion\_capture\_tracking} ROS~2 node receives the multicast stream from Motive, and the \texttt{mocap\_px4\_bridge} node transforms the poses between coordinate frames before publishing them to \path{/fmu/in/vehicle_visual_odometry}.
+
+Coordinate frame conventions differ between MoCap and PX4. ENU is a ground-fixed frame where the $X$~axis points East, $Y$~points North, and $Z$~points Up; the vehicle body frame has $X$~toward the front, $Z$~up, and $Y$~toward the left. PX4's internal state estimator operates in the \textbf{NED (North-East-Down)} frame, where $X$~points North, $Y$~points East, and $Z$~points Down; the corresponding vehicle body frame (\textbf{FRD}, Forward-Right-Down) has $X$~toward the front, $Z$~down, and $Y$~accordingly. \autoref{fig:coordinate_frames} shows both conventions side by side.\footnote{Software documentation available at: \url{https://docs.px4.io/main/en/tutorials/motion-capture}}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/coordinate_frames_NEDvsENU.png}
+    \caption{NED (left) and ENU (right) coordinate frame conventions. Adapted from PX4 documentation~\footnote{Software documentation available at: \url{https://docs.px4.io/main/en/tutorials/motion-capture}}.}
+    \label{fig:coordinate_frames}
+\end{figure}
+
+The \texttt{mocap\_px4\_bridge} performs this transform in two steps: first, a static rotation maps ENU to NED ($X_{\text{NED}} = Y_{\text{ENU}}$, $Y_{\text{NED}} = X_{\text{ENU}}$, $Z_{\text{NED}} = -Z_{\text{ENU}}$); second, the NED pose is rotated into the FRD body frame using the vehicle's current attitude quaternion. The resulting \texttt{VehicleVisualOdometry} message is published at 120\,Hz to \path{/fmu/in/vehicle_visual_odometry}.
+
+The Extended Kalman Filter (EKF2) estimator fuses this external vision with the onboard 250\,Hz IMU data. The fidelity of this sensor fusion under both normal and degraded tracking conditions is validated later in this section and in \autoref{sec:motion_capture}, where the EKF velocity estimates are shown to align closely with MoCap-derived ground truth and to bridge transient marker dropouts during impact via inertial propagation.
 
 \paragraph{The Flight Director}
 
@@ -164,13 +188,13 @@ The \texttt{flight\_director.py} node was developed directly from the PX4 ROS~Co
 
 \begin{itemize}
     \item \textbf{State machine}: Implements the waypoint state machine shown in \autoref{fig:flight_director_state_machine} and detailed in \autoref{fig:mission_geometry}. Each state transition publishes a waypoint-identifier message that drives the event segmenter.
-    \item \textbf{Offboard control}: Publishes \texttt{TrajectorySetpoint} messages to \texttt{/fmu/in/trajectory\_setpoint} with explicit velocity feedforward (\texttt{hb.velocity = True}). Subscribes to \texttt{/fmu/out/vehicle\_status} for telemetry feedback.
+    \item \textbf{Offboard control}: Publishes \texttt{TrajectorySetpoint} messages to \path{/fmu/in/trajectory_setpoint} with explicit velocity feedforward (\texttt{hb.velocity = True}). Subscribes to \path{/fmu/out/vehicle_status} for telemetry feedback.
 \end{itemize}
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.95\textwidth]{Figures/flight_director_state_machine.pdf}
-    \caption{Flight Director state machine transitions for the autonomous collision loop. Normal transitions (solid arrows) follow the mission sequence: \texttt{DISARMED} $\to$ \texttt{TAKEOFF} $\to$ \texttt{WP\_stage} $\to$ \texttt{WP1} $\to$ \texttt{WP2} $\to$ \texttt{WP3} $\to$ auto-loop to \texttt{WP\_stage} or \texttt{LANDING}. Dashed transitions represent failsafe triggers (MoCap loss, geofence breach, kill-switch) that command \texttt{EMERGENCY LAND} from any active state.}
+    \caption{Flight Director state machine transitions for the autonomous collision loop. Normal transitions follow the mission sequence: \texttt{DISARMED} $\to$ \texttt{TAKEOFF} $\to$ \texttt{WP\_stage} $\to$ \texttt{WP1} $\to$ \texttt{WP2} $\to$ \texttt{WP3} $\to$ auto-loop to \texttt{WP\_stage} or \texttt{LANDING}. Dashed transitions represent failsafe triggers (MoCap loss, geofence breach, kill-switch) that command \texttt{EMERGENCY LAND} from any active state.}
     \label{fig:flight_director_state_machine}
 \end{figure}
 
@@ -208,14 +232,5 @@ The flight director enforces a multi-layered safety regime designed to prevent t
     \label{fig:ekf_validation}
 \end{figure}
 
-The complete experimental pipeline, from hardware through the ROS~2 node graph to telemetry storage, is illustrated in \autoref{fig:experiments_pipeline}.
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/experiments_pipeline.pdf}
-    \caption{Experiment pipeline showing hardware components, ROS~2 software stack, data flow from MoCap through the agent to PX4, and telemetry logging to MCAP storage.}
-    \label{fig:experiments_pipeline}
-\end{figure}
-
-The \texttt{flight\_missions.py} module provides discrete flight routines (column sweep, hover verification), while \texttt{flight\_recorder.py} logs synchronised topic data to segmented \texttt{.mcap} files, one per loop iteration.
+The \texttt{flight\_missions.py} module provides discrete flight routines (column sweep, hover verification), while \texttt{flight\_recorder.py} logs synchronised topic data to segmented \texttt{.mcap} files, one per loop iteration. These files were subsequently parsed through a custom Python database pipeline to calculate all physical variables presented in the results. Every impact event was additionally vetted manually by inspecting the raw IMU acceleration traces to confirm that each detected contact corresponded to a genuine physical collision rather than a sensor artefact or transient noise spike.
 \endinput

@@ -39,14 +39,15 @@ The EMAX ECOII 2004 series is specified for 4--5 inch ultralight builds.\footnot
 
 Pilot testing of a similar 2004-series motor (T-Motor F2004 1700KV, comparable in stator dimensions) paired with 4-inch GF4023 propellers and a 6S battery demonstrated approximately 860 grams of static thrust per motor~\cite{bershadsky2016propulsion}\footnote{Product specifications available at: \url{https://drone24hours.com/products/t-motor-f2004-1700kv}}. With four motors, this yields combined thrust capacity of approximately 3,440 grams---establishing the system's TWR.
 
-\textbf{TWR Calculation} (estimated final weight 800--1,000g):
+\textbf{TWR Calculation}:
 \begin{itemize}
-    \item Total available thrust: 3,440g
-    \item Target weight: 900g (midpoint)
-    \item TWR = 3,440 / 900 = \textbf{3.82:1}
+    \item Total available thrust: 3,440\,g (860\,g per motor $\times$ 4, estimated from published test data for a comparable T-Motor F2004 1700KV)
+    \item Initial weight estimate: 800--1,000\,g $\rightarrow$ projected TWR of 4.30:1 to 3.44:1
+    \item Design target weight: 1,200\,g $\rightarrow$ target TWR = 3,440 / 1,200 $\approx$ \textbf{2.87:1}
+    \item Actual all-up weight (incl.\ PETG cage, bearing mechanism, wiring): $\sim$1,340\,g $\rightarrow$ actual TWR = 3,440 / 1,340 $\approx$ \textbf{2.57:1}
 \end{itemize}
 
-This places the design in the research/autonomous platform zone. A TWR of 3.8:1 means the drone can sustain controlled hovering well within the efficient mid-throttle operating range.
+At 2.57:1, the design carries less thrust headroom than is typical for research-autonomy platforms---a direct consequence of the companion computer, protective cage, and bearing assembly, whose combined weight is unusual for a 4-inch airframe. Nevertheless, this ratio still provides sufficient thrust to arrest post-collision drift, and the motors operate near their efficiency peak at the resulting hover throttle of approximately 40\%.
 
 \textbf{Understanding Motor Nomenclature}
 
@@ -107,7 +108,7 @@ During high-speed autonomous maneuvers, this lag degrades control stability and 
 
 Since 6S provides higher baseline voltage, the motor's hover throttle point is positioned differently on the efficiency curve compared to 4S. Hover throttle percentage depends on specific motor and load characteristics---\textbf{there is no direct proportionality between voltage and hover throttle}. However, empirical trends confirm that 6S configurations maintain superior efficiency up to approximately 45\% throttle before the efficiency curves converge.\cite{hughes2013electric}
 
-The 1600KV motor on 6S should hover in the \textbf{45--50\% throttle range} based on the estimated drone weight and motor thrust.\cite{bershadsky2016propulsion} This operating point---hovering near the motor efficiency peak---means extractable maximum flight time from the battery while maintaining responsive control authority (50\% throttle reserves 50\% available thrust for maneuvers and environmental disturbances).
+The 1600KV motor on 6S should hover at approximately \textbf{40\% throttle} based on the actual drone weight and motor thrust.\cite{bershadsky2016propulsion} This operating point sits within the motor's efficiency band and reserves approximately 60\% available thrust for maneuvers and environmental disturbances.
 
 \subsection{System Integration: How Components Work Together}
 
@@ -125,24 +126,37 @@ Motor KV & 1600 KV & Produces 24,000--28,000 RPM under load on 6S; optimal for 4
 \hline
 Battery voltage & 6S (22.2V nominal) & Reduces voltage sag percentage impact; improves efficiency at cruise throttle \\
 \hline
-Hover throttle & \textasciitilde45--50\% & Operates at motor efficiency peak; reserves 50\% available thrust\cite{bershadsky2016propulsion} \\
+Hover throttle & \textasciitilde40\% & Operates within motor efficiency band; reserves $\sim$60\% thrust headroom\cite{bershadsky2016propulsion} \\
 \hline
-Estimated TWR & 3.82:1 & Responsive yet efficient for research autonomous missions \\
+TWR & 2.57:1 & Actual TWR with final assembly weight of $\sim$1,340\,g; target was 2.87:1 at 1,200\,g \\
 \hline
 \end{tabular}
 \end{table}
 
 If switched to 4S battery, for example, lower-KV motors would be needed (e.g., 1100KV) to maintain similar RPM. But lower-KV motors produce less torque, potentially requiring larger propellers or higher current draw---both of which degrade efficiency. Every selection interconnects. The component choices represent a validated system point.
 
+\subsection{Supporting Plot: Motor Command Saturation During Impact}
+
+\autoref{fig:allocator_saturation} presents the distribution of motor command saturation durations for both cage configurations. The plot shows the time during which the flight controller's motor mixer commanded ≥99.9\% of full output range in the first second after impact, providing direct evidence for the allocator saturation metrics discussed in \autoref{sec:impact_acceleration_vibrations}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.75\textwidth]{plots/Allocator Saturation Duration.png}
+    \caption{Motor command saturation duration after impact for both cage configurations. Saturation is defined as motor command ≥99.9\% of the full output range.}
+    \label{fig:allocator_saturation}
+\end{figure}
+
 \clearpage
 \subsection{CAD Assembly Drawing}
 
-\begin{figure}[h!]
+\begin{landscape}
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=\textwidth,height=0.85\textheight,keepaspectratio]{diagrams/drone_dwg.pdf}
+    \includegraphics[width=\textwidth,height=0.90\textheight,keepaspectratio]{diagrams/drone_dwg.pdf}
     \caption{Full drone assembly drawing (sheet 1 of 2). The A1 original has been scaled to fit A4 page dimensions.}
     \label{fig:cad_assembly}
 \end{figure}
+\end{landscape}
 
 \clearpage
 \begin{center}
