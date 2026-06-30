@@ -77,6 +77,13 @@ The drone's mechanical design integrates all major subsystems---flight controlle
 To ensure self-righting after ground impacts, researchers have developed various passive recovery structures. Mulgaonkar et al.~\cite{mulgaonkarRobustAerialRobot2018} demonstrated the efficacy of a 25~g G\"omb\"oc-shaped shell for autonomous uprighting. Conversely, Mahmud~\cite{mahmudDevelopmentCollisionResilient2021} investigated rotating-shell principles, comparing a single-axis turtle-shell design against a 3-axis gimbaled truncated icosahedron. The rotating cage configuration adopted for this thesis takes direct inspiration from Mahmud's rotating-shell principle, adapting the mechanism specifically for airborne impact deflection rather than just ground recovery.
 
 The development process began with CAD modelling of the frame and cage assembly in OnShape, iterating through several revisions to balance structural rigidity, weight, and propeller clearance.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.92\textwidth]{Figures/iterations side by side.jpg}
+    \caption{Two cage design iterations, progressing from the early prototype to the final configuration.}
+    \label{fig:iterations}
+\end{figure}
 % TODO [USER]: Insert your custom technical drawings and CAD renders of the drone assembly here.
 The frame plates were designed as a stack-up sandwich: a bottom plate for the power distribution board and ESCs, a middle deck for the Pixhawk 6C flight controller, and a top plate for the Raspberry Pi 5 companion computer (see the exploded assembly in \autoref{fig:drone_all_parts}). Each layer is separated by vibration-dampening standoffs to mechanically isolate the IMU from high-frequency motor vibrations.
 

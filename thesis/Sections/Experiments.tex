@@ -26,14 +26,12 @@ The flight stack (PX4, EKF2, ROS~2, Micro-XRCE-DDS, \texttt{flight\_director.py}
 
 To reiterate, this physical collision framework represents the actual experimental flight tests conducted, from which all the data in this thesis stems. The system uses a pre-computed ROS~2 waypoint trajectory targeting two approach angles ($45^\circ$ and $75^\circ$). While the commanded path was nearly mechanically identical within each condition, the actual measured impact angle varied across passes due to aerodynamic drift, bearing dynamics, and subtle differences in contact geometry. The resulting distribution of measured impact angles is shown in Figure~\ref{fig:impact_angle_distribution}. The exact spatial path, including the approach, impact, and recovery segments, is detailed in Figure~\ref{fig:mission_geometry}.
 
-\begin{sidewaysfigure}
+\begin{figure}[htbp]
     \centering
-    % \columnwidth forces it to fill the long landscape edge.
-    % height=13cm strictly limits the vertical stretch so the caption is never pushed off the page.
-    \includegraphics[width=\columnwidth, height=13cm, keepaspectratio]{Figures/experiments_pipeline.pdf}
+    \includegraphics[width=\textwidth]{Figures/experiments_pipeline.pdf}
     \caption{Experiment pipeline showing hardware components, ROS~2 software stack, data flow from MoCap through the agent to PX4, and telemetry logging to MCAP storage.}
     \label{fig:experiments_pipeline}
-\end{sidewaysfigure}
+\end{figure}
 
 \begin{figure}[h!]
     \centering

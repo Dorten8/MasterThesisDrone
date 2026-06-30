@@ -52,3 +52,44 @@ Executed a comprehensive QA fix list covering 4 phases: missing acronym expansio
 - `thesis/Sections/Related_work.tex` — existing text correct, no changes needed
 - `dev_logs/analysis/models/rf_angle_prediction.py` — box aspect for model comparison
 - `dev_logs/analysis/experiments_angle_prediction.ipynb` — re-executed for plot regen
+
+---
+
+## Continuation Session (20:00–)
+
+### Thesis Title
+- Changed from "The Deflective Advantage: Reducing Impact Shock and Vibration in Confined-Space Drone Operations" → "Deflect and Detect: Mitigating Shock and Predicting Impact Angles in Drones with Protective Cages" in `main.tex`
+
+### Annex ≥ Unicode Errors
+- Lines 140 and 145 — replaced raw `≥` with `\(\ge\)` in `Annex.tex`
+- Compiles cleanly with zero Unicode errors now
+
+### Tactile SLAM Sections Merged (Conclusion)
+- Merged "From Lab Angle Inference to Tactile SLAM" and "Toward tactile SLAM" into a single cohesive section
+- Updated intro sentence: "Three directions" → "Two directions" to reflect the merge
+- The combined section flows: VIO intermediate step → unknown environments → autonomous navigation policy → tactile SLAM triangulation → closing to online tactile navigation
+
+### Figure Captions & Layout
+- **Design iterations (Figure 7)** — Caption changed from "Four design iterations of the drone frame and cage assembly" to "Two cage design iterations, progressing from the early prototype to the final configuration"
+- **Wall pass (Figure 30)** — Changed `width=0.85\textwidth` → `width=\textwidth` for full-width display
+- **Experiment pipeline (Figure 13)** — Converted from `sidewaysfigure` (landscape) to `figure` (portrait) with `width=\textwidth`, per user request to stop fighting the orientation
+
+### Feature Importance Plot — Multiple Iterations
+- **Raw value labels** — Added on right side of each bar: MDI proportions (`.4f`) in bold black, Permutation MSE drops (`.2f`) in bold black, fontsize 9
+- **Side-by-side legends** — MDI/Permutation legend anchored `upper right` at (0.49, 0.12), Feature Group legend anchored `upper left` at (0.51, 0.12), same Y for perfect top-edge alignment
+- **X-axis label** — Only shown on bottom panel (`row_idx == 1`) to prevent collision with top panel's title
+- **Spacing** — `bottom=0.22`, `hspace=0.25` for three-tier layout (plot → legends at y=0.12 → data note at y=0.02)
+- **Per-panel feature lists** — Root cause fix: removed cross-cage union approach. Each panel now plots only its own model's 14 features (sorted by MDI ascending), eliminating empty bars from features that exist in the other cage but not this one
+
+### State
+- Thesis compiles to 111 pages (29.6 MB) — zero LaTeX errors, zero Unicode errors
+- All supervisor QA checklist items complete
+- Supervisor plan remaining: D3/D4 (Limitations — addressed), M6/M8 (user diagrams), G1 (architecture figure overflow — needs PDF inspection)
+
+## Files Modified (continuation session)
+- `thesis/main.tex` — title
+- `thesis/Sections/Annex.tex` — ≥ → \(\ge\) (×2)
+- `thesis/Sections/Conclusion.tex` — Tactile SLAM merge, wall figure full width
+- `thesis/Sections/Experiments.tex` — experiment pipeline sidewaysfigure → figure
+- `thesis/Sections/Methodology.tex` — iterations caption fix
+- `dev_logs/analysis/models/rf_angle_prediction.py` — feature importance plot: per-panel features, value labels, legend alignment, x-label gating, spacing

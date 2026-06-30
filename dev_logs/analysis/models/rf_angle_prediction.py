@@ -912,10 +912,11 @@ def plot_consolidated_feature_importance(results_fix, results_rot,
     Top:    Rotating Cage
     Bottom: Fixed Cage
 
-    Within each panel, MDI importance is shown as a solid filled horizontal
-    bar and Permutation importance as an outlined (hollow) bar of the same
-    feature-group colour, making the two metrics directly comparable per
-    feature without doubling the number of subplots.
+    Each panel shows the features selected by that cage's own RF model,
+    sorted by MDI ascending.  MDI importance is shown as a solid filled
+    horizontal bar and Permutation importance as an outlined (hollow) bar
+    of the same feature-group colour, making the two metrics directly
+    comparable per feature.
 
     Parameters
     ----------
@@ -933,36 +934,7 @@ def plot_consolidated_feature_importance(results_fix, results_rot,
         ('Fixed Cage', results_fix),
     ]
 
-    # ── Build combined feature list from both cages ────────────────────────
-    all_features = set()
-    feat_data = {}
-    for cond_name, res in conditions:
-        if res is None:
-            continue
-        imp_df = res.get('importance_df')
-        if imp_df is None:
-            continue
-        for _, row in imp_df.iterrows():
-            f = row['feature']
-            all_features.add(f)
-            if f not in feat_data:
-                feat_data[f] = {
-                    'label': row['label'], 'group': row['group'],
-                    'imp_fix': 0, 'imp_rot': 0,
-                }
-            if cond_name == 'Fixed Cage':
-                feat_data[f]['imp_fix'] = row['importance']
-            else:
-                feat_data[f]['imp_rot'] = row['importance']
-
-    # Sort by mean MDI across both cages
-    feat_list = sorted(all_features,
-                       key=lambda f: (feat_data[f]['imp_fix'] + feat_data[f]['imp_rot']) / 2,
-                       reverse=True)
-    if len(feat_list) < 5:
-        feat_list = list(feat_list)
-
-    # Collect unique groups across both for the legend
+    # Collect unique groups across both cages for the legend
     all_groups = set()
     for _, res in conditions:
         if res and res.get('importance_df') is not None:
@@ -971,20 +943,17 @@ def plot_consolidated_feature_importance(results_fix, results_rot,
     all_groups = sorted(all_groups)
 
     # ── Build 2×1 figure ───────────────────────────────────────────────────
-    n_feats = len(feat_list)
+    n_feats = max(
+        len(results_fix.get('importance_df', pd.DataFrame())),
+        len(results_rot.get('importance_df', pd.DataFrame())),
+    )
+    n_feats = max(n_feats, 10)  # ensure reasonable minimum height
     fig, axes = plt.subplots(2, 1, figsize=(12, max(10, n_feats * 0.9)),
                               dpi=150, sharex=False)
 
-    # Determine shared x-axis limit from both importance types
-    x_max = 0
-    for cond_name, res in conditions:
-        if res is None:
-            continue
-        for imp_key in ['importance_df', 'permutation_df']:
-            df = res.get(imp_key)
-            if df is not None and len(df) > 0:
-                x_max = max(x_max, df['importance'].max())
-    x_lim = max(x_max * 1.12, 0.05)  # 12% headroom, floor at 0.05
+    # Both MDI and Permutation are normalised to [0, 1] within each panel,
+    # so the shared x-axis limit is fixed at 1.12 (12% headroom above 1.0).
+    x_lim = 1.12
 
     for row_idx, (cond_name, res) in enumerate(conditions):
         ax = axes[row_idx]
@@ -1004,85 +973,107 @@ def plot_consolidated_feature_importance(results_fix, results_rot,
                     fontsize=11, fontstyle='italic', color='gray')
             continue
 
-        # ── Build MDI + Permutation series in common feature order ─────────
-        mdi_vals, perm_vals, labels, bar_colors = [], [], [], []
-        for f in feat_list:
-            row_mdi = imp_df[imp_df['feature'] == f]
-            if len(row_mdi) > 0:
-                mdi_vals.append(row_mdi.iloc[0]['importance'])
-                labels.append(row_mdi.iloc[0]['label'])
-                bar_colors.append(GROUP_COLORS.get(row_mdi.iloc[0]['group'], '#CCCCCC'))
-            else:
-                mdi_vals.append(0)
-                labels.append(feat_data.get(f, {}).get('label', f))
-                bar_colors.append(GROUP_COLORS.get(
-                    feat_data.get(f, {}).get('group', 'Other'), '#CCCCCC'))
+        # ── Build MDI + Permutation series from THIS cage's own features ────
+        # Each cage's model uses its own selected_features set; we plot only
+        # those, sorted by MDI ascending (horizontal bars go bottom→top).
+        # There is no cross-cage union — each panel is self-contained.
+        panel_rows = imp_df.sort_values('importance', ascending=True).copy()
+        labels = panel_rows['label'].tolist()
+        mdi_raw = panel_rows['importance'].tolist()
+        bar_colors = [GROUP_COLORS.get(g, '#CCCCCC') for g in panel_rows['group']]
 
-            if perm_df is not None:
-                row_perm = perm_df[perm_df['feature'] == f]
-                perm_vals.append(row_perm.iloc[0]['importance'] if len(row_perm) > 0 else 0)
-            else:
-                perm_vals.append(0)
+        # Permutation importance for the same features
+        perm_raw = []
+        if perm_df is not None:
+            perm_lookup = dict(zip(perm_df['feature'], perm_df['importance']))
+            for f in panel_rows['feature']:
+                perm_raw.append(perm_lookup.get(f, 0))
+        else:
+            perm_raw = [0] * len(labels)
 
-        # Sort all series together by MDI ascending (horizontal bars go bottom→top)
-        combined = sorted(zip(mdi_vals, perm_vals, labels, bar_colors),
-                          key=lambda x: x[0])
-        mdi_vals, perm_vals, labels, bar_colors = (zip(*combined)
-                                                    if combined else ([], [], [], []))
+        # Normalise both to [0, 1] so MDI (proportions, ~0.01–0.15)
+        # and Permutation (MSE drops, typically 10–100× larger) share a
+        # comparable visual scale on the same axis.
+        mdi_max = max(mdi_raw) if mdi_raw else 1
+        perm_max = max(perm_raw) if perm_raw else 1
+        mdi_norm = [v / mdi_max if mdi_max > 0 else 0 for v in mdi_raw]
+        perm_norm = [v / perm_max if perm_max > 0 else 0 for v in perm_raw]
+
+        # All lists are already sorted by MDI ascending at this point
 
         y_pos = range(len(labels))
         bar_height = 0.35
 
         # MDI — solid filled bars (top half of each row)
-        ax.barh([y + bar_height / 2 for y in y_pos], mdi_vals, bar_height,
+        ax.barh([y + bar_height / 2 for y in y_pos], mdi_norm, bar_height,
                 color=bar_colors, edgecolor='black', linewidth=0.5,
                 alpha=0.85)
 
         # Permutation — outlined hollow bars (bottom half, same colour as edge)
-        ax.barh([y - bar_height / 2 for y in y_pos], perm_vals, bar_height,
+        ax.barh([y - bar_height / 2 for y in y_pos], perm_norm, bar_height,
                 color='none', edgecolor=bar_colors, linewidth=1.2,
                 alpha=0.9)
+
+        # ── Raw value labels on the right side of each bar ─────────────
+        for i, (y, md_n, pm_n, md_r, pm_r) in enumerate(
+                zip(y_pos, mdi_norm, perm_norm, mdi_raw, perm_raw)):
+            # MDI raw value (proportion, format with 4 decimal places)
+            if md_n > 0.001:
+                ax.text(md_n + 0.015, y + bar_height / 2,
+                        f'{md_r:.4f}',
+                        va='center', ha='left', fontsize=9, fontweight='bold',
+                        color='black')
+            # Permutation raw value (MSE drop, format with 2 decimal places)
+            if pm_n > 0.001:
+                ax.text(pm_n + 0.015, y - bar_height / 2,
+                        f'{pm_r:.2f}',
+                        va='center', ha='left', fontsize=9, fontweight='bold',
+                        color='black')
 
         ax.set_yticks(y_pos)
         ax.set_yticklabels(labels, fontsize=8)
         ax.set_xlim(0, x_lim)
-        ax.set_xlabel('Importance', fontweight='bold', fontsize=9)
+        if row_idx == 1:
+            ax.set_xlabel('Normalised Importance (prop. of max)', fontweight='bold', fontsize=9)
         ax.set_title(cond_name, fontweight='bold', fontsize=12, pad=6,
                      color='black')
         ax.grid(True, linestyle=':', alpha=0.4, axis='x')
         ax.tick_params(labelsize=8)
 
-    # ── MDI / Permutation legend (top) + Feature Group legend (bottom) ────
+    # ── MDI / Permutation legend (Left) + Feature Group legend (Right) ────
     method_handles = [
-        Patch(facecolor='#555555', alpha=0.85,
-              label='MDI (solid fill)'),
-        Patch(facecolor='none', edgecolor='#555555', linewidth=1.5,
-              label='Permutation (outline)'),
+        Patch(facecolor='#555555', alpha=0.85, label='MDI (solid fill)'),
+        Patch(facecolor='none', edgecolor='#555555', linewidth=1.5, label='Permutation (outline)'),
     ]
     group_handles = [
         Patch(facecolor=GROUP_COLORS.get(g, '#CCCCCC'), alpha=0.75, label=g)
         for g in all_groups if g in GROUP_COLORS
     ]
-    leg1 = fig.legend(handles=method_handles, fontsize=7.5, loc='lower center',
-                      ncol=2, bbox_to_anchor=(0.5, 0.01), framealpha=0.85,
+
+    # Anchor to y=0.12 to sit safely below the x-axis label
+    leg1 = fig.legend(handles=method_handles, fontsize=7.5, loc='upper right',
+                      ncol=2, bbox_to_anchor=(0.38, 0.1), framealpha=0.85,
                       title='Importance Type', title_fontsize=8)
     fig.add_artist(leg1)
-    fig.legend(handles=group_handles, fontsize=7.5, loc='lower center',
+
+    fig.legend(handles=group_handles, fontsize=7.5, loc='upper left',
                ncol=min(5, len(group_handles)),
-               bbox_to_anchor=(0.5, -0.05), framealpha=0.85,
+               bbox_to_anchor=(0.42, 0.1), framealpha=0.85,
                title='Feature Group', title_fontsize=8)
 
     # ── Global title ───────────────────────────────────────────────────────
     fig.suptitle('Random Forest Feature Importance: MDI + Permutation',
                  fontweight='bold', fontsize=14, y=0.98)
 
-    fig.subplots_adjust(top=0.93, bottom=0.22, hspace=0.35, left=0.28,
-                         right=0.94)
+    # INCREASE bottom to 0.22 to give the legends and text room to breathe
+    fig.subplots_adjust(top=0.93, bottom=0.14, hspace=0.14, left=0.28, right=0.94)
 
     # ── Data origin ──────────────────────────────────────────────────────
     n_rot = len(results_rot.get('y_true', []))
     n_fix = len(results_fix.get('y_true', []))
-    fig.text(0.88, 0.08,
+
+    # Move the note to y=0.02 so it sits completely underneath the legends
+    fig.text(0.94, 0.02,
              f"flights_summary (N={n_rot} Rotating, N={n_fix} Fixed)",
              ha='right', va='bottom', fontsize=7.5, color='#555555')
     if save_to_disk:

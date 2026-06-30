@@ -137,12 +137,12 @@ If switched to 4S battery, for example, lower-KV motors would be needed (e.g., 1
 
 \subsection{Supporting Plot: Motor Command Saturation During Impact}
 
-\autoref{fig:allocator_saturation} presents the distribution of motor command saturation durations for both cage configurations. The plot shows the time during which the flight controller's motor mixer commanded ≥99.9\% of full output range in the first second after impact, providing direct evidence for the allocator saturation metrics discussed in \autoref{sec:impact_acceleration_vibrations}.
+\autoref{fig:allocator_saturation} presents the distribution of motor command saturation durations for both cage configurations. The plot shows the time during which the flight controller's motor mixer commanded \(\ge\)99.9\% of full output range in the first second after impact, providing direct evidence for the allocator saturation metrics discussed in \autoref{sec:impact_acceleration_vibrations}.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.75\textwidth]{plots/Allocator Saturation Duration.png}
-    \caption{Motor command saturation duration after impact for both cage configurations. Saturation is defined as motor command ≥99.9\% of the full output range.}
+    \caption{Motor command saturation duration after impact for both cage configurations. Saturation is defined as motor command \(\ge\)99.9\% of the full output range.}
     \label{fig:allocator_saturation}
 \end{figure}
 
